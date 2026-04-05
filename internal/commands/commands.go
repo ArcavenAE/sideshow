@@ -148,22 +148,32 @@ func syncPack(p pack.InstalledPack, claudeDir string) (int, error) {
 	return synced, err
 }
 
-// rewritePaths replaces {project-root}/_bmad/ references with the global pack path.
-// Preserves {project-root}/_bmad-custom/ and {project-root}/_bmad-output/ references
-// since those are per-repo.
+// rewritePaths replaces pack content references with the global installation path.
+//
+// Rewrites (global — pack content, read-only):
+//   {project-root}/_bmad/module/path → /absolute/sideshow/packs/bmad/6.2.2/module/path
+//
+// Preserves (per-repo — stays relative to the invoking project):
+//   {project-root}/_bmad-custom/  → unchanged (per-repo customization)
+//   {project-root}/_bmad-output/  → unchanged (per-repo output)
+//   {project-root}/               → unchanged (any other project-relative path)
+//
+// This means agents and workflows load their definitions from the global
+// installation but read custom content from and write output to the repo
+// they're acting on.
 func rewritePaths(content, packPath string) string {
-	// Replace _bmad/ references with global path, but NOT _bmad-custom/ or _bmad-output/
-	// The pattern in commands is: {project-root}/_bmad/module/path
-	// We want: ~/.local/share/sideshow/packs/bmad/current/module/path
-
-	// Use the packPath which resolves the symlink
 	globalPath := packPath
 
-	// Replace patterns like:
-	//   {project-root}/_bmad/tea/agents/tea.md
-	// With:
-	//   /absolute/path/to/sideshow/packs/bmad/6.2.2/tea/agents/tea.md
+	// Protect per-repo paths by temporarily replacing them
+	content = strings.ReplaceAll(content, "{project-root}/_bmad-custom/", "\x00BMAD_CUSTOM\x00")
+	content = strings.ReplaceAll(content, "{project-root}/_bmad-output/", "\x00BMAD_OUTPUT\x00")
+
+	// Rewrite pack content paths to global
 	content = strings.ReplaceAll(content, "{project-root}/_bmad/", globalPath+"/")
+
+	// Restore per-repo paths
+	content = strings.ReplaceAll(content, "\x00BMAD_CUSTOM\x00", "{project-root}/_bmad-custom/")
+	content = strings.ReplaceAll(content, "\x00BMAD_OUTPUT\x00", "{project-root}/_bmad-output/")
 
 	return content
 }
