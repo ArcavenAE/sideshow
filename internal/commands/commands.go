@@ -66,7 +66,7 @@ func syncPack(p pack.InstalledPack, claudeDir string) (int, error) {
 	// Also check if there's a sibling .claude/commands/ from the source repo
 	// The pack might have been installed from a repo that had commands in .claude/
 	parentDir := filepath.Dir(filepath.Dir(packPath)) // go up from packs/{name}/{version}
-	_ = parentDir                                      // not used for now
+	_ = parentDir                                     // not used for now
 
 	synced := 0
 	for _, cmdDir := range commandDirs {
@@ -151,12 +151,14 @@ func syncPack(p pack.InstalledPack, claudeDir string) (int, error) {
 // rewritePaths replaces pack content references with the global installation path.
 //
 // Rewrites (global — pack content, read-only):
-//   {project-root}/_bmad/module/path → /absolute/sideshow/packs/bmad/6.2.2/module/path
+//
+//	{project-root}/_bmad/module/path → /absolute/sideshow/packs/bmad/6.2.2/module/path
 //
 // Preserves (per-repo — stays relative to the invoking project):
-//   {project-root}/_bmad-custom/  → unchanged (per-repo customization)
-//   {project-root}/_bmad-output/  → unchanged (per-repo output)
-//   {project-root}/               → unchanged (any other project-relative path)
+//
+//	{project-root}/_bmad-custom/  → unchanged (per-repo customization)
+//	{project-root}/_bmad-output/  → unchanged (per-repo output)
+//	{project-root}/               → unchanged (any other project-relative path)
 //
 // This means agents and workflows load their definitions from the global
 // installation but read custom content from and write output to the repo

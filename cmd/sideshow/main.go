@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ArcavenAE/sideshow/internal/commands"
+	sideshowinit "github.com/ArcavenAE/sideshow/internal/init"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"github.com/ArcavenAE/sideshow/internal/permissions"
 )
@@ -17,6 +18,8 @@ func usage() {
 
 Usage:
   sideshow install <pack> --from <path>   Install a pack from a local path
+  sideshow init [--user <name>] [--project <path>]
+                                          Create config shim for BMAD agents
   sideshow list                           List installed packs
   sideshow commands sync                  Sync commands to ~/.claude/commands/
   sideshow status                         Show installation status
@@ -28,9 +31,15 @@ Install options:
   --no-permissions       Don't configure Claude Code read permissions
   --scope user|project   Where to add permissions (default: user)
 
+Init options:
+  --user <name>          Name agents should call you (default: from pack config)
+  --project <path>       Project directory to init (default: current directory)
+
 Examples:
   sideshow install bmad --from ~/work/ftc/_bmad
   sideshow install bmad --from ~/work/ftc/_bmad --yes
+  sideshow init
+  sideshow init --user "Michael"
   sideshow commands sync
 `)
 }
@@ -44,6 +53,8 @@ func main() {
 	var err error
 
 	switch os.Args[1] {
+	case "init":
+		err = runInit(os.Args[2:])
 	case "install":
 		err = runInstall(os.Args[2:])
 	case "list":
@@ -76,6 +87,28 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runInit(args []string) error {
+	var userName string
+	var projectRoot string
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--user":
+			if i+1 < len(args) {
+				userName = args[i+1]
+				i++
+			}
+		case "--project":
+			if i+1 < len(args) {
+				projectRoot = args[i+1]
+				i++
+			}
+		}
+	}
+
+	return sideshowinit.Run(projectRoot, userName)
 }
 
 func runInstall(args []string) error {
