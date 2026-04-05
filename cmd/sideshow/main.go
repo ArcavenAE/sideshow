@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	"bufio"
+	"strings"
+
 	"github.com/ArcavenAE/sideshow/internal/commands"
 	"github.com/ArcavenAE/sideshow/internal/pack"
+	"github.com/ArcavenAE/sideshow/internal/permissions"
 )
 
 func usage() {
@@ -18,8 +22,15 @@ Usage:
   sideshow status                         Show installation status
   sideshow version                        Show version
 
+Install options:
+  --from <path>          Source directory (required for now)
+  --yes, -y              Skip confirmation prompts
+  --no-permissions       Don't configure Claude Code read permissions
+  --scope user|project   Where to add permissions (default: user)
+
 Examples:
   sideshow install bmad --from ~/work/ftc/_bmad
+  sideshow install bmad --from ~/work/ftc/_bmad --yes
   sideshow commands sync
 `)
 }
@@ -69,16 +80,38 @@ func main() {
 
 func runInstall(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sideshow install <pack> --from <path>")
+		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--yes] [--no-permissions] [--scope user|project]")
 	}
 
 	name := args[0]
 	var fromPath string
+	autoYes := false
+	noPerms := false
+	scope := permissions.ScopeUser
 
 	for i := 1; i < len(args); i++ {
-		if args[i] == "--from" && i+1 < len(args) {
-			fromPath = args[i+1]
-			i++
+		switch args[i] {
+		case "--from":
+			if i+1 < len(args) {
+				fromPath = args[i+1]
+				i++
+			}
+		case "--yes", "-y":
+			autoYes = true
+		case "--no-permissions":
+			noPerms = true
+		case "--scope":
+			if i+1 < len(args) {
+				switch args[i+1] {
+				case "user":
+					scope = permissions.ScopeUser
+				case "project":
+					scope = permissions.ScopeProject
+				default:
+					return fmt.Errorf("unknown scope: %s (use 'user' or 'project')", args[i+1])
+				}
+				i++
+			}
 		}
 	}
 
@@ -86,7 +119,38 @@ func runInstall(args []string) error {
 		return fmt.Errorf("--from <path> is required (git install not yet implemented)")
 	}
 
-	return pack.InstallFromLocal(name, fromPath)
+	if err := pack.InstallFromLocal(name, fromPath); err != nil {
+		return err
+	}
+
+	// Configure Claude Code permissions
+	if noPerms {
+		return nil
+	}
+
+	packPath := pack.PacksDir()
+	settingsFile := permissions.SettingsPath(scope, ".")
+
+	if !autoYes {
+		fmt.Printf("\nConfigure Claude Code to read from %s?\n", packPath)
+		fmt.Printf("  This adds Read(%s/) to %s\n", packPath, settingsFile)
+		fmt.Printf("  [Y/n]: ")
+
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer == "n" || answer == "no" {
+			fmt.Println("Skipped. You may be prompted by Claude Code when accessing pack files.")
+			return nil
+		}
+	}
+
+	if err := permissions.ConfigureForScope(scope, packPath, "."); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to configure permissions: %v\n", err)
+		fmt.Println("You may need to add the permission manually or accept prompts in Claude Code.")
+	}
+
+	return nil
 }
 
 func runList() error {
