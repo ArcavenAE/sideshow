@@ -1,0 +1,296 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: go.sum
+
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@v0.7.0
+
+      - name: Check formatting (gofumpt)
+        run: |
+          UNFORMATTED=$(gofumpt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "::error::Files need formatting with gofumpt:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
+        with:
+          version: v2.10.1
+
+      - name: Run tests with race detector
+        run: go test ./... -v -count=1 -race -coverprofile=coverage.out -covermode=atomic
+
+      - name: Display coverage summary
+        run: go tool cover -func=coverage.out
+
+      - name: Validate build
+        run: go build -o /dev/null ./cmd/sideshow
+
+  build-binaries:
+    name: Build Binaries
+    needs: quality-gate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: go.sum
+
+      - name: Generate version
+        id: version
+        run: |
+          VERSION="0.1.0-alpha.$(date -u +%Y%m%d).$(date -u +%H%M%S).${GITHUB_SHA::7}"
+          TAG="alpha-$(date -u +%Y%m%d)-$(date -u +%H%M%S)-${GITHUB_SHA::7}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build alpha binaries
+        run: |
+          LDFLAGS="-X main.version=${{ steps.version.outputs.version }} -X main.channel=alpha"
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o sideshow-darwin-arm64 ./cmd/sideshow
+          GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o sideshow-darwin-amd64 ./cmd/sideshow
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o sideshow-linux-amd64 ./cmd/sideshow
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: binaries
+          path: sideshow-*
+          retention-days: 14
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+  sign-and-notarize:
+    name: Sign & Notarize
+    needs: build-binaries
+    if: github.event_name == 'push' && vars.SIGNING_ENABLED == 'true'
+    environment: release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Download binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: binaries
+
+      - name: Import certificates
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > cert.p12
+          security import cert.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm cert.p12
+          curl -sfo /tmp/DeveloperIDG2CA.cer https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security add-certificates -k build.keychain /tmp/DeveloperIDG2CA.cer
+          rm /tmp/DeveloperIDG2CA.cer
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+      - name: Sign darwin binaries
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          codesign --force --options runtime --sign "$APPLE_SIGNING_IDENTITY" --identifier "com.arcavenae.sideshow" --timestamp sideshow-darwin-arm64
+          codesign --force --options runtime --sign "$APPLE_SIGNING_IDENTITY" --identifier "com.arcavenae.sideshow" --timestamp sideshow-darwin-amd64
+
+      - name: Verify signatures
+        run: |
+          codesign --verify --deep --strict sideshow-darwin-arm64
+          codesign --verify --deep --strict sideshow-darwin-amd64
+
+      - name: Upload signed binaries
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: signed-binaries
+          path: |
+            sideshow-darwin-arm64
+            sideshow-darwin-amd64
+          retention-days: 14
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain build.keychain || true
+
+  release:
+    name: Create Release
+    needs: [build-binaries, sign-and-notarize]
+    if: github.event_name == 'push' && !cancelled() && needs.build-binaries.result == 'success'
+    permissions:
+      contents: write
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Download signed binaries
+        if: needs.sign-and-notarize.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-binaries
+
+      - name: Download unsigned binaries (fallback)
+        if: needs.sign-and-notarize.result != 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: binaries
+
+      - name: Download all binaries (for linux)
+        if: needs.sign-and-notarize.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: binaries
+          path: unsigned-binaries
+
+      - name: Copy linux binary from unsigned artifacts
+        if: needs.sign-and-notarize.result == 'success'
+        run: |
+          cp unsigned-binaries/sideshow-linux-amd64 .
+          rm -rf unsigned-binaries
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build-binaries.outputs.tag }}
+          VERSION: ${{ needs.build-binaries.outputs.version }}
+          COMMIT: ${{ github.sha }}
+          SIGNED: ${{ needs.sign-and-notarize.result == 'success' && 'Yes (Apple Developer ID)' || 'No (unsigned)' }}
+        run: |
+          BODY="Automated alpha release from push to main.
+
+          **Version:** ${VERSION}
+          **Commit:** ${COMMIT}
+          **Signed:** ${SIGNED}
+
+          **Binaries:**
+          - \`sideshow-darwin-arm64\` — macOS Apple Silicon
+          - \`sideshow-darwin-amd64\` — macOS Intel
+          - \`sideshow-linux-amd64\` — Linux x86_64
+
+          **Homebrew (alpha):** \`brew install arcavenae/tap/sideshow\`"
+
+          ASSETS=()
+          for f in sideshow-*; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+
+          gh release create "$TAG" \
+            --title "Alpha ${TAG}" \
+            --notes "$BODY" \
+            --prerelease \
+            "${ASSETS[@]}"
+
+      - name: Update Homebrew formula
+        if: vars.ALPHA_TAP_ENABLED == 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ needs.build-binaries.outputs.version }}"
+          TAG="${{ needs.build-binaries.outputs.tag }}"
+          BASE_URL="https://github.com/arcavenae/sideshow/releases/download/${TAG}"
+
+          SHA_ARM64=$(sha256sum sideshow-darwin-arm64 | cut -d' ' -f1)
+          SHA_AMD64=$(sha256sum sideshow-darwin-amd64 | cut -d' ' -f1)
+          SHA_LINUX=$(sha256sum sideshow-linux-amd64 | cut -d' ' -f1)
+
+          cat > sideshow.rb <<FORMULA
+          class Sideshow < Formula
+            desc "Content pack manager for AI CLI tools"
+            homepage "https://github.com/arcavenae/sideshow"
+            version "${VERSION}"
+            license "MIT"
+
+            if OS.mac? && Hardware::CPU.arm?
+              url "${BASE_URL}/sideshow-darwin-arm64"
+              sha256 "${SHA_ARM64}"
+            elsif OS.mac?
+              url "${BASE_URL}/sideshow-darwin-amd64"
+              sha256 "${SHA_AMD64}"
+            elsif OS.linux?
+              url "${BASE_URL}/sideshow-linux-amd64"
+              sha256 "${SHA_LINUX}"
+            end
+
+            def install
+              if OS.mac? && Hardware::CPU.arm?
+                bin.install "sideshow-darwin-arm64" => "sideshow"
+              elsif OS.mac?
+                bin.install "sideshow-darwin-amd64" => "sideshow"
+              elsif OS.linux?
+                bin.install "sideshow-linux-amd64" => "sideshow"
+              end
+            end
+
+            test do
+              assert_match "sideshow", shell_output("#{bin}/sideshow version 2>&1")
+            end
+          end
+          FORMULA
+
+          sed -i 's/^          //' sideshow.rb
+          ruby -c sideshow.rb
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/arcavenae/homebrew-tap.git" tap-repo
+          mkdir -p tap-repo/Formula
+          cp sideshow.rb tap-repo/Formula/sideshow.rb
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/sideshow.rb
+          if git diff --cached --quiet; then
+            echo "Formula unchanged, skipping push"
+          else
+            git commit -m "chore(formula): update sideshow to ${TAG}"
+            git push origin main
+          fi
+
+      - name: Clean up old alpha releases
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list --limit 200 \
+            | grep 'alpha-' \
+            | tail -n +31 \
+            | awk '{print $1}' \
+            | xargs -I{} gh release delete {} --yes --cleanup-tag

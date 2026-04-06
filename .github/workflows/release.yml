@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser:
+    name: GoReleaser
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: 'go.mod'
+
+      - uses: goreleaser/goreleaser-action@9a127d869fb706213d29cdf8eef3a4ea2b869415 # v7
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+  sign-stable:
+    name: Sign & Notarize Stable
+    needs: goreleaser
+    if: vars.SIGNING_ENABLED == 'true'
+    permissions:
+      contents: write
+    environment: release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Import certificates
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > cert.p12
+          security import cert.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm cert.p12
+          curl -sfo /tmp/DeveloperIDG2CA.cer https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security add-certificates -k build.keychain /tmp/DeveloperIDG2CA.cer
+          rm /tmp/DeveloperIDG2CA.cer
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+
+      - name: Download, sign, re-upload darwin archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+
+          gh release download "$TAG" \
+            --pattern "sideshow_${VERSION}_darwin_arm64.tar.gz" \
+            --pattern "sideshow_${VERSION}_darwin_amd64.tar.gz" \
+            --pattern "checksums.txt"
+
+          for ARCH in arm64 amd64; do
+            ARCHIVE="sideshow_${VERSION}_darwin_${ARCH}.tar.gz"
+            mkdir -p "work-${ARCH}"
+            tar xzf "$ARCHIVE" -C "work-${ARCH}"
+            codesign --force --options runtime --sign "$APPLE_SIGNING_IDENTITY" \
+              --identifier "com.arcavenae.sideshow" --timestamp "work-${ARCH}/sideshow"
+            codesign --verify --deep --strict "work-${ARCH}/sideshow"
+            rm "$ARCHIVE"
+            tar czf "$ARCHIVE" -C "work-${ARCH}" .
+            rm -rf "work-${ARCH}"
+          done
+
+          # Recalculate checksums for signed archives
+          for ARCH in arm64 amd64; do
+            ARCHIVE="sideshow_${VERSION}_darwin_${ARCH}.tar.gz"
+            NEW_CHECKSUM=$(shasum -a 256 "$ARCHIVE" | cut -d' ' -f1)
+            sed -i '' "s|^[a-f0-9]*  ${ARCHIVE}$|${NEW_CHECKSUM}  ${ARCHIVE}|" checksums.txt
+          done
+
+          gh release upload "$TAG" --clobber \
+            "sideshow_${VERSION}_darwin_arm64.tar.gz" \
+            "sideshow_${VERSION}_darwin_amd64.tar.gz" \
+            checksums.txt
+
+      - name: Cleanup keychain
+        if: always()
+        run: security delete-keychain build.keychain || true

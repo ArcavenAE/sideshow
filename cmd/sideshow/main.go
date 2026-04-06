@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
-
-	"bufio"
 	"strings"
 
 	"github.com/ArcavenAE/sideshow/internal/commands"
 	sideshowinit "github.com/ArcavenAE/sideshow/internal/init"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"github.com/ArcavenAE/sideshow/internal/permissions"
+)
+
+// Set by ldflags at build time. Defaults are for local builds.
+var (
+	version = "dev"
+	channel = ""
 )
 
 func usage() {
@@ -74,7 +79,7 @@ func main() {
 	case "status":
 		err = runStatus()
 	case "version":
-		fmt.Println("sideshow 0.1.0-dev")
+		fmt.Printf("sideshow %s\n", version)
 	case "help", "--help", "-h":
 		usage()
 	default:
