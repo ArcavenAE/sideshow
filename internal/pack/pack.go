@@ -168,7 +168,7 @@ func InstallFromLocal(name, sourcePath string) error {
 
 	// Create current symlink
 	currentLink := filepath.Join(PacksDir(), name, "current")
-	os.Remove(currentLink) // remove old symlink if exists
+	_ = os.Remove(currentLink) // remove old symlink if exists
 	if err := os.Symlink(version, currentLink); err != nil {
 		return fmt.Errorf("create current symlink: %w", err)
 	}

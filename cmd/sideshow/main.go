@@ -13,9 +13,10 @@ import (
 )
 
 // Set by ldflags at build time. Defaults are for local builds.
+// CI injects: -X main.version=... -X main.channel=alpha
 var (
 	version = "dev"
-	channel = ""
+	channel = "" //nolint:unused // set via ldflags, used in future updater
 )
 
 func usage() {
