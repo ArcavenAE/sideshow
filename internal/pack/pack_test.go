@@ -72,7 +72,9 @@ func TestRegistrySaveAndLoad(t *testing.T) {
 	}
 }
 
-func TestDetectVersion_BmadManifest(t *testing.T) {
+func TestDetectVersion_BmadManifest_DirectChild(t *testing.T) {
+	t.Parallel()
+	// --from points at the _bmad/ dir itself: _config/manifest.yaml is a direct child
 	dir := t.TempDir()
 	configDir := filepath.Join(dir, "_config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -92,7 +94,98 @@ func TestDetectVersion_BmadManifest(t *testing.T) {
 	}
 }
 
+func TestDetectVersion_BmadManifest_ProjectRoot(t *testing.T) {
+	t.Parallel()
+	// --from points at the project root: _bmad/_config/manifest.yaml
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "_bmad", "_config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := `installation:
+  version: "6.3.0"
+`
+	if err := os.WriteFile(filepath.Join(configDir, "manifest.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	version := DetectVersion(dir)
+	if version != "6.3.0" {
+		t.Errorf("DetectVersion() = %q, want 6.3.0", version)
+	}
+}
+
+func TestDetectVersion_BmadManifest_DirectChildWins(t *testing.T) {
+	t.Parallel()
+	// If both paths exist, direct child (_config/) wins over nested (_bmad/_config/)
+	dir := t.TempDir()
+
+	directConfig := filepath.Join(dir, "_config")
+	if err := os.MkdirAll(directConfig, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directConfig, "manifest.yaml"),
+		[]byte("installation:\n  version: \"6.2.2\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	nestedConfig := filepath.Join(dir, "_bmad", "_config")
+	if err := os.MkdirAll(nestedConfig, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedConfig, "manifest.yaml"),
+		[]byte("installation:\n  version: \"6.3.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	version := DetectVersion(dir)
+	if version != "6.2.2" {
+		t.Errorf("DetectVersion() = %q, want 6.2.2 (direct child should win)", version)
+	}
+}
+
+func TestDetectVersion_PackageJSON(t *testing.T) {
+	t.Parallel()
+	// --from points at the BMAD source repo: package.json at root
+	dir := t.TempDir()
+	pkg := `{"name": "bmad-method", "version": "6.0.1"}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(pkg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	version := DetectVersion(dir)
+	if version != "6.0.1" {
+		t.Errorf("DetectVersion() = %q, want 6.0.1", version)
+	}
+}
+
+func TestDetectVersion_BmadManifest_BeatsPackageJSON(t *testing.T) {
+	t.Parallel()
+	// If both manifest.yaml and package.json exist, manifest wins
+	dir := t.TempDir()
+
+	configDir := filepath.Join(dir, "_config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "manifest.yaml"),
+		[]byte("installation:\n  version: \"6.2.2\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "package.json"),
+		[]byte(`{"version": "6.0.1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	version := DetectVersion(dir)
+	if version != "6.2.2" {
+		t.Errorf("DetectVersion() = %q, want 6.2.2 (manifest should beat package.json)", version)
+	}
+}
+
 func TestDetectVersion_PackYaml(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	packYaml := `version: "1.0.0"
 `
@@ -107,10 +200,43 @@ func TestDetectVersion_PackYaml(t *testing.T) {
 }
 
 func TestDetectVersion_Unknown(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	version := DetectVersion(dir)
 	if version != "unknown" {
 		t.Errorf("DetectVersion() = %q, want unknown", version)
+	}
+}
+
+func TestDetectVersion_MalformedYAML(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "_config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "manifest.yaml"),
+		[]byte("not: [valid: yaml: {"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	version := DetectVersion(dir)
+	if version != "unknown" {
+		t.Errorf("DetectVersion() = %q, want unknown (malformed YAML)", version)
+	}
+}
+
+func TestDetectVersion_MalformedJSON(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"),
+		[]byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	version := DetectVersion(dir)
+	if version != "unknown" {
+		t.Errorf("DetectVersion() = %q, want unknown (malformed JSON)", version)
 	}
 }
 

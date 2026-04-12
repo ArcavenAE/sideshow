@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -71,40 +72,96 @@ func (r *Registry) Save() error {
 }
 
 // DetectVersion tries to read the version from a pack's manifest.
+//
+// Supports three --from layouts:
+//
+//  1. --from path/to/_bmad (the _bmad/ dir itself)
+//     manifest at: _config/manifest.yaml
+//
+//  2. --from path/to/project (project root containing _bmad/)
+//     manifest at: _bmad/_config/manifest.yaml
+//
+//  3. --from path/to/source-repo (BMAD source repo, e.g. BMAD-METHOD)
+//     version in: package.json "version" field
+//
+//  4. Non-BMAD packs: pack.yaml "version" field
 func DetectVersion(packPath string) string {
-	// Try _config/manifest.yaml (bmad format — version nested under installation:)
-	manifest := filepath.Join(packPath, "_config", "manifest.yaml")
-	data, err := os.ReadFile(manifest)
-	if err == nil {
+	if v := detectBmadManifestVersion(packPath); v != "" {
+		return v
+	}
+	if v := detectPackageJSONVersion(packPath); v != "" {
+		return v
+	}
+	if v := detectPackYamlVersion(packPath); v != "" {
+		return v
+	}
+	return "unknown"
+}
+
+// detectBmadManifestVersion checks for a BMAD _config/manifest.yaml
+// at two relative locations: as a direct child (--from points at _bmad/)
+// or nested under _bmad/ (--from points at the project root).
+func detectBmadManifestVersion(packPath string) string {
+	candidates := []string{
+		filepath.Join(packPath, "_config", "manifest.yaml"),
+		filepath.Join(packPath, "_bmad", "_config", "manifest.yaml"),
+	}
+	for _, manifest := range candidates {
+		data, err := os.ReadFile(manifest)
+		if err != nil {
+			continue
+		}
 		var m struct {
 			Version      string `yaml:"version"`
 			Installation struct {
 				Version string `yaml:"version"`
 			} `yaml:"installation"`
 		}
-		if yaml.Unmarshal(data, &m) == nil {
-			if m.Installation.Version != "" {
-				return m.Installation.Version
-			}
-			if m.Version != "" {
-				return m.Version
-			}
+		if yaml.Unmarshal(data, &m) != nil {
+			continue
 		}
-	}
-
-	// Try pack.yaml
-	packYaml := filepath.Join(packPath, "pack.yaml")
-	data, err = os.ReadFile(packYaml)
-	if err == nil {
-		var m struct {
-			Version string `yaml:"version"`
+		if m.Installation.Version != "" {
+			return m.Installation.Version
 		}
-		if yaml.Unmarshal(data, &m) == nil && m.Version != "" {
+		if m.Version != "" {
 			return m.Version
 		}
 	}
+	return ""
+}
 
-	return "unknown"
+// detectPackageJSONVersion reads version from a package.json file.
+// This handles the BMAD source repo case (e.g. BMAD-METHOD/) where
+// no _config/manifest.yaml exists — the manifest is generated during
+// installation, not present in the source.
+func detectPackageJSONVersion(packPath string) string {
+	data, err := os.ReadFile(filepath.Join(packPath, "package.json"))
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(data, &pkg) != nil {
+		return ""
+	}
+	return pkg.Version
+}
+
+// detectPackYamlVersion reads version from a pack.yaml file.
+// This handles non-BMAD packs (spectacle, custom packs, etc.)
+func detectPackYamlVersion(packPath string) string {
+	data, err := os.ReadFile(filepath.Join(packPath, "pack.yaml"))
+	if err != nil {
+		return ""
+	}
+	var m struct {
+		Version string `yaml:"version"`
+	}
+	if yaml.Unmarshal(data, &m) != nil {
+		return ""
+	}
+	return m.Version
 }
 
 // InstallFromLocal copies a pack from a local path to the sideshow directory.
