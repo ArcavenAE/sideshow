@@ -7,20 +7,108 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // InstalledPack represents a pack in the registry.
 type InstalledPack struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-	Path    string `yaml:"path"`
+	Name        string `yaml:"name"`
+	Version     string `yaml:"version"`
+	Path        string `yaml:"path"`
+	InstalledAt string `yaml:"installed_at,omitempty"`
 }
 
-// Registry tracks installed packs.
+// Registry tracks installed packs and project distributions.
 type Registry struct {
-	Packs []InstalledPack `yaml:"packs"`
+	Packs    []InstalledPack `yaml:"packs"`
+	Projects []Project       `yaml:"projects,omitempty"`
+}
+
+// Project tracks a project identified by UUID with one or more installations.
+type Project struct {
+	ID            string         `yaml:"id"`
+	Installations []Installation `yaml:"installations"`
+}
+
+// Installation is one checkout of a project at a specific path.
+type Installation struct {
+	Root     string             `yaml:"root"`
+	LastSeen string             `yaml:"last_seen"`
+	Manifest string             `yaml:"manifest"`
+	Repos    []RepoDistribution `yaml:"repos,omitempty"`
+}
+
+// RepoDistribution tracks what was distributed to a single subrepo.
+type RepoDistribution struct {
+	Name  string             `yaml:"name"`
+	Path  string             `yaml:"path"`
+	Packs []PackDistribution `yaml:"packs,omitempty"`
+}
+
+// PackDistribution tracks one pack's distribution to a repo.
+type PackDistribution struct {
+	Pack          string                `yaml:"pack"`
+	Version       string                `yaml:"version"`
+	Scope         string                `yaml:"scope"`
+	DistributedAt string                `yaml:"distributed_at"`
+	Artifacts     []DistributedArtifact `yaml:"artifacts,omitempty"`
+}
+
+// DistributedArtifact records a single artifact placed in a repo.
+type DistributedArtifact struct {
+	Type      string `yaml:"type"`                // rules, hook, claude_md, symlink, gitignore
+	Path      string `yaml:"path,omitempty"`       // file path relative to repo root
+	Checksum  string `yaml:"checksum,omitempty"`   // sha256:hex for file artifacts
+	Event     string `yaml:"event,omitempty"`      // for hook type: SessionStart, PreCompact, etc.
+	Command   string `yaml:"command,omitempty"`     // for hook type: the command string
+	SectionID string `yaml:"section_id,omitempty"` // for claude_md type
+	Target    string `yaml:"target,omitempty"`      // for symlink type: what it points to
+	Line      string `yaml:"line,omitempty"`        // for gitignore type
+}
+
+// FindProject returns the project with the given UUID, or nil.
+func (r *Registry) FindProject(id string) *Project {
+	for i := range r.Projects {
+		if r.Projects[i].ID == id {
+			return &r.Projects[i]
+		}
+	}
+	return nil
+}
+
+// FindOrCreateProject returns the project with the given UUID,
+// creating it if it doesn't exist.
+func (r *Registry) FindOrCreateProject(id string) *Project {
+	if p := r.FindProject(id); p != nil {
+		return p
+	}
+	r.Projects = append(r.Projects, Project{ID: id})
+	return &r.Projects[len(r.Projects)-1]
+}
+
+// FindInstallation returns the installation at the given root path, or nil.
+func (p *Project) FindInstallation(root string) *Installation {
+	for i := range p.Installations {
+		if p.Installations[i].Root == root {
+			return &p.Installations[i]
+		}
+	}
+	return nil
+}
+
+// FindOrCreateInstallation returns the installation at the given root,
+// creating it if it doesn't exist.
+func (p *Project) FindOrCreateInstallation(root, manifest string) *Installation {
+	if inst := p.FindInstallation(root); inst != nil {
+		return inst
+	}
+	p.Installations = append(p.Installations, Installation{
+		Root:     root,
+		Manifest: manifest,
+	})
+	return &p.Installations[len(p.Installations)-1]
 }
 
 // SideshowDir returns the sideshow data directory.
@@ -244,9 +332,10 @@ func InstallFromLocal(name, sourcePath string) error {
 		}
 	}
 	filtered = append(filtered, InstalledPack{
-		Name:    name,
-		Version: version,
-		Path:    filepath.Join(PacksDir(), name, "current"),
+		Name:        name,
+		Version:     version,
+		Path:        filepath.Join(PacksDir(), name, "current"),
+		InstalledAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	reg.Packs = filtered
 
