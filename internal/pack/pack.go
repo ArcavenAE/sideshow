@@ -58,14 +58,14 @@ type PackDistribution struct {
 
 // DistributedArtifact records a single artifact placed in a repo.
 type DistributedArtifact struct {
-	Type      string `yaml:"type"`                // rules, hook, claude_md, symlink, gitignore
+	Type      string `yaml:"type"`                 // rules, hook, claude_md, symlink, gitignore
 	Path      string `yaml:"path,omitempty"`       // file path relative to repo root
 	Checksum  string `yaml:"checksum,omitempty"`   // sha256:hex for file artifacts
 	Event     string `yaml:"event,omitempty"`      // for hook type: SessionStart, PreCompact, etc.
-	Command   string `yaml:"command,omitempty"`     // for hook type: the command string
+	Command   string `yaml:"command,omitempty"`    // for hook type: the command string
 	SectionID string `yaml:"section_id,omitempty"` // for claude_md type
-	Target    string `yaml:"target,omitempty"`      // for symlink type: what it points to
-	Line      string `yaml:"line,omitempty"`        // for gitignore type
+	Target    string `yaml:"target,omitempty"`     // for symlink type: what it points to
+	Line      string `yaml:"line,omitempty"`       // for gitignore type
 }
 
 // FindProject returns the project with the given UUID, or nil.
