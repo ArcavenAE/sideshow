@@ -92,6 +92,7 @@ func syncPack(p pack.InstalledPack, claudeDir string) (int, error) {
 			// Rewrite paths: {project-root}/_bmad/ → pack installation path
 			content := string(data)
 			content = rewritePaths(content, packPath)
+			content = appendFallbackFooter(content, packPath)
 
 			destName := filepath.Base(path)
 			destPath := filepath.Join(claudeDir, destName)
@@ -135,6 +136,7 @@ func syncPack(p pack.InstalledPack, claudeDir string) (int, error) {
 
 		content := string(data)
 		content = rewritePaths(content, packPath)
+		content = appendFallbackFooter(content, packPath)
 
 		destPath := filepath.Join(claudeDir, name)
 		if err := os.WriteFile(destPath, []byte(content), 0o644); err != nil {
@@ -178,6 +180,50 @@ func rewritePaths(content, packPath string) string {
 	content = strings.ReplaceAll(content, "\x00BMAD_OUTPUT\x00", "{project-root}/_bmad-output/")
 
 	return content
+}
+
+// appendFallbackFooter adds LLM-executable guidance at the end of a synced
+// command file so that pack-internal workflow/step files retaining literal
+// `{project-root}/_bmad/...` references can still resolve at orchestrator
+// roots that have no `_bmad/` directory.
+//
+// The top-level command file is rewritten by rewritePaths (cwd-relative
+// `{project-root}/_bmad/` → absolute pack path). Pack-internal files
+// (workflow.md, step-*.md) are not rewritten because they remain inside the
+// installed pack. The footer tells the reading LLM to resolve such
+// references via a fallback chain: cwd first, then the user-install pack
+// path below.
+//
+// The footer is idempotent: sentinel markers let Sync be re-run without
+// duplicating content.
+func appendFallbackFooter(content, packPath string) string {
+	const beginMarker = "<!-- sideshow:fallback-resolution:begin -->"
+
+	if strings.Contains(content, beginMarker) {
+		return content
+	}
+
+	const tmpl = `
+
+---
+
+<!-- sideshow:fallback-resolution:begin -->
+## Sideshow Fallback Resolution for pack-internal references
+
+Workflow files inside this pack may reference paths of the form X{project-root}/_bmad/...X. Those references are not rewritten at sync time. When you follow this command into such a file and encounter such a reference, resolve it as:
+
+1. First try X{project-root}/_bmad/...X relative to the current working directory (per-project install, if any).
+2. If that path does not exist, substitute X{project-root}/_bmad/X with the pack user-install location:
+
+   X__PACK_PATH__/X
+
+3. Per-repo paths (X{project-root}/_bmad-custom/X, X{project-root}/_bmad-output/X) stay relative to the invoking project — these are per-repo, not pack content.
+<!-- sideshow:fallback-resolution:end -->
+`
+	footer := strings.ReplaceAll(tmpl, "X", "`")
+	footer = strings.ReplaceAll(footer, "__PACK_PATH__", packPath)
+
+	return content + footer
 }
 
 // CountForPack counts command files available in a pack.

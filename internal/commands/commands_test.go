@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,39 @@ func TestRewritePaths_PreservesProjectRoot(t *testing.T) {
 	got := rewritePaths(input, "/global/packs/bmad/6.2.2")
 	if got != input {
 		t.Errorf("rewritePaths() modified project-root path:\n  got:  %q\n  want: %q", got, input)
+	}
+}
+
+func TestAppendFallbackFooter_AddsFooter(t *testing.T) {
+	input := "Some command content.\n"
+	got := appendFallbackFooter(input, "/global/packs/bmad/6.2.2")
+
+	if !strings.Contains(got, "<!-- sideshow:fallback-resolution:begin -->") {
+		t.Errorf("appendFallbackFooter did not add begin marker: %q", got)
+	}
+	if !strings.Contains(got, "<!-- sideshow:fallback-resolution:end -->") {
+		t.Errorf("appendFallbackFooter did not add end marker: %q", got)
+	}
+	if !strings.Contains(got, "/global/packs/bmad/6.2.2") {
+		t.Errorf("appendFallbackFooter did not interpolate pack path: %q", got)
+	}
+	if !strings.HasPrefix(got, input) {
+		t.Errorf("appendFallbackFooter did not preserve original content prefix")
+	}
+}
+
+func TestAppendFallbackFooter_Idempotent(t *testing.T) {
+	input := "Some command content.\n"
+	once := appendFallbackFooter(input, "/global/packs/bmad/6.2.2")
+	twice := appendFallbackFooter(once, "/global/packs/bmad/6.2.2")
+
+	if once != twice {
+		t.Errorf("appendFallbackFooter is not idempotent:\n  once: %q\n  twice: %q", once, twice)
+	}
+
+	beginCount := strings.Count(twice, "<!-- sideshow:fallback-resolution:begin -->")
+	if beginCount != 1 {
+		t.Errorf("second call added another begin marker; count=%d", beginCount)
 	}
 }
 
