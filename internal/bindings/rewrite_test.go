@@ -1,11 +1,11 @@
-package commands
+package bindings
 
 import (
 	"strings"
 	"testing"
 )
 
-func TestRewritePaths_GlobalRewrite(t *testing.T) {
+func TestRewritePaths_PackContent(t *testing.T) {
 	input := "Load from {project-root}/_bmad/bmm/agents/pm.md"
 	want := "Load from /global/packs/bmad/6.2.2/bmm/agents/pm.md"
 
@@ -39,6 +39,23 @@ func TestRewritePaths_PreservesProjectRoot(t *testing.T) {
 	}
 }
 
+func TestRewritePaths_MixedContent(t *testing.T) {
+	input := `Load {project-root}/_bmad/core/workflow.md
+Read {project-root}/_bmad-custom/config.yaml
+Write {project-root}/_bmad-output/report.md
+Check {project-root}/docs/spec.md`
+
+	want := `Load /g/core/workflow.md
+Read {project-root}/_bmad-custom/config.yaml
+Write {project-root}/_bmad-output/report.md
+Check {project-root}/docs/spec.md`
+
+	got := rewritePaths(input, "/g")
+	if got != want {
+		t.Errorf("rewritePaths() =\n  %q\nwant\n  %q", got, want)
+	}
+}
+
 func TestAppendFallbackFooter_AddsFooter(t *testing.T) {
 	input := "Some command content.\n"
 	got := appendFallbackFooter(input, "/global/packs/bmad/6.2.2")
@@ -69,22 +86,5 @@ func TestAppendFallbackFooter_Idempotent(t *testing.T) {
 	beginCount := strings.Count(twice, "<!-- sideshow:fallback-resolution:begin -->")
 	if beginCount != 1 {
 		t.Errorf("second call added another begin marker; count=%d", beginCount)
-	}
-}
-
-func TestRewritePaths_MixedContent(t *testing.T) {
-	input := `Load {project-root}/_bmad/core/workflow.md
-Read {project-root}/_bmad-custom/config.yaml
-Write {project-root}/_bmad-output/report.md
-Check {project-root}/docs/spec.md`
-
-	want := `Load /g/core/workflow.md
-Read {project-root}/_bmad-custom/config.yaml
-Write {project-root}/_bmad-output/report.md
-Check {project-root}/docs/spec.md`
-
-	got := rewritePaths(input, "/g")
-	if got != want {
-		t.Errorf("rewritePaths() =\n  %q\nwant\n  %q", got, want)
 	}
 }

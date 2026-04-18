@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcavenAE/sideshow/internal/commands"
+	"github.com/ArcavenAE/sideshow/internal/bindings"
 	"github.com/ArcavenAE/sideshow/internal/distribute"
 	sideshowinit "github.com/ArcavenAE/sideshow/internal/init"
 	"github.com/ArcavenAE/sideshow/internal/pack"
@@ -466,7 +466,7 @@ func runList() error {
 }
 
 func runCommandsSync() error {
-	return commands.Sync()
+	return bindings.Sync()
 }
 
 func runStatus() error {
@@ -482,17 +482,17 @@ func runStatus() error {
 
 	for _, p := range packs {
 		fmt.Printf("%s %s\n", p.Name, p.Version)
-		cmdCount, err := commands.CountForPack(p.Name, p.Path)
+		available, err := bindings.CountForPack(p.Name, p.Path)
 		if err != nil {
-			fmt.Printf("  commands: error: %v\n", err)
+			fmt.Printf("  available: error: %v\n", err)
 		} else {
-			fmt.Printf("  commands: %d\n", cmdCount)
+			fmt.Printf("  available: %d\n", available)
 		}
-		synced, err := commands.SyncedCount(p.Name)
+		synced, err := bindings.SyncedCount(p.Name)
 		if err != nil {
-			fmt.Printf("  synced:   error: %v\n", err)
+			fmt.Printf("  synced:    error: %v\n", err)
 		} else {
-			fmt.Printf("  synced:   %d\n", synced)
+			fmt.Printf("  synced:    %d\n", synced)
 		}
 	}
 	return nil
