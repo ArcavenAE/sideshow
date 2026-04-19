@@ -17,7 +17,15 @@ platform.
 - **orc-declared** shape: `aae-orc/sideshow.toml` at orchestrator root
   declares which subrepos get which packs at which versions.
 - Per-repo customization via `_{pack}-custom/` (checked in).
-- Per-repo output via `_{pack}-output/` (gitignored).
+- Per-repo output via `_{pack}-output/` (**checked in** — corrected
+  session-029). Previously labeled "gitignored" which conflated
+  scaffolding with deliverables. The dir holds agent-produced
+  artifacts (PRDs, stories, architectural decisions) which are the
+  project's deliverables.
+- The pack content itself (`_{pack}/`) is installed at user-scope
+  (`~/.local/share/sideshow/packs/`) and **gitignored** from consumer
+  repos. See `docs/consumer-repo-convention.md` for the full
+  check-in/gitignore table.
 - Commands synced to `~/.claude/commands/{pack}/` via idempotent
   rewrites with fallback-resolution footer (cwd-relative first, then
   user-install pack path) so slash commands work at orchestrator roots

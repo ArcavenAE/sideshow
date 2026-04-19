@@ -89,6 +89,18 @@ func main() {
 			fmt.Fprintf(os.Stderr, "unknown commands subcommand: %s\n", os.Args[2])
 			os.Exit(1)
 		}
+	case "project":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: sideshow project <subcommand>")
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "init":
+			err = runProjectInitForPack(os.Args[3:])
+		default:
+			fmt.Fprintf(os.Stderr, "unknown project subcommand: %s\n", os.Args[2])
+			os.Exit(1)
+		}
 	case "status":
 		err = runStatus()
 	case "version":
@@ -467,6 +479,102 @@ func runList() error {
 
 func runCommandsSync() error {
 	return bindings.Sync()
+}
+
+// runProjectInitForPack applies a pack's distribute manifest to the
+// current working directory — chiefly gitignore entries so consumer
+// repos don't commit sideshow-managed scaffolding.
+// Implements aae-orc-f6ei.
+func runProjectInitForPack(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: sideshow project init <pack> [--dry-run]")
+	}
+	packName := args[0]
+	dryRun := false
+	for _, a := range args[1:] {
+		if a == "--dry-run" || a == "-n" {
+			dryRun = true
+		}
+	}
+
+	// Resolve pack user-install path via the current symlink.
+	packLink := filepath.Join(pack.PacksDir(), packName, "current")
+	packRoot, err := filepath.EvalSymlinks(packLink)
+	if err != nil {
+		return fmt.Errorf("pack %s not installed at %s: run 'sideshow install %s --from <path>' first", packName, packLink, packName)
+	}
+
+	// Load pack.yaml — this is what carries consumer-repo convention.
+	packYAML, err := distribute.LoadPackYAML(packRoot)
+	if err != nil {
+		return fmt.Errorf("load pack.yaml: %w", err)
+	}
+	if packYAML == nil {
+		return fmt.Errorf("pack %s has no pack.yaml at %s — the pack does not declare a consumer-repo convention and cannot be project-init'd", packName, packRoot)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get cwd: %w", err)
+	}
+
+	fmt.Printf("Applying %s %s consumer-repo convention to %s\n", packYAML.Name, packYAML.Version, cwd)
+	if dryRun {
+		fmt.Println("(dry run — no changes written)")
+	}
+
+	// Create per-repo directories (checked in by convention).
+	customDir := filepath.Join(cwd, fmt.Sprintf("_%s-custom", packName))
+	outputDir := filepath.Join(cwd, fmt.Sprintf("_%s-output", packName))
+	for _, d := range []string{customDir, outputDir} {
+		if _, statErr := os.Stat(d); os.IsNotExist(statErr) {
+			if dryRun {
+				fmt.Printf("  would create %s/\n", filepath.Base(d))
+			} else {
+				if err := os.MkdirAll(d, 0o755); err != nil {
+					return fmt.Errorf("create %s: %w", d, err)
+				}
+				fmt.Printf("  created %s/\n", filepath.Base(d))
+			}
+		} else {
+			fmt.Printf("  %s/ already present\n", filepath.Base(d))
+		}
+	}
+
+	// Apply the distribute manifest (gitignore entries, etc.) to cwd.
+	repo := project.Subrepo{
+		Name:    filepath.Base(cwd),
+		AbsPath: cwd,
+		Present: true,
+	}
+
+	result := distribute.ToRepo(repo, &packYAML.Distribute, distribute.Options{
+		DryRun:      dryRun,
+		PackName:    packYAML.Name,
+		PackVersion: packYAML.Version,
+		PackRoot:    packRoot,
+	})
+
+	if result.Error != nil {
+		return fmt.Errorf("distribute: %w", result.Error)
+	}
+
+	wrote := 0
+	skipped := 0
+	for _, a := range result.Actions {
+		switch a.Status {
+		case "wrote", "merged":
+			wrote++
+			fmt.Printf("  %s: %s %s\n", a.Type, a.Status, a.Path)
+		case "skipped":
+			skipped++
+		case "error":
+			fmt.Fprintf(os.Stderr, "  %s: error %s: %s\n", a.Type, a.Path, a.Detail)
+		}
+	}
+
+	fmt.Printf("Done: %d wrote, %d already present\n", wrote, skipped)
+	return nil
 }
 
 func runStatus() error {
