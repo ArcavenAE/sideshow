@@ -1,25 +1,114 @@
 package pack
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // InstalledPack represents a pack in the registry.
 type InstalledPack struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-	Path    string `yaml:"path"`
+	Name        string `yaml:"name"`
+	Version     string `yaml:"version"`
+	Path        string `yaml:"path"`
+	InstalledAt string `yaml:"installed_at,omitempty"`
 }
 
-// Registry tracks installed packs.
+// Registry tracks installed packs and project distributions.
 type Registry struct {
-	Packs []InstalledPack `yaml:"packs"`
+	Packs    []InstalledPack `yaml:"packs"`
+	Projects []Project       `yaml:"projects,omitempty"`
+}
+
+// Project tracks a project identified by UUID with one or more installations.
+type Project struct {
+	ID            string         `yaml:"id"`
+	Installations []Installation `yaml:"installations"`
+}
+
+// Installation is one checkout of a project at a specific path.
+type Installation struct {
+	Root     string             `yaml:"root"`
+	LastSeen string             `yaml:"last_seen"`
+	Manifest string             `yaml:"manifest"`
+	Repos    []RepoDistribution `yaml:"repos,omitempty"`
+}
+
+// RepoDistribution tracks what was distributed to a single subrepo.
+type RepoDistribution struct {
+	Name  string             `yaml:"name"`
+	Path  string             `yaml:"path"`
+	Packs []PackDistribution `yaml:"packs,omitempty"`
+}
+
+// PackDistribution tracks one pack's distribution to a repo.
+type PackDistribution struct {
+	Pack          string                `yaml:"pack"`
+	Version       string                `yaml:"version"`
+	Scope         string                `yaml:"scope"`
+	DistributedAt string                `yaml:"distributed_at"`
+	Artifacts     []DistributedArtifact `yaml:"artifacts,omitempty"`
+}
+
+// DistributedArtifact records a single artifact placed in a repo.
+type DistributedArtifact struct {
+	Type      string `yaml:"type"`                 // rules, hook, claude_md, symlink, gitignore
+	Path      string `yaml:"path,omitempty"`       // file path relative to repo root
+	Checksum  string `yaml:"checksum,omitempty"`   // sha256:hex for file artifacts
+	Event     string `yaml:"event,omitempty"`      // for hook type: SessionStart, PreCompact, etc.
+	Command   string `yaml:"command,omitempty"`    // for hook type: the command string
+	SectionID string `yaml:"section_id,omitempty"` // for claude_md type
+	Target    string `yaml:"target,omitempty"`     // for symlink type: what it points to
+	Line      string `yaml:"line,omitempty"`       // for gitignore type
+}
+
+// FindProject returns the project with the given UUID, or nil.
+func (r *Registry) FindProject(id string) *Project {
+	for i := range r.Projects {
+		if r.Projects[i].ID == id {
+			return &r.Projects[i]
+		}
+	}
+	return nil
+}
+
+// FindOrCreateProject returns the project with the given UUID,
+// creating it if it doesn't exist.
+func (r *Registry) FindOrCreateProject(id string) *Project {
+	if p := r.FindProject(id); p != nil {
+		return p
+	}
+	r.Projects = append(r.Projects, Project{ID: id})
+	return &r.Projects[len(r.Projects)-1]
+}
+
+// FindInstallation returns the installation at the given root path, or nil.
+func (p *Project) FindInstallation(root string) *Installation {
+	for i := range p.Installations {
+		if p.Installations[i].Root == root {
+			return &p.Installations[i]
+		}
+	}
+	return nil
+}
+
+// FindOrCreateInstallation returns the installation at the given root,
+// creating it if it doesn't exist.
+func (p *Project) FindOrCreateInstallation(root, manifest string) *Installation {
+	if inst := p.FindInstallation(root); inst != nil {
+		return inst
+	}
+	p.Installations = append(p.Installations, Installation{
+		Root:     root,
+		Manifest: manifest,
+	})
+	return &p.Installations[len(p.Installations)-1]
 }
 
 // SideshowDir returns the sideshow data directory.
@@ -71,40 +160,96 @@ func (r *Registry) Save() error {
 }
 
 // DetectVersion tries to read the version from a pack's manifest.
+//
+// Supports three --from layouts:
+//
+//  1. --from path/to/_bmad (the _bmad/ dir itself)
+//     manifest at: _config/manifest.yaml
+//
+//  2. --from path/to/project (project root containing _bmad/)
+//     manifest at: _bmad/_config/manifest.yaml
+//
+//  3. --from path/to/source-repo (BMAD source repo, e.g. BMAD-METHOD)
+//     version in: package.json "version" field
+//
+//  4. Non-BMAD packs: pack.yaml "version" field
 func DetectVersion(packPath string) string {
-	// Try _config/manifest.yaml (bmad format — version nested under installation:)
-	manifest := filepath.Join(packPath, "_config", "manifest.yaml")
-	data, err := os.ReadFile(manifest)
-	if err == nil {
+	if v := detectBmadManifestVersion(packPath); v != "" {
+		return v
+	}
+	if v := detectPackageJSONVersion(packPath); v != "" {
+		return v
+	}
+	if v := detectPackYamlVersion(packPath); v != "" {
+		return v
+	}
+	return "unknown"
+}
+
+// detectBmadManifestVersion checks for a BMAD _config/manifest.yaml
+// at two relative locations: as a direct child (--from points at _bmad/)
+// or nested under _bmad/ (--from points at the project root).
+func detectBmadManifestVersion(packPath string) string {
+	candidates := []string{
+		filepath.Join(packPath, "_config", "manifest.yaml"),
+		filepath.Join(packPath, "_bmad", "_config", "manifest.yaml"),
+	}
+	for _, manifest := range candidates {
+		data, err := os.ReadFile(manifest)
+		if err != nil {
+			continue
+		}
 		var m struct {
 			Version      string `yaml:"version"`
 			Installation struct {
 				Version string `yaml:"version"`
 			} `yaml:"installation"`
 		}
-		if yaml.Unmarshal(data, &m) == nil {
-			if m.Installation.Version != "" {
-				return m.Installation.Version
-			}
-			if m.Version != "" {
-				return m.Version
-			}
+		if yaml.Unmarshal(data, &m) != nil {
+			continue
 		}
-	}
-
-	// Try pack.yaml
-	packYaml := filepath.Join(packPath, "pack.yaml")
-	data, err = os.ReadFile(packYaml)
-	if err == nil {
-		var m struct {
-			Version string `yaml:"version"`
+		if m.Installation.Version != "" {
+			return m.Installation.Version
 		}
-		if yaml.Unmarshal(data, &m) == nil && m.Version != "" {
+		if m.Version != "" {
 			return m.Version
 		}
 	}
+	return ""
+}
 
-	return "unknown"
+// detectPackageJSONVersion reads version from a package.json file.
+// This handles the BMAD source repo case (e.g. BMAD-METHOD/) where
+// no _config/manifest.yaml exists — the manifest is generated during
+// installation, not present in the source.
+func detectPackageJSONVersion(packPath string) string {
+	data, err := os.ReadFile(filepath.Join(packPath, "package.json"))
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(data, &pkg) != nil {
+		return ""
+	}
+	return pkg.Version
+}
+
+// detectPackYamlVersion reads version from a pack.yaml file.
+// This handles non-BMAD packs (spectacle, custom packs, etc.)
+func detectPackYamlVersion(packPath string) string {
+	data, err := os.ReadFile(filepath.Join(packPath, "pack.yaml"))
+	if err != nil {
+		return ""
+	}
+	var m struct {
+		Version string `yaml:"version"`
+	}
+	if yaml.Unmarshal(data, &m) != nil {
+		return ""
+	}
+	return m.Version
 }
 
 // InstallFromLocal copies a pack from a local path to the sideshow directory.
@@ -187,9 +332,10 @@ func InstallFromLocal(name, sourcePath string) error {
 		}
 	}
 	filtered = append(filtered, InstalledPack{
-		Name:    name,
-		Version: version,
-		Path:    filepath.Join(PacksDir(), name, "current"),
+		Name:        name,
+		Version:     version,
+		Path:        filepath.Join(PacksDir(), name, "current"),
+		InstalledAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	reg.Packs = filtered
 
