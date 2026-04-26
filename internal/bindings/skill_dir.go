@@ -196,28 +196,49 @@ func countSkillDirs(packPath string) int {
 }
 
 // countSyncedSkills counts skill directories currently present in
-// ~/.claude/skills/ that belong to a given pack. A skill is attributed
-// to a pack when its name starts with "<packName>-" (matches bmad-*
-// convention; future binding types may need a manifest).
-func countSyncedSkills(packName string) (int, error) {
-	dir := claudeSkillsDir()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
+// ~/.claude/skills/ that the given pack ships. Ownership is determined
+// by canonical id — the directory name under the pack's .claude/skills/.
+// This matches upstream bmad's `installed-skills.js` approach (added in
+// bmad 6.5) which reads the canonicalId set rather than relying on a
+// name prefix. Packs may ship skills with multiple prefixes (bmad ships
+// bmad-* and gds-* both); a prefix heuristic undercounts those packs.
+func countSyncedSkills(packPath string) (int, error) {
+	owned := skillCanonicalIds(packPath)
+	if len(owned) == 0 {
+		return 0, nil
 	}
 
+	dir := claudeSkillsDir()
 	count := 0
-	prefix := packName + "-"
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+	for id := range owned {
+		info, err := os.Stat(filepath.Join(dir, id))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return 0, err
 		}
-		if strings.HasPrefix(e.Name(), prefix) {
+		if info.IsDir() {
 			count++
 		}
 	}
 	return count, nil
+}
+
+// skillCanonicalIds returns the set of skill directory names (canonical
+// ids) the pack ships under .claude/skills/. Returns an empty set if the
+// pack has no skills binding.
+func skillCanonicalIds(packPath string) map[string]struct{} {
+	skillsSrc := filepath.Join(packPath, ".claude", "skills")
+	entries, err := os.ReadDir(skillsSrc)
+	if err != nil {
+		return map[string]struct{}{}
+	}
+	ids := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			ids[e.Name()] = struct{}{}
+		}
+	}
+	return ids
 }

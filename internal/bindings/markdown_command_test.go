@@ -97,3 +97,44 @@ func TestCountMarkdownCommands_Deduplicates(t *testing.T) {
 		t.Errorf("countMarkdownCommands = %d, want 2 (a and b; the root-level bmad-a.md is a duplicate basename)", count)
 	}
 }
+
+func TestCountSyncedCommands_OwnershipByBasename(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	packPath := t.TempDir()
+	// Pack ships two prefixes of commands.
+	writeFile(t, filepath.Join(packPath, "commands", "bmad-help.md"), "x")
+	writeFile(t, filepath.Join(packPath, "commands", "bmad-init.md"), "x")
+	writeFile(t, filepath.Join(packPath, "commands", "gds-quickstart.md"), "x")
+
+	cmdsDir := filepath.Join(homeDir, ".claude", "commands")
+	writeFile(t, filepath.Join(cmdsDir, "bmad-help.md"), "y")
+	writeFile(t, filepath.Join(cmdsDir, "bmad-init.md"), "y")
+	writeFile(t, filepath.Join(cmdsDir, "gds-quickstart.md"), "y")
+	// Foreign command at target — must not count.
+	writeFile(t, filepath.Join(cmdsDir, "user-authored.md"), "foreign")
+
+	got, err := countSyncedCommands(packPath)
+	if err != nil {
+		t.Fatalf("countSyncedCommands: %v", err)
+	}
+	if got != 3 {
+		t.Errorf("countSyncedCommands = %d, want 3 (multi-prefix, ignoring foreign)", got)
+	}
+}
+
+func TestCountSyncedCommands_PackHasNoCommands(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	packPath := t.TempDir()
+
+	got, err := countSyncedCommands(packPath)
+	if err != nil {
+		t.Fatalf("countSyncedCommands: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("countSyncedCommands = %d, want 0", got)
+	}
+}
