@@ -206,23 +206,54 @@ func countMarkdownCommands(packPath string) int {
 }
 
 // countSyncedCommands returns how many markdown command files for a pack
-// are present in ~/.claude/commands/.
-func countSyncedCommands(packName string) (int, error) {
-	dir := claudeCommandsDir()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
+// are present in ~/.claude/commands/. Ownership is determined by
+// the basenames the pack ships, not by name prefix — packs that ship
+// multi-prefix commands (e.g. bmad's bmad-* + gds-*) would otherwise be
+// undercounted by a "<packName>-" heuristic.
+func countSyncedCommands(packPath string) (int, error) {
+	owned := commandBasenames(packPath)
+	if len(owned) == 0 {
+		return 0, nil
 	}
 
+	dir := claudeCommandsDir()
 	count := 0
-	prefix := packName + "-"
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), prefix) && strings.HasSuffix(e.Name(), ".md") {
+	for name := range owned {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return 0, err
+		}
+		if !info.IsDir() {
 			count++
 		}
 	}
 	return count, nil
+}
+
+// commandBasenames returns the set of *.md basenames the pack ships as
+// markdown command bindings (root-level commands/ or pack-root *.md).
+func commandBasenames(packPath string) map[string]struct{} {
+	out := map[string]struct{}{}
+
+	addFrom := func(dir string) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if strings.HasSuffix(name, ".md") {
+				out[name] = struct{}{}
+			}
+		}
+	}
+
+	addFrom(filepath.Join(packPath, "commands"))
+	return out
 }

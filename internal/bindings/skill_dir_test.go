@@ -145,3 +145,84 @@ func TestSkillDirBinding_Validate_EmptySkillsDir(t *testing.T) {
 		t.Fatalf("Validate passed on empty skills dir; expected error")
 	}
 }
+
+func TestCountSyncedSkills_OwnershipByCanonicalId(t *testing.T) {
+	// HOME override isolates the test from the user's real ~/.claude/.
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	packPath := t.TempDir()
+	// Pack ships skills with TWO prefixes (mirrors bmad 6.3.0: bmad-* + gds-*).
+	writeFile(t, filepath.Join(packPath, ".claude", "skills", "bmad-help", "SKILL.md"), "x")
+	writeFile(t, filepath.Join(packPath, ".claude", "skills", "bmad-party-mode", "SKILL.md"), "x")
+	writeFile(t, filepath.Join(packPath, ".claude", "skills", "gds-create-prd", "SKILL.md"), "x")
+	writeFile(t, filepath.Join(packPath, ".claude", "skills", "gds-validate-gdd", "SKILL.md"), "x")
+
+	// Simulate a sync: every skill the pack ships is present at the target.
+	skillsDir := filepath.Join(homeDir, ".claude", "skills")
+	for _, id := range []string{"bmad-help", "bmad-party-mode", "gds-create-prd", "gds-validate-gdd"} {
+		writeFile(t, filepath.Join(skillsDir, id, "SKILL.md"), "synced")
+	}
+	// Foreign skill present at target, NOT owned by this pack.
+	writeFile(t, filepath.Join(skillsDir, "user-authored-skill", "SKILL.md"), "foreign")
+
+	got, err := countSyncedSkills(packPath)
+	if err != nil {
+		t.Fatalf("countSyncedSkills: %v", err)
+	}
+	if got != 4 {
+		t.Errorf("countSyncedSkills = %d, want 4 (multi-prefix bmad-* + gds-*, ignoring foreign)", got)
+	}
+}
+
+func TestCountSyncedSkills_PartiallySynced(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	packPath := t.TempDir()
+	for _, id := range []string{"bmad-help", "bmad-customize", "bmad-shard-doc"} {
+		writeFile(t, filepath.Join(packPath, ".claude", "skills", id, "SKILL.md"), "x")
+	}
+	// Only one of the three is in the target.
+	writeFile(t, filepath.Join(homeDir, ".claude", "skills", "bmad-help", "SKILL.md"), "ok")
+
+	got, err := countSyncedSkills(packPath)
+	if err != nil {
+		t.Fatalf("countSyncedSkills: %v", err)
+	}
+	if got != 1 {
+		t.Errorf("countSyncedSkills = %d, want 1 (only bmad-help present at target)", got)
+	}
+}
+
+func TestCountSyncedSkills_PackHasNoSkills(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	packPath := t.TempDir() // no .claude/skills/
+
+	got, err := countSyncedSkills(packPath)
+	if err != nil {
+		t.Fatalf("countSyncedSkills: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("countSyncedSkills = %d, want 0", got)
+	}
+}
+
+func TestCountSyncedSkills_TargetMissing(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	packPath := t.TempDir()
+	writeFile(t, filepath.Join(packPath, ".claude", "skills", "bmad-help", "SKILL.md"), "x")
+	// homeDir/.claude/skills doesn't exist — no sync has run.
+
+	got, err := countSyncedSkills(packPath)
+	if err != nil {
+		t.Fatalf("countSyncedSkills: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("countSyncedSkills = %d, want 0 (target dir absent)", got)
+	}
+}

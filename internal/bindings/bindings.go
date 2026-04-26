@@ -112,16 +112,27 @@ func CountForPack(_, packPath string) (int, error) {
 
 // SyncedCount returns the total number of artifacts currently synced to
 // tool-config directories for this pack across all binding types.
-func SyncedCount(packName string) (int, error) {
+// Ownership is determined by the canonical-id / basename set the pack
+// ships at packPath — not by a name prefix — so packs that ship
+// multi-prefix bindings (bmad ships bmad-* and gds-*) are accounted
+// fully. The first arg is reserved for future per-pack lookup hints
+// (e.g. a registry-stored manifest of what was actually written) and
+// is unused today; pass the pack name for forward compatibility.
+func SyncedCount(_, packPath string) (int, error) {
+	resolved, err := filepath.EvalSymlinks(packPath)
+	if err != nil {
+		return 0, err
+	}
+
 	total := 0
 
-	c, err := countSyncedCommands(packName)
+	c, err := countSyncedCommands(resolved)
 	if err != nil {
 		return 0, err
 	}
 	total += c
 
-	s, err := countSyncedSkills(packName)
+	s, err := countSyncedSkills(resolved)
 	if err != nil {
 		return 0, err
 	}

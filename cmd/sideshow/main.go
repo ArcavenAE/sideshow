@@ -607,7 +607,7 @@ func runStatus() error {
 		} else {
 			fmt.Printf("  available: %d\n", available)
 		}
-		synced, err := bindings.SyncedCount(p.Name)
+		synced, err := bindings.SyncedCount(p.Name, p.Path)
 		if err != nil {
 			fmt.Printf("  synced:    error: %v\n", err)
 		} else {
