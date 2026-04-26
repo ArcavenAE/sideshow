@@ -3,6 +3,7 @@ package pack
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -291,5 +292,106 @@ func TestInstallFromLocal(t *testing.T) {
 	}
 	if target != "1.0.0" {
 		t.Errorf("current symlink = %q, want 1.0.0", target)
+	}
+}
+
+func TestValidateShape_AcceptsBmadInstallerOutputDirectChild(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "_config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "manifest.yaml"), []byte("version: 6.3.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateShape(dir); err != nil {
+		t.Fatalf("ValidateShape rejected installer-output layout: %v", err)
+	}
+}
+
+func TestValidateShape_AcceptsBmadInstallerOutputNestedPrefix(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "_bmad", "_config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "manifest.yaml"), []byte("version: 6.3.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateShape(dir); err != nil {
+		t.Fatalf("ValidateShape rejected nested _bmad/ layout: %v", err)
+	}
+}
+
+func TestValidateShape_AcceptsSideshowNativePack(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pack.yaml"), []byte("name: foo\nversion: 1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateShape(dir); err != nil {
+		t.Fatalf("ValidateShape rejected sideshow-native pack: %v", err)
+	}
+}
+
+func TestValidateShape_RejectsUpstreamSourceTarball(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Mimic bmad-method-6.5.0.tgz extracted: package.json + src/ + tools/
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"version":"6.5.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateShape(dir)
+	if err == nil {
+		t.Fatal("ValidateShape accepted upstream source tarball; expected rejection")
+	}
+	if !strings.Contains(err.Error(), "upstream npm source tarball") {
+		t.Fatalf("expected 'upstream npm source tarball' in error, got: %v", err)
+	}
+}
+
+func TestValidateShape_RejectsUnknownLayout(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateShape(dir)
+	if err == nil {
+		t.Fatal("ValidateShape accepted unrecognized layout; expected rejection")
+	}
+	if !strings.Contains(err.Error(), "does not look like a sideshow-installable pack") {
+		t.Fatalf("expected generic 'does not look like' error, got: %v", err)
+	}
+}
+
+func TestInstallFromLocal_RejectsSourceTarballShape(t *testing.T) {
+	t.Setenv("SIDESHOW_HOME", t.TempDir())
+
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "package.json"), []byte(`{"version":"6.5.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := InstallFromLocal("bmad", source)
+	if err == nil {
+		t.Fatal("InstallFromLocal accepted upstream source tarball; expected rejection")
+	}
+	if !strings.Contains(err.Error(), "upstream npm source tarball") {
+		t.Fatalf("expected upstream-source-rejection in error, got: %v", err)
 	}
 }
