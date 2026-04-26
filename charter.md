@@ -16,7 +16,13 @@ platform.
   global/OS-wide is not a goal).
 - **orc-declared** shape: `aae-orc/sideshow.toml` at orchestrator root
   declares which subrepos get which packs at which versions.
-- Per-repo customization via `_{pack}-custom/` (checked in).
+- Per-repo customization via `_{pack}-custom/` (checked in). For packs
+  that ship an upstream customization surface at `_{pack}/custom/`
+  (bmad 6.4+), sideshow renders a symlink
+  `_{pack}/custom/ → ../_{pack}-custom/` so upstream's runtime
+  resolver and authoring skills (`bmad-customize`) write into the
+  checked-in per-repo dir transparently. See
+  [`docs/customization-bridge.md`](docs/customization-bridge.md).
 - Per-repo output via `_{pack}-output/` (**checked in** — corrected
   session-029). Previously labeled "gitignored" which conflated
   scaffolding with deliverables. The dir holds agent-produced
@@ -41,8 +47,19 @@ orc `charter.md` F24 and `_kos/nodes/frontier/question-sideshow-install-architec
 
 - **6.3.0-first.** Sideshow support targets bmad 6.3.0 and forward.
   6.2.2 is legacy; we will not build new infrastructure against it.
-  Tracked by `aae-orc-2lma` (P1) — sideshow sync for the bmad 6.3.0
-  `.claude/skills/` distribution model.
+  `aae-orc-2lma` shipped session-029 (skill-dir bindings for the 6.3.0
+  `.claude/skills/` distribution); subsequent binding work for 6.4+
+  customization tracked under the bridge entry below.
+- **Customization bridge for upstream-defined `custom/` surfaces.**
+  bmad 6.4 introduced `_bmad/custom/` TOML customization. Sideshow
+  bridges this to its per-repo `_<pack>-custom/` convention via a
+  gitignored symlink `_bmad/custom/ → ../_bmad-custom/` created at
+  project init. Customization survives version switches (lives in
+  checked-in territory). Other packs without a `custom/` sub-
+  convention are unaffected. Tracked by `aae-orc-5g9m` (this
+  boundary doc) and `aae-orc-mkpo` (implementation). Required before
+  `aae-orc-10vq` overlay spec ships. See
+  [`docs/customization-bridge.md`](docs/customization-bridge.md).
 - **Shared pack store + alternatives-style escape.** One
   `~/.local/share/sideshow/packs/` store across orchestrators; when two
   orchestrators pin different versions, fall back to the alternatives

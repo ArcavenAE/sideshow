@@ -26,14 +26,18 @@ repo.
 project-repo/                            PROJECT-SCOPE (per-repo)
 ├── _bmad-custom/                        ── CHECKED IN: overrides
 │   ├── agents/                          ──   project-specific agents
+│   ├── workflows/                       ──   per-workflow customize.toml
+│   ├── config.toml                      ──   pack-level customization
 │   └── memories/                        ──   project-specific context
 ├── _bmad-output/                        ── CHECKED IN: the project's deliverables
 │   ├── planning-artifacts/              ──   PRDs, stories, decisions
 │   └── implementation-artifacts/        ──   implementation docs
-├── _bmad/                               ── GITIGNORED: pack content
-│                                            (sideshow writes to user-scope; this
-│                                             only exists if upstream installer
-│                                             ran locally; do not commit)
+├── _bmad/                               ── GITIGNORED: sideshow scaffolding
+│   └── custom/  -> ../_bmad-custom/     ──   bridge symlink to checked-in dir
+│                                            (bmad-customize and the bmad runtime
+│                                             read/write through this symlink;
+│                                             pack content itself stays at
+│                                             user-scope)
 └── .claude/                             ── GITIGNORED: tool binding duplicates
     └── skills/bmad-*/                        (sideshow syncs user-scope; these
                                               are redundant if present)
@@ -45,7 +49,8 @@ project-repo/                            PROJECT-SCOPE (per-repo)
 |---|---|---|
 | `_<pack>-custom/`     | **Check in**  | Project-specific overrides. These ARE the project's choices. |
 | `_<pack>-output/`     | **Check in**  | Agent-produced deliverables (PRDs, stories, architecture, implementation docs). These ARE the project's output. |
-| `_<pack>/`            | **Gitignore** | Pack content lives at `~/.local/share/sideshow/packs/<pack>/<v>/`. If present in-project, it's stale from an upstream installer run — do not commit. |
+| `_<pack>/`            | **Gitignore** | Pack content lives at `~/.local/share/sideshow/packs/<pack>/<v>/`. If present in-project beyond the customization-bridge symlink, it's stale from an upstream installer run — do not commit. |
+| `_<pack>/custom/` (symlink) | **Gitignore** (the link itself; target is checked in) | Customization-bridge symlink → `../_<pack>-custom/`. Created at `sideshow project init` for packs that ship an upstream `custom/` sub-convention (bmad 6.4+). Lets upstream's `bmad-customize` skill and runtime resolver write to the checked-in per-repo dir. See [`customization-bridge.md`](customization-bridge.md). |
 | `.claude/commands/<pack>-*.md` | **Gitignore** | sideshow syncs to `~/.claude/commands/` at user-scope. Per-project duplicates conflict. |
 | `.claude/skills/<pack>-*/`     | **Gitignore** | sideshow syncs to `~/.claude/skills/` at user-scope. Per-project duplicates conflict. |
 | `sideshow.lock`       | **Check in**  | Pins the pack version the repo was last known to work against. See aae-orc-333y. |
@@ -143,4 +148,6 @@ the offline machine via rsync or similar.
 - `aae-orc-f6ei` — sideshow distributes the gitignore fragment (next).
 - `aae-orc-333y` — `sideshow.lock` for cross-user version pinning.
 - `aae-orc-d9a3` — stale-binding cleanup on pack version transition.
+- `aae-orc-5g9m` — `customization-bridge.md` (this doc's companion).
+- `aae-orc-mkpo` — bridge symlink implementation.
 - sideshow/charter.md — canonical design shapes.
