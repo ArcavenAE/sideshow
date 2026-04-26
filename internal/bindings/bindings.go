@@ -71,11 +71,23 @@ func Sync() error {
 	}
 
 	totalSynced := 0
+	totalRemoved := 0
 	for _, p := range packs {
 		bindings, err := DiscoverBindings(p)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: discover %s: %v\n", p.Name, err)
 			continue
+		}
+
+		// Process removals.txt before writing fresh bindings so stale
+		// entries from prior versions don't accumulate.
+		if resolved, rerr := filepath.EvalSymlinks(p.Path); rerr == nil {
+			if n, perr := ProcessRemovals(resolved); perr != nil {
+				fmt.Fprintf(os.Stderr, "warning: process removals %s: %v\n", p.Name, perr)
+			} else if n > 0 {
+				fmt.Printf("Removed %d stale binding(s) for %s\n", n, p.Name)
+				totalRemoved += n
+			}
 		}
 
 		for _, b := range bindings {
@@ -88,6 +100,9 @@ func Sync() error {
 		}
 	}
 
+	if totalRemoved > 0 {
+		fmt.Printf("Removed %d stale binding(s) across all packs\n", totalRemoved)
+	}
 	fmt.Printf("Synced %d artifacts across all bindings\n", totalSynced)
 	return nil
 }
