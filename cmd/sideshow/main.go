@@ -394,6 +394,7 @@ func runInstall(args []string) error {
 	autoYes := false
 	noPerms := false
 	scope := permissions.ScopeUser
+	scopeExplicit := false
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -416,6 +417,7 @@ func runInstall(args []string) error {
 				default:
 					return fmt.Errorf("unknown scope: %s (use 'user' or 'project')", args[i+1])
 				}
+				scopeExplicit = true
 				i++
 			}
 		}
@@ -429,8 +431,17 @@ func runInstall(args []string) error {
 		return err
 	}
 
-	// Configure Claude Code permissions
+	// Configure Claude Code permissions.
 	if noPerms {
+		return nil
+	}
+
+	// SIDESHOW_HOME signals a non-default data dir — typically a probe,
+	// test, or scoped install. Don't write to user-global permissions
+	// unless the caller explicitly asked for it via --scope.
+	if os.Getenv("SIDESHOW_HOME") != "" && !scopeExplicit {
+		fmt.Printf("\nSIDESHOW_HOME is set; skipping Claude Code permission configuration.\n")
+		fmt.Printf("Pass --scope user or --scope project to configure permissions explicitly.\n")
 		return nil
 	}
 

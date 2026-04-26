@@ -159,6 +159,67 @@ func (r *Registry) Save() error {
 	return os.WriteFile(RegistryPath(), data, 0o644)
 }
 
+// ValidateShape returns nil if sourcePath looks like a recognized pack
+// shape sideshow knows how to install. Two shapes are accepted today:
+//
+//  1. bmad installer output — marked by _config/manifest.yaml
+//     (the layout npx bmad-method install produces, with or without
+//     the _bmad/ prefix)
+//  2. sideshow-native pack — marked by pack.yaml at the root
+//
+// Common rejection: an upstream npm source tarball (BMAD-METHOD/
+// repo, with src/ + tools/ + package.json but no _config/manifest.yaml)
+// is NOT installable as a pack — the upstream installer must run first
+// to emit installer output. ValidateShape detects this case and returns
+// a specific error pointing at the next step.
+func ValidateShape(sourcePath string) error {
+	if hasFile(sourcePath, "_config", "manifest.yaml") ||
+		hasFile(sourcePath, "_bmad", "_config", "manifest.yaml") {
+		return nil
+	}
+	if hasFile(sourcePath, "pack.yaml") {
+		return nil
+	}
+
+	// Diagnose the most common rejection: looks like an upstream npm
+	// source tarball (e.g. tar -xzf bmad-method-6.5.0.tgz).
+	if hasFile(sourcePath, "package.json") &&
+		(hasDir(sourcePath, "src") || hasDir(sourcePath, "tools")) {
+		return fmt.Errorf(
+			"source path %q looks like an upstream npm source tarball, "+
+				"not an installable pack. Sideshow installs the OUTPUT of "+
+				"the upstream installer (which contains _config/manifest.yaml), "+
+				"not the source repo. Run the upstream installer first "+
+				"(e.g. `npx bmad-method install --output-folder /tmp/build`) "+
+				"and pass --from <build-dir>",
+			sourcePath,
+		)
+	}
+
+	return fmt.Errorf(
+		"source path %q does not look like a sideshow-installable pack: "+
+			"expected either an installer-output layout (_config/manifest.yaml) "+
+			"or a sideshow-native pack (pack.yaml at the root)",
+		sourcePath,
+	)
+}
+
+func hasFile(root string, parts ...string) bool {
+	info, err := os.Stat(filepath.Join(append([]string{root}, parts...)...))
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func hasDir(root string, name string) bool {
+	info, err := os.Stat(filepath.Join(root, name))
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}
+
 // DetectVersion tries to read the version from a pack's manifest.
 //
 // Supports three --from layouts:
@@ -267,6 +328,15 @@ func InstallFromLocal(name, sourcePath string) error {
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("source path is not a directory: %s", sourcePath)
+	}
+
+	// Validate pack shape before copying. Sideshow accepts two shapes:
+	//   - installer output (bmad-style, marked by _config/manifest.yaml)
+	//   - sideshow-native pack (marked by pack.yaml)
+	// An npm source tarball (package.json + src/ + tools/) is NOT a pack
+	// — the upstream installer must run first to produce installable output.
+	if err := ValidateShape(sourcePath); err != nil {
+		return err
 	}
 
 	// Detect version
