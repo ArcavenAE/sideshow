@@ -220,6 +220,29 @@ func hasDir(root string, name string) bool {
 	return info.IsDir()
 }
 
+// hasInstallerSiblingLayout reports whether sourcePath looks like the
+// raw output of the upstream bmad installer: an _bmad/ directory
+// containing _config/manifest.yaml plus a sibling .claude/skills/
+// directory. This is the layout `npx bmad-method install
+// --output-folder X` produces. Sideshow can ingest this directly by
+// stripping the _bmad/ prefix; without the auto-detect, users have to
+// manually restructure before running `sideshow install`.
+func hasInstallerSiblingLayout(sourcePath string) bool {
+	if !hasFile(sourcePath, "_bmad", "_config", "manifest.yaml") {
+		return false
+	}
+	if !hasDir(sourcePath, ".claude") {
+		return false
+	}
+	// Defensive: if _config/manifest.yaml ALSO exists at the root, the
+	// pack has already been unified — don't strip a prefix that isn't
+	// load-bearing.
+	if hasFile(sourcePath, "_config", "manifest.yaml") {
+		return false
+	}
+	return true
+}
+
 // DetectVersion tries to read the version from a pack's manifest.
 //
 // Supports three --from layouts:
@@ -339,6 +362,18 @@ func InstallFromLocal(name, sourcePath string) error {
 		return err
 	}
 
+	// Detect bmad installer-output sibling layout. The upstream
+	// installer (npx bmad-method install --output-folder X) writes
+	// X/_bmad/ (pack content) AND X/.claude/ (IDE bindings) as siblings.
+	// Sideshow's on-disk pack format expects content at the pack root
+	// (no _bmad/ prefix) — so when the sibling layout is detected, strip
+	// the _bmad/ prefix during copy. .claude/ stays where it is.
+	stripPrefix := ""
+	if hasInstallerSiblingLayout(sourcePath) {
+		stripPrefix = "_bmad"
+		fmt.Println("Detected bmad installer-output layout; unifying _bmad/ + .claude/ into pack root.")
+	}
+
 	// Detect version
 	version := DetectVersion(sourcePath)
 	fmt.Printf("Installing %s %s from %s\n", name, version, sourcePath)
@@ -359,6 +394,20 @@ func InstallFromLocal(name, sourcePath string) error {
 		relPath, err := filepath.Rel(sourcePath, path)
 		if err != nil {
 			return err
+		}
+
+		// Apply installer-output unification: drop the bare _bmad
+		// directory itself (we recurse into its contents) and strip
+		// the _bmad/ prefix from anything inside it. Sibling .claude/
+		// passes through unchanged.
+		if stripPrefix != "" {
+			if relPath == stripPrefix {
+				return nil
+			}
+			sep := string(os.PathSeparator)
+			if strings.HasPrefix(relPath, stripPrefix+sep) {
+				relPath = strings.TrimPrefix(relPath, stripPrefix+sep)
+			}
 		}
 
 		destPath := filepath.Join(destDir, relPath)

@@ -395,3 +395,157 @@ func TestInstallFromLocal_RejectsSourceTarballShape(t *testing.T) {
 		t.Fatalf("expected upstream-source-rejection in error, got: %v", err)
 	}
 }
+
+func TestHasInstallerSiblingLayout_Detects(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// _bmad/_config/manifest.yaml + .claude/skills sibling
+	cfg := filepath.Join(dir, "_bmad", "_config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "manifest.yaml"), []byte("version: 6.5.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".claude", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !hasInstallerSiblingLayout(dir) {
+		t.Errorf("hasInstallerSiblingLayout = false for canonical sibling layout")
+	}
+}
+
+func TestHasInstallerSiblingLayout_RequiresClaudeSibling(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "_bmad", "_config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "manifest.yaml"), []byte("version: 6.5.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// No .claude sibling — the user pointed at a project root that doesn't have IDE bindings.
+	if hasInstallerSiblingLayout(dir) {
+		t.Errorf("hasInstallerSiblingLayout = true without .claude/ sibling")
+	}
+}
+
+func TestHasInstallerSiblingLayout_AlreadyUnified(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Pack has both _bmad/_config AND _config — already unified, don't strip.
+	if err := os.MkdirAll(filepath.Join(dir, "_bmad", "_config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "_bmad", "_config", "manifest.yaml"), []byte("v"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "_config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "_config", "manifest.yaml"), []byte("v"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".claude", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if hasInstallerSiblingLayout(dir) {
+		t.Errorf("hasInstallerSiblingLayout = true for already-unified pack (would re-strip)")
+	}
+}
+
+func TestInstallFromLocal_UnifiesInstallerSiblingLayout(t *testing.T) {
+	t.Setenv("SIDESHOW_HOME", t.TempDir())
+
+	source := t.TempDir()
+	// Build a realistic upstream installer output: _bmad/_config/manifest.yaml
+	// + _bmad/core/something + _bmad/bmm/dir + .claude/skills/bmad-help/SKILL.md
+	if err := os.MkdirAll(filepath.Join(source, "_bmad", "_config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "_bmad", "_config", "manifest.yaml"),
+		[]byte("installation:\n  version: 6.5.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, "_bmad", "core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "_bmad", "core", "config.yaml"),
+		[]byte("module: core\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, ".claude", "skills", "bmad-help"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, ".claude", "skills", "bmad-help", "SKILL.md"),
+		[]byte("# bmad-help\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallFromLocal("bmad", source); err != nil {
+		t.Fatalf("InstallFromLocal: %v", err)
+	}
+
+	// Verify the installed pack has _bmad/ stripped: _config/manifest.yaml at root,
+	// core/config.yaml at root, .claude/skills/bmad-help/SKILL.md at root, and
+	// NO _bmad/ directory in the destination.
+	packRoot := filepath.Join(PacksDir(), "bmad", "6.5.0")
+
+	tests := []struct {
+		path  string
+		isDir bool
+		want  string
+	}{
+		{filepath.Join(packRoot, "_config", "manifest.yaml"), false, "installation:\n  version: 6.5.0\n"},
+		{filepath.Join(packRoot, "core", "config.yaml"), false, "module: core\n"},
+		{filepath.Join(packRoot, ".claude", "skills", "bmad-help", "SKILL.md"), false, "# bmad-help\n"},
+	}
+	for _, tc := range tests {
+		data, err := os.ReadFile(tc.path)
+		if err != nil {
+			t.Errorf("expected %s after unification: %v", tc.path, err)
+			continue
+		}
+		if string(data) != tc.want {
+			t.Errorf("%s content = %q, want %q", tc.path, data, tc.want)
+		}
+	}
+
+	// _bmad/ must not exist at the destination — the prefix was stripped.
+	if _, err := os.Stat(filepath.Join(packRoot, "_bmad")); !os.IsNotExist(err) {
+		t.Errorf("_bmad/ leaked into destination; stat err = %v", err)
+	}
+}
+
+func TestInstallFromLocal_AlreadyUnifiedPassesThrough(t *testing.T) {
+	t.Setenv("SIDESHOW_HOME", t.TempDir())
+
+	source := t.TempDir()
+	// Pack root with _config/ at top level (no _bmad/ prefix at all).
+	if err := os.MkdirAll(filepath.Join(source, "_config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "_config", "manifest.yaml"),
+		[]byte("installation:\n  version: 6.3.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, "core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "core", "config.yaml"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallFromLocal("bmad", source); err != nil {
+		t.Fatalf("InstallFromLocal: %v", err)
+	}
+
+	packRoot := filepath.Join(PacksDir(), "bmad", "6.3.0")
+	if _, err := os.Stat(filepath.Join(packRoot, "_config", "manifest.yaml")); err != nil {
+		t.Errorf("expected _config/manifest.yaml: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(packRoot, "core", "config.yaml")); err != nil {
+		t.Errorf("expected core/config.yaml: %v", err)
+	}
+}
