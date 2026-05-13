@@ -1,0 +1,54 @@
+id: question-source-material-provenance
+type: question
+confidence: frontier
+title: "How does sideshow trace upstream-source provenance through the publishing pipeline to consumed packs?"
+tags:
+  - sideshow
+  - provenance
+  - supply-chain
+  - p1-class
+content: |
+  Every artifact sideshow produces carries a signed attestation tracing
+  every upstream source material — git commits, npm shas, URLs +
+  checksums. Implemented via cosign attest + SLSA/in-toto.
+  **Load-bearing requirement, not a nice-to-have.**
+
+  The reason: see `grv-npm-installer-on-user-machines`. The user's trust
+  anchor is ArcavenAE's signed CI output, not the union of every
+  upstream-package author. The provenance chain is what makes that trust
+  inspectable: a user (or auditor, or compliance team) can walk from the
+  installed pack version back to every commit/sha that contributed to
+  it.
+
+  Tracked by `aae-orc-entu` (closed session-037 spec; ongoing
+  implementation). Blocks `aae-orc-ibil` (frozen-composition publish —
+  already shipped MVP), `aae-orc-333y` (sideshow.lock — records the
+  chain on consume side), `aae-orc-e1jj` (doctor layer 5 — consults the
+  chain when checking for known-defects).
+
+  Status: spec accepted, implementation ongoing. Promotion to bedrock
+  blocked on:
+  - Second pack going through the pipeline with a complete attestation
+    chain (bmad-v6.3.0 is the proof; VSDD or similar is the second)
+  - Auditor walks the chain end-to-end on a real pack
+
+  Open sub-questions:
+  - How deep does the chain go? Direct upstream is obvious; transitive
+    npm dependencies are not (could be thousands).
+  - When upstream rotates a tag (rare, but happens), how does the
+    chain reflect that without invalidating signatures?
+  - Verification cost — at install time, fetch and verify the full
+    chain, or sample?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: question-frozen-composition-pipeline
+    type: implements
+  - target: grv-npm-installer-on-user-machines
+    type: discovered_from
+  - target: question-sideshow-lock
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

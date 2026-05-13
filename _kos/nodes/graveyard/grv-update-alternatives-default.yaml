@@ -1,0 +1,30 @@
+id: grv-update-alternatives-default
+type: graveyard
+confidence: graveyard
+title: "update-alternatives-style side-by-side as the default install model"
+content: |
+  Considered (BMAD party-mode session-029 round 1): mirror Debian's
+  `update-alternatives` model where multiple versions of a pack coexist
+  user-side and the "active" one is selectable per-context.
+
+  Ruled out as the default: too much ceremony for the common case
+  (one orchestrator, one set of pinned versions). The shared
+  `~/.local/share/sideshow/packs/{name}/{version}/` store already
+  supports multiple versions side-by-side at the filesystem level —
+  the *resolution* layer just needs to know which one to use.
+
+  Kept as the escape hatch: when two orchestrators on the same machine
+  pin divergent versions of the same pack, fall back to alternatives-
+  style selection. Tracked by `aae-orc-59dt` (cross-orchestrator
+  precedence spec) and `question-cross-orchestrator-precedence`.
+
+  The escape hatch matters because the alternative — refuse to install
+  conflicting versions — would block multi-orchestrator users from
+  doing perfectly reasonable work.
+edges:
+  - target: question-cross-orchestrator-precedence
+    type: partially_resolves
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

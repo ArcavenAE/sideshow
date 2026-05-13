@@ -1,0 +1,56 @@
+id: question-pack-weaving-engine
+type: question
+confidence: frontier
+title: "How should sideshow implement post-install weaving — applying per-repo customizations, verification, and defect patches to an immutable pack?"
+tags:
+  - sideshow
+  - p1
+  - weaving
+content: |
+  What started in session-029 as "ship a file-ref validator" turned out
+  to be a full post-install weaving engine. Five existing per-project
+  `bmad-post-update.sh` scripts (~2500 lines of shell across ccmp, peu,
+  ftc, switchboard, project alpha) are the prior art — already
+  implementing five distinct operations:
+
+  - csv-row-append (extend a CSV manifest with project-specific rows)
+  - yaml-memories-inject (inject project memory into agent config)
+  - markdown-shim-generate (generate a thin shim doc with refs)
+  - upstream-patch (overlay-equivalent — apply a small patch to upstream)
+  - verification (post-condition checks after the others run)
+
+  The engine ships all five as declarative operations driven by
+  `_<pack>-custom/weave.yaml` + the known-defects registry (see
+  `question-immutable-base-overlays`).
+
+  Tracked by umbrella `aae-orc-a44c` (open, P1) with sub-issues:
+  - `aae-orc-n8w7` (P2) — path (a) spec + rule inventory
+  - `aae-orc-036p` (P2) — BMAD Node validator → rule inventory
+  - `aae-orc-kugb` (P2) — path (b) Go impl + CCMP port
+  - `aae-orc-ll31/8hu9/ojmn/l2w3` (P3) — port the four remaining scripts
+  - `aae-orc-hd84` (P3) — mdcheck subprocess rule-type
+
+  Engine subsumes `aae-orc-zf2a` (probe → feature) + `aae-orc-d9a3`
+  (stale-binding cleanup, absorbed into verification layer). Engine
+  feeds `aae-orc-xteh` (doctor layer 2) and consumes `aae-orc-10vq` /
+  `aae-orc-ztg5` (overlay data, known-defects).
+
+  Open sub-questions:
+  - Path (a) — declarative weave.yaml spec — or path (b) — Go-native impl
+    with CCMP as the reference port? Decision pending probe outcome.
+  - How does the engine compose with the five-layer doctor (which
+    *verifies* what weaving did)?
+  - What's the minimum useful subset to ship first?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: question-five-layer-doctor
+    type: related
+  - target: question-immutable-base-overlays
+    type: related
+  - target: elem-per-repo-customization
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

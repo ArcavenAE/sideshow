@@ -1,0 +1,57 @@
+id: question-frozen-composition-pipeline
+type: question
+confidence: frontier
+title: "How does the frozen-composition publishing pipeline produce signed multi-source pack tarballs?"
+tags:
+  - sideshow
+  - publishing
+  - cosign
+  - provenance
+content: |
+  bmad@6.3.0 is not one repository — it's a composition of five npm
+  modules from separate sources (core + bmm built-in, cis@0.1.9 +
+  gds@0.2.2 + tea@1.7.2 from separate npm packages each with their own
+  GitHub repos). Cloning BMAD-METHOD alone produces a broken install
+  because external modules aren't in that repo.
+
+  Frozen-composition publishing solves this: ArcavenAE CI runs upstream
+  installers once in a controlled runner, emits signed tarballs + SBOM +
+  pinned commit shas. Homebrew-bottle model.
+
+  **Status: MVP shipped session-037.** First release `bmad-v6.3.0`
+  published from the public `ArcavenAE/sideshow-packs` repo, signed
+  with cosign + Sigstore Rekor attestation, end-to-end verified
+  (`aae-orc-ibil` + `aae-orc-u84w` closed; see finding-037 for the
+  five workflow gotchas + workarounds).
+
+  Pipeline composition (where the work happens):
+  - CI clones each upstream source at pinned shas
+  - Runs upstream npm installer in CI sandbox (never on user machines —
+    see `grv-npm-installer-on-user-machines`)
+  - Captures installer output as the canonical pack content
+  - Emits signed tarball + cosign attest attestation (SLSA/in-toto)
+    + CycloneDX SBOM (planned, `aae-orc-a3f2`)
+  - Publishes to GitHub Releases
+
+  Why frontier rather than bedrock: the shape is shipped but the
+  *generality* across packs is not. bmad is the proof. VSDD ecosystem
+  is the next test (`aae-orc-amet`). Promotion to bedrock pending a
+  second pack going end-to-end through the same pipeline.
+
+  Open sub-questions:
+  - Per-pack pipeline customization — how much variance is too much?
+  - When does the pipeline need to fan out (per-arch / per-OS builds)?
+  - Mirror to private/public split for packs with non-redistributable
+    upstream content?
+  - When does CycloneDX SBOM become load-bearing for consumers?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: question-source-material-provenance
+    type: implements
+  - target: question-immutable-base-overlays
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

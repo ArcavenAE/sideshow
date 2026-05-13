@@ -1,0 +1,27 @@
+id: elem-command-sync
+type: element
+confidence: bedrock
+title: "commands synced to ~/.claude/commands/{pack}/ with fallback-resolution footer"
+content: |
+  Pack-provided slash commands are synced into `~/.claude/commands/{pack}/`
+  via idempotent rewrites. Each synced command file has a footer that
+  rewrites its path references: try cwd-relative first (so consumer
+  projects with their own pack dir resolve locally), then fall back to
+  the user-install pack path.
+
+  This is what makes slash commands work at orchestrator roots that have
+  no pack directory: the orchestrator can use the pack's commands
+  without having installed the pack content itself, because the synced
+  file knows where to find its support files.
+
+  Tracked work shipped: `aae-orc-zjyh` (fallback resolution), session-029.
+  Tracked work open: `aae-orc-f13j` (the Binding abstraction — `commands/`
+  is one binding, `skills/` is another, future tool integrations are
+  more).
+edges:
+  - target: question-unified-binding-abstraction
+    type: instantiates
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

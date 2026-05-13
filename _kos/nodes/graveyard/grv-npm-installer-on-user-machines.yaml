@@ -1,0 +1,34 @@
+id: grv-npm-installer-on-user-machines
+type: graveyard
+confidence: graveyard
+title: "running the npm installer on user machines"
+content: |
+  Considered: when a sideshow user runs `sideshow install bmad`, execute
+  bmad's upstream npm installer locally to materialize the pack
+  content.
+
+  Ruled out session-029 (Priya's hard rule, BMAD party-mode session 2):
+  never execute untrusted JavaScript on a user machine. The npm
+  ecosystem is a structural supply-chain liability — the same reason
+  forestage moved off TypeScript after the axios incident (see
+  `aae-orc::elem-rapid-development` and forestage's
+  `decision-language-rust`).
+
+  Resolution: npm resolution and installer execution run only in
+  controlled CI (the `ArcavenAE/sideshow-packs` pipeline). CI emits
+  signed tarballs of the resolved pack content. Sideshow on a user
+  machine fetches and verifies tarballs; it never executes upstream
+  install scripts.
+
+  This decision is load-bearing for the trust model: the user trusts
+  ArcavenAE's signed CI output, not the union of every upstream
+  npm-package author.
+edges:
+  - target: question-frozen-composition-pipeline
+    type: derives
+  - target: question-source-material-provenance
+    type: derives
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

@@ -1,0 +1,33 @@
+id: elem-user-install-shape
+type: element
+confidence: bedrock
+title: "user-install shape — content packs live in ~/.local/share/sideshow/packs/"
+content: |
+  Content packs install at user scope: `~/.local/share/sideshow/packs/{name}/{version}/`.
+  This is *not* OS-global. True global (system-wide for all users) is
+  explicitly not a goal — see `grv-global-as-user-install-name` for the
+  naming correction.
+
+  The user-install shape solves two problems:
+  - One copy per machine, not one per consumer-repo. Repos that consume a
+    pack reference the user-install path via symlinks and sync commands.
+  - Versioned side-by-side: multiple versions of a pack coexist; consumer
+    repos can pin different versions without conflict.
+
+  Consumer-repos check in `_{pack}-custom/` and `_{pack}-output/` (the
+  per-repo customization surface and the deliverable artifacts) and
+  gitignore `_{pack}/` (the pack content proper — it's already in user
+  scope). See `elem-pack-content-gitignored`.
+
+  Named "user-install" rather than "global" since session-029 correction.
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: implements
+  - target: elem-pack-content-gitignored
+    type: related
+  - target: grv-global-as-user-install-name
+    type: supersedes
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

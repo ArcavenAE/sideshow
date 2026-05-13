@@ -1,0 +1,28 @@
+id: grv-minisign-signing
+type: graveyard
+confidence: graveyard
+title: "minisign for signing pack tarballs"
+content: |
+  Considered: use minisign (Frank Denis's simple Ed25519 signing tool)
+  for signing the cosign-pipeline output tarballs.
+
+  Ruled out session-029: minisign signatures alone cannot disprove
+  backdating. For a compliance posture, the *signing time* needs to be
+  attested by a third party. That's exactly what Sigstore's Rekor
+  transparency log provides — and cosign + Rekor is the standard way to
+  get it.
+
+  Cosign is heavier than minisign (entire keyless workflow via OIDC,
+  Sigstore root of trust, transparency log queries) but the heaviness
+  is the feature: it produces the compliance artifact the signature
+  alone cannot be.
+
+  Tracked as part of `aae-orc-ibil` (shipped session-037: first
+  `bmad-v6.3.0` release end-to-end verified via cosign + Rekor).
+edges:
+  - target: question-frozen-composition-pipeline
+    type: discovered_from
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

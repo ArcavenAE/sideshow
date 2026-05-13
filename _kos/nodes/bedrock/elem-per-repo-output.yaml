@@ -1,0 +1,26 @@
+id: elem-per-repo-output
+type: element
+confidence: bedrock
+title: "per-repo output lives in checked-in _{pack}-output/"
+content: |
+  Agent-produced artifacts (PRDs, stories, architectural decisions,
+  whatever the pack's agents emit) land in `_{pack}-output/` and are
+  **checked into version control**. These are the project's
+  deliverables, not scaffolding.
+
+  Session-029 correction: an earlier version of the convention labeled
+  this directory "gitignored," which conflated scaffolding (the pack
+  content) with deliverables (the agent's outputs). The correction
+  matters because the outputs are the whole point — they're why the
+  pack exists.
+
+  Boundary: `_{pack}-output/` ≠ `_{pack}-custom/`. Output is what agents
+  produced; custom is what humans configured. Both are checked in.
+  Both survive pack version upgrades.
+edges:
+  - target: elem-per-repo-customization
+    type: sibling
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

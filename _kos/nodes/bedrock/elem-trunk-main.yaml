@@ -1,0 +1,28 @@
+id: elem-trunk-main
+type: element
+confidence: bedrock
+title: "sideshow uses trunk main — gitflow deferred"
+content: |
+  Sideshow is on trunk `main` — no `develop` branch, no alpha/stable
+  release tracks. This is a deliberate hold: gitflow gets adopted when
+  the distribution story (cosign-signed binaries + GitHub Releases +
+  Homebrew tap) ships and there are *users* who need a distinction
+  between integration work and release-ready code.
+
+  Forestage, switchboard, and ThreeDoors went through this transition
+  (see orc bedrock `B11: Gitflow for Distributable Components`). Sideshow
+  hasn't crossed that threshold yet — distribution channel doesn't
+  exist for the binary itself. The packs *do* have distribution
+  (`ArcavenAE/sideshow-packs` with cosign signatures and Rekor
+  attestations, see `aae-orc-ibil` closed session-037), but that's a
+  separate repo with its own release pipeline.
+
+  When sideshow ships its first signed binary release: revisit and
+  likely adopt the same gitflow pattern.
+edges:
+  - target: aae-orc::elem-rapid-development
+    type: derives
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

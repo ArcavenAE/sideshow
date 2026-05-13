@@ -1,0 +1,31 @@
+id: elem-per-repo-customization
+type: element
+confidence: bedrock
+title: "per-repo customization lives in checked-in _{pack}-custom/"
+content: |
+  Consumer repos check in `_{pack}-custom/` directories for per-repo
+  overrides and additions. For example, a project using the bmad pack
+  has `_bmad-custom/` checked into its repo. Customization is the
+  project's own work product and belongs in version control.
+
+  For packs whose *upstream* defines its own customization surface (e.g.,
+  bmad 6.4+ ships `_bmad/custom/` TOML files with the `bmad-customize`
+  authoring skill), sideshow renders a gitignored symlink
+  `_bmad/custom/ → ../_bmad-custom/`. The upstream's runtime resolver
+  and authoring tools write into the checked-in territory transparently.
+
+  See `docs/customization-bridge.md` for the full boundary doc
+  (`aae-orc-5g9m`, closed session-037). The symlink rendering is tracked
+  by `aae-orc-mkpo` (implementation, open).
+
+  This shape survives version switches: replacing `_{pack}/` (gitignored
+  user-install link) does not touch `_{pack}-custom/`.
+edges:
+  - target: question-customization-bridge
+    type: related
+  - target: elem-pack-content-gitignored
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

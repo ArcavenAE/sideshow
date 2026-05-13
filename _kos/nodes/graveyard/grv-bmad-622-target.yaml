@@ -1,0 +1,28 @@
+id: grv-bmad-622-target
+type: graveyard
+confidence: graveyard
+title: "build sideshow infrastructure against bmad 6.2.2"
+content: |
+  Considered: build sideshow's install + audit features targeting bmad
+  6.2.2 (the version that was current when sideshow's design was
+  consolidating in session-029).
+
+  Ruled out session-029: 6.2.2 is legacy; 6.3.0 introduced
+  `.claude/skills/` distribution, which is structurally different from
+  6.2.2's `.claude/commands/` distribution. Building new infrastructure
+  against the legacy shape would mean building it twice.
+
+  6.3.0 is the floor. 6.2.2 may be operationally supported for existing
+  installs but no new sideshow feature work targets it.
+
+  Subsequent evidence — finding-025 (bmad 6.3.0 install probe), finding-027
+  (end-to-end), finding-035 (bmad 6.4/6.5 readiness) — confirmed the
+  shape of the migration cost: 2600+ file ops between 6.2.2 and 6.3.0,
+  re-issue not overlay (the migration is structural, not patch-level).
+edges:
+  - target: question-frozen-composition-pipeline
+    type: derives
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

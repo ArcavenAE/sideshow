@@ -1,0 +1,28 @@
+id: elem-pack-content-gitignored
+type: element
+confidence: bedrock
+title: "pack content (_{pack}/) is gitignored from consumer repos"
+content: |
+  The pack content itself — `_{pack}/` in a consumer repo — is installed
+  at user scope at `~/.local/share/sideshow/packs/{name}/{version}/` and
+  the consumer-repo directory is gitignored. The repo never carries the
+  pack's source-of-truth; it carries only references to it.
+
+  This is what makes the user-install shape work: one copy per machine,
+  many consuming repos, no source-of-truth duplication. See
+  `docs/consumer-repo-convention.md` for the full check-in/gitignore
+  table including command sync, output, custom, and binding dirs.
+
+  When `_{pack}/custom/` exists (bmad 6.4+ upstream customization
+  surface), sideshow renders that path as a symlink to
+  `../_{pack}-custom/`, which is the checked-in territory. See
+  `elem-per-repo-customization`.
+edges:
+  - target: elem-user-install-shape
+    type: related
+  - target: elem-per-repo-customization
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

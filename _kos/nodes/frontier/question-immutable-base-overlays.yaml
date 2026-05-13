@@ -1,0 +1,54 @@
+id: question-immutable-base-overlays
+type: question
+confidence: frontier
+title: "How do we retroactively correct published packs without mutating signed artifacts?"
+tags:
+  - sideshow
+  - overlays
+  - provenance
+content: |
+  Once a pack tarball is signed and published, it must never mutate.
+  Mutation breaks signature verification, breaks reproducibility, and
+  invalidates the Sigstore Rekor attestation that proves *when* signing
+  happened.
+
+  Session-029 round 4 settled the shape: **immutable base + signed
+  overlays + re-issue**.
+
+  - **Base** — the signed tarball at a specific version. Frozen.
+  - **Overlay** — a separately-signed patch artifact that declares
+    `applies_to: <base-sha>` and `corrects: <defect-id>`. Applied at
+    install time, beside the base; lockfile records the chain (base
+    sha + applied overlay shas = fully reproducible state).
+  - **Re-issue** — when the correction is structural (the 6.2.2 → 6.3.0
+    case, with 2600+ file ops per finding-025), publish a new version.
+    Overlays are for point-release defects, not migrations.
+
+  Never auto-applied. `sideshow apply-overlay <id>` is explicit human/
+  orc action.
+
+  Tracked by `aae-orc-10vq` (overlay artifact spec, P2 open) and
+  `aae-orc-ztg5` (known-defects registry — the feed of "what overlays
+  exist, what they correct"). Together with the five-layer doctor's
+  layer 5 (`aae-orc-e1jj`) and the apply command (`aae-orc-be7i`),
+  this is the full retroactive-correction story.
+
+  Open sub-questions:
+  - Overlay format — sub-archive with its own manifest, or a diff-style
+    patch? Probably the former (declarative file replacements/additions).
+  - How does an overlay declare which files it touches without being
+    a literal diff (which would couple it to the base's file layout)?
+  - When two overlays exist for the same base, ordering?
+  - At what point does accumulated overlay debt force a re-issue
+    instead of another overlay?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: question-source-material-provenance
+    type: related
+  - target: question-five-layer-doctor
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

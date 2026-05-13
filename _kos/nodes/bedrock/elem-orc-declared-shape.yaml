@@ -1,0 +1,30 @@
+id: elem-orc-declared-shape
+type: element
+confidence: bedrock
+title: "orc-declared shape — sideshow.toml at orchestrator root pins subrepo pack versions"
+content: |
+  An orchestrator declares which subrepos get which packs at which
+  versions via `sideshow.toml` at the orc root. This is the
+  fleet-level mapping: orchestrator → {subrepo: {pack: version}}.
+
+  Distinct from `pack.yaml` (which describes a single pack) and from
+  the user-install store (which holds pack content). `sideshow.toml`
+  is the *intent* document; user-install + per-repo bridges are the
+  *result* of applying that intent.
+
+  Rationale: a fleet of subrepos under one orchestrator share an
+  opinionated configuration. Declaring it once at the top removes
+  per-subrepo drift. Spec tracked at `aae-orc-76sh`.
+
+  Distinct again from `sideshow.lock` (see `question-sideshow-lock`)
+  which is the *resolved* state — what versions were actually installed
+  with what checksums.
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: implements
+  - target: question-sideshow-lock
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

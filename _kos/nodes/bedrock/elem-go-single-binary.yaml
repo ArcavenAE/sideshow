@@ -1,0 +1,24 @@
+id: elem-go-single-binary
+type: element
+confidence: bedrock
+title: "sideshow ships as a Go single binary"
+content: |
+  Sideshow is a Go CLI compiled to a single static binary. Distribution is
+  via GitHub Releases + a Homebrew tap (publishing pipeline lives in the
+  separate `ArcavenAE/sideshow-packs` repo for the *packs*; the sideshow
+  binary itself uses standard Go release tooling).
+
+  Go is the chosen language for the install + audit control plane because
+  marvel and switchboard are also Go and the platform's compiled-language
+  ecosystem stays coherent. The tradeoffs against Rust (forestage's choice
+  per its `decision-language-rust`) were considered and rejected for this
+  layer: sideshow's hot path is filesystem + checksum work where Go's GC
+  and concurrency primitives are well-suited and the binary-size penalty
+  is unimportant.
+edges:
+  - target: aae-orc::elem-byoa-platform
+    type: implements
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

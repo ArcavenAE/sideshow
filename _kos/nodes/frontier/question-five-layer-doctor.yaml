@@ -1,0 +1,52 @@
+id: question-five-layer-doctor
+type: question
+confidence: frontier
+title: "What does the five-layer sideshow doctor check, and in what order?"
+tags:
+  - sideshow
+  - p1
+  - doctor
+content: |
+  Sideshow doctor is the integrity surface — what's installed, is it
+  what was declared, is it healthy. Session-029 scoped it to five
+  layers:
+
+  1. **sideshow-native integrity** — installed packs match their
+     manifests (checksums, file lists). Authoritative test.
+  2. **pack-declared validation** — deferred to probe. Each pack
+     declares its own validation rules (`pack.yaml validate:`); doctor
+     invokes them. Tracked by `aae-orc-zf2a` (now subsumed into the
+     weaving engine `aae-orc-a44c`).
+  3. **cwd discoverability** — warn-only. From the current directory,
+     can a consuming agent find the commands/skills it expects?
+     Lightweight, frequently wrong-positive, intentionally non-fatal.
+  4. **fleet drift vs lockfile** — `sideshow.lock` (see
+     `question-sideshow-lock`) says version X, on-disk is version Y.
+     CI gate via `sideshow lock --check`.
+  5. **known-defects check** — consult the ArcavenAE-maintained
+     known-defects registry (`aae-orc-ztg5`). If an installed pack
+     version has a known defect with a published overlay, surface it.
+
+  Tracked by `aae-orc-xteh` (P1, open). Layer 5 is dependent on
+  `aae-orc-e1jj` (the known-defects feed format) + `aae-orc-ztg5`
+  (the registry itself).
+
+  Open sub-questions:
+  - Layer 2 spec separately or fold into the weaving engine?
+  - When should layer 3 escalate from warn to error?
+  - How does doctor present its output — single rollup or per-layer?
+  - Is there a sixth layer worth adding (e.g., cross-orchestrator
+    drift detection per `aae-orc-59dt`)?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: question-sideshow-lock
+    type: depends-on
+  - target: question-pack-weaving-engine
+    type: related
+  - target: question-immutable-base-overlays
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

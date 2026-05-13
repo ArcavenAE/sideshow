@@ -1,0 +1,47 @@
+id: question-unified-binding-abstraction
+type: question
+confidence: frontier
+title: "What does the unified Binding abstraction look like — commands, skills, future bindings as one interface?"
+tags:
+  - sideshow
+  - binding
+  - abstraction
+content: |
+  `.claude/commands/` (the bmad 6.2.2-era distribution surface) and
+  `.claude/skills/` (the bmad 6.3.0-era surface) are concrete instances
+  of the same abstract concept: a packaged interface a pack publishes
+  for a consuming agent tool.
+
+  Other future bindings:
+  - Cursor rules
+  - Windsurf integrations
+  - aider config
+  - Curated variants per `aae-orc-oy8c`
+
+  All of these are "rendering the same pack semantically into the
+  surface a specific tool expects." That's a Binding.
+
+  Tracked by `aae-orc-f13j` (Binding abstraction, P2). Closed
+  session-037 in the sense that the abstraction exists and skill-dir
+  bindings ship; promotion to bedrock-equivalent pending the Cursor/
+  Windsurf/aider extension surfaces.
+
+  Status: largely resolved. Promotion to bedrock blocked on:
+  - Second non-Claude binding implemented (Cursor or Windsurf)
+  - Pack authors writing against the Binding interface, not against
+    `.claude/commands/` or `.claude/skills/` directly
+
+  Open sub-questions:
+  - What's the minimal Binding interface (fetch, render, sync)?
+  - How does a Binding declare its target tool's expected layout?
+  - When two bindings reference overlapping commands, how does the
+    pack's source-of-truth deduplicate?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: elem-command-sync
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

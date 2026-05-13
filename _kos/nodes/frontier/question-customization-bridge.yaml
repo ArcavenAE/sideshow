@@ -1,0 +1,53 @@
+id: question-customization-bridge
+type: question
+confidence: frontier
+title: "How does sideshow bridge between upstream-defined custom/ surfaces and checked-in _{pack}-custom/?"
+tags:
+  - sideshow
+  - customization
+  - bmad-65
+content: |
+  bmad 6.4 introduced `_bmad/custom/` as the upstream-defined per-project
+  customization surface, with TOML files and an authoring skill
+  (`bmad-customize`). The upstream's runtime resolver expects to find
+  customization at that path.
+
+  Sideshow's own per-repo customization lives at `_{pack}-custom/`
+  (checked-in territory, see `elem-per-repo-customization`). Two
+  customization conventions, one customization need — the bridge
+  collapses them into a single surface.
+
+  Resolution: at project init, render a gitignored symlink
+  `_bmad/custom/ → ../_bmad-custom/`. The upstream's runtime and
+  authoring skills write transparently into checked-in territory.
+  Customization survives version switches (`_bmad/` may be replaced;
+  `_bmad-custom/` does not move).
+
+  Tracked: `aae-orc-mkpo` (implementation, open). Boundary doc shipped
+  in `aae-orc-5g9m` (closed session-037) — see
+  `docs/customization-bridge.md` in the sideshow repo.
+
+  This blocks `aae-orc-10vq` (overlay spec) — overlays may need to
+  interact with the customization surface, and the boundary has to be
+  decided first.
+
+  Open sub-questions:
+  - What about packs that have no upstream `custom/` convention?
+    Probably nothing — the `_{pack}-custom/` shape is already
+    sufficient; no symlink needed.
+  - What about packs whose upstream changes the customization surface
+    structurally (6.4 → 6.5+)? Re-render the symlink, or assume
+    customization is portable?
+  - Does the symlink need any sideshow-side validation, or is it
+    inherently fragile in a Git checkout?
+edges:
+  - target: aae-orc::question-bmad-65-sideshow-readiness
+    type: related
+  - target: elem-per-repo-customization
+    type: implements
+  - target: question-immutable-base-overlays
+    type: blocks
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

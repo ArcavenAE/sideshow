@@ -1,0 +1,46 @@
+id: question-sideshow-lock
+type: question
+confidence: frontier
+title: "What's the contract for sideshow.lock — resolved-state versioning at orc root?"
+tags:
+  - sideshow
+  - lockfile
+content: |
+  `sideshow.lock` is the *resolved* state document that pairs with
+  `sideshow.toml` (the intent document, see `elem-orc-declared-shape`).
+  TOML format, Cargo-model precedence: lockfile wins at install time;
+  `sideshow update` is the only path that regenerates it.
+
+  Tracked by `aae-orc-333y` (P2, open).
+
+  Contents (committed shape):
+  - For each (subrepo, pack): version, source-tarball checksum, source-
+    material commit shas, applied overlay shas (if any).
+  - Top-level schema_version (per `aae-orc-xe7l`).
+
+  Used by:
+  - `sideshow install` — verifies on-disk state matches lock; refuses
+    to install a version different from lock unless explicitly updating.
+  - `sideshow lock --check` — CI gate. Compares lock to declared intent;
+    fails if they diverged without an explicit update commit.
+  - Doctor layer 4 — fleet drift detection.
+
+  Open sub-questions:
+  - Lockfile per-orchestrator or per-machine? The shape above is
+    per-orc. Per-machine would handle multi-orc precedence (see
+    `question-cross-orchestrator-precedence`) but adds coordination.
+  - What does lock look like for packs with overlays applied? Each
+    overlay is a SHA on the base; lock records the chain.
+  - How does the lock format track the customization-bridge symlink
+    state, if at all?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: elem-orc-declared-shape
+    type: implements
+  - target: question-immutable-base-overlays
+    type: depends-on
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

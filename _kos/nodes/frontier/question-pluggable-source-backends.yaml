@@ -1,0 +1,47 @@
+id: question-pluggable-source-backends
+type: question
+confidence: frontier
+title: "How does sideshow abstract pack-source backends — typed install.source rather than raw URL?"
+tags:
+  - sideshow
+  - source-backends
+  - extensibility
+content: |
+  `pack.yaml install.source` is a typed backend reference, not a raw
+  URL. Backends:
+
+  - GitHub Releases (default — what sideshow-packs publishes today)
+  - git-clone-at-sha (for packs that don't ship release tarballs)
+  - apt-style signed index (CDN-fronted, large-fleet distribution)
+  - CDN object storage (S3/R2/etc. with cosign verification)
+  - Claude plugin marketplace (when/if Anthropic ships one)
+
+  Plugin interface (three methods):
+  - `fetch(spec) → tarball` — pull the pack content
+  - `verify(tarball, attestation) → bool` — confirm signatures
+  - `listAvailable(name) → [version]` — for `sideshow update` to know
+    what's out there
+
+  Tracked by `aae-orc-mezl` (P2 open). Blocks `aae-orc-h07h` (pack.yaml
+  install: contract spec).
+
+  Open sub-questions:
+  - Backend selection — automatic from URL shape, or explicit in
+    `pack.yaml`? Probably explicit, since the same URL can map to
+    multiple backends (e.g., GitHub Releases vs git-clone of the same
+    repo at a tag).
+  - How does the plugin interface authenticate (private repos, signed
+    indices)?
+  - Plugin distribution — first-party in the sideshow binary, or
+    sideshow plugins loaded from `~/.local/share/sideshow/plugins/`?
+  - What's the version compatibility story between sideshow versions
+    and plugin versions?
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: question-frozen-composition-pipeline
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"

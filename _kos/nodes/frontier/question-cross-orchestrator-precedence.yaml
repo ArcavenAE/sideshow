@@ -1,0 +1,47 @@
+id: question-cross-orchestrator-precedence
+type: question
+confidence: frontier
+title: "How does sideshow resolve precedence when multiple orchestrators on one machine pin divergent pack versions?"
+tags:
+  - sideshow
+  - precedence
+  - alternatives
+content: |
+  Default behavior: shared user-install store
+  (`~/.local/share/sideshow/packs/`) means any orchestrator's
+  declared pinning shows up in the store. As long as orchestrators
+  pin the same version, there's no conflict.
+
+  When two orchestrators on one machine pin *different* versions of
+  the same pack:
+  - Both versions are already in the store (filesystem supports
+    multiple versions side-by-side).
+  - The question is *which* version is active for any given
+    invocation.
+
+  Resolution: fall back to alternatives-style selection — see
+  `grv-update-alternatives-default` for why this is escape hatch,
+  not default. Spec tracked by `aae-orc-59dt` (P3 open).
+
+  Open sub-questions:
+  - Selection by what? cwd-locating the orchestrator that owns the
+    current shell? Explicit per-shell env var? `sideshow.toml`
+    declares which orchestrator wins by default?
+  - When commands are synced to `~/.claude/commands/{pack}/` (a
+    user-scoped location), how do they distinguish between
+    orchestrators that pin different versions? Fallback footer (see
+    `elem-command-sync`) is cwd-aware — that may be sufficient.
+  - Should sideshow refuse to install conflicting versions and
+    require explicit `--allow-divergent`? Probably not — would block
+    perfectly reasonable multi-orc work.
+edges:
+  - target: aae-orc::question-sideshow-install-architecture
+    type: derives
+  - target: grv-update-alternatives-default
+    type: discovered_from
+  - target: elem-user-install-shape
+    type: related
+provenance:
+  created_by: human
+  session: session-049
+  created_at: "2026-05-13"
