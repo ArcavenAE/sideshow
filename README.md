@@ -122,12 +122,52 @@ sideshow is pack-agnostic. Any content that follows the pattern
 
 ## Installation
 
-```bash
-# From source
-go install github.com/ArcavenAE/sideshow/cmd/sideshow@latest
+### Option 1: Homebrew (macOS/Linux)
 
-# Homebrew (when releases are available)
+```bash
 brew install arcavenae/tap/sideshow
+```
+
+The tap formula currently tracks the latest alpha build; a first stable release is pending.
+
+### Option 2: Install with mise
+
+[mise](https://mise.jdx.dev/) is a polyglot version manager. It reads a per-project `mise.toml`, pulls the exact signed binary from GitHub Releases, and verifies GitHub Artifact Attestations natively — no Homebrew tap required.
+
+**Stable:**
+
+```bash
+mise use github:ArcavenAE/sideshow@latest
+sideshow version
+```
+
+Note: a first stable (`v*`) release is pending — until then, this command reports "no versions found". Use the alpha channel below to install from source releases.
+
+**Alpha channel** (prereleases from `main`) — add `prerelease = true` to opt in per-tool. Sideshow's alpha binaries are not `-a`-suffixed, so stable and alpha share the `sideshow` shim name (they cannot be installed side-by-side under mise; the alpha channel replaces the stable channel per-project):
+
+```toml
+# mise.toml
+[tools]
+"github:ArcavenAE/sideshow" = { version = "latest", prerelease = true }
+```
+
+```bash
+mise install
+sideshow version
+```
+
+**macOS troubleshooting** — mise downloads over HTTP libraries that do not set `com.apple.quarantine`, so notarized binaries launch without a Gatekeeper prompt in the common case. If a quarantine-aware host (some IDEs, launchers, or file-manager copies) propagates the xattr into the mise install, clear it once:
+
+```bash
+xattr -d com.apple.quarantine "$(mise which sideshow)"
+```
+
+**Platform note** — sideshow's release pipeline currently builds `darwin/amd64`, `darwin/arm64`, and `linux/amd64`. `linux/arm64` is not yet published; mise will report no matching asset on that platform.
+
+### Option 3: Install from source
+
+```bash
+go install github.com/ArcavenAE/sideshow/cmd/sideshow@latest
 ```
 
 ## Usage
