@@ -91,6 +91,11 @@ func ToRepo(repo project.Subrepo, manifest *Manifest, opts Options) Result {
 		result.Actions = append(result.Actions, action)
 	}
 
+	if manifest.CustomBridge != nil {
+		actions := distributeCustomBridge(repo.AbsPath, *manifest.CustomBridge, opts)
+		result.Actions = append(result.Actions, actions...)
+	}
+
 	for _, line := range manifest.Gitignore {
 		action := distributeGitignore(repo.AbsPath, line, opts)
 		result.Actions = append(result.Actions, action)
@@ -522,6 +527,83 @@ func distributeSymlink(repoRoot string, link SymlinkArtifact, opts Options) Acti
 		Target: link.Target,
 	}
 	return action
+}
+
+// distributeCustomBridge wires the per-repo customization bridge:
+// a checked-in customization dir (per_repo_dir) reachable through a
+// symlink at upstream_path inside the gitignored pack shim dir, so
+// upstream customization tooling (e.g. bmad-customize) writes into
+// tracked territory that survives pack version switches.
+// See docs/customization-bridge.md.
+//
+// Safety: never touches existing customization content; symlink
+// conflicts (regular file, wrong target) are reported not repaired.
+func distributeCustomBridge(repoRoot string, bridge CustomBridgeArtifact, opts Options) []Action {
+	upstream := filepath.Clean(bridge.UpstreamPath)
+	perRepo := filepath.Clean(bridge.PerRepoDir)
+	shimDir := filepath.Dir(upstream)
+
+	if filepath.IsAbs(upstream) || filepath.IsAbs(perRepo) ||
+		strings.HasPrefix(upstream, "..") || strings.HasPrefix(perRepo, "..") ||
+		upstream == "." || perRepo == "." || shimDir == "." {
+		return []Action{{
+			Type:   "custom_bridge",
+			Path:   bridge.UpstreamPath,
+			Status: "error",
+			Detail: "invalid custom_bridge paths: upstream_path and per_repo_dir must be relative, inside the repo, and upstream_path must have a parent shim dir",
+		}}
+	}
+
+	relTarget, err := filepath.Rel(shimDir, perRepo)
+	if err != nil {
+		return []Action{{
+			Type:   "custom_bridge",
+			Path:   bridge.UpstreamPath,
+			Status: "error",
+			Detail: fmt.Sprintf("resolve symlink target: %v", err),
+		}}
+	}
+
+	var actions []Action
+
+	// 1. Per-repo customization dir (checked in). Create with .gitkeep
+	// if absent; existing content is the user's data — never touched.
+	perRepoAbs := filepath.Join(repoRoot, perRepo)
+	dirAction := Action{Type: "custom_bridge", Path: perRepo + "/"}
+	if _, statErr := os.Stat(perRepoAbs); statErr == nil {
+		dirAction.Status = "skipped"
+		dirAction.Detail = "per-repo customization dir already exists (left untouched)"
+	} else if !os.IsNotExist(statErr) {
+		dirAction.Status = "error"
+		dirAction.Detail = fmt.Sprintf("stat %s: %v", perRepo, statErr)
+	} else if opts.DryRun {
+		dirAction.Status = "wrote"
+		dirAction.Detail = "would create per-repo customization dir (+ .gitkeep)"
+	} else if mkErr := os.MkdirAll(perRepoAbs, 0o755); mkErr != nil {
+		dirAction.Status = "error"
+		dirAction.Detail = fmt.Sprintf("create dir: %v", mkErr)
+	} else if wErr := os.WriteFile(filepath.Join(perRepoAbs, ".gitkeep"), nil, 0o644); wErr != nil {
+		dirAction.Status = "error"
+		dirAction.Detail = fmt.Sprintf("write .gitkeep: %v", wErr)
+	} else {
+		dirAction.Status = "wrote"
+		dirAction.Detail = "created per-repo customization dir (+ .gitkeep)"
+	}
+	actions = append(actions, dirAction)
+
+	// 2. Bridge symlink (creates the shim dir as its parent). Reuses the
+	// symlink primitive's conflict semantics: wrong target or regular
+	// file at the path is reported, never replaced.
+	actions = append(actions, distributeSymlink(repoRoot, SymlinkArtifact{
+		Path:   upstream,
+		Target: relTarget,
+	}, opts))
+
+	// 3. Gitignore the shim dir. Idempotent append; packs that already
+	// declare the same line in distribute.gitignore dedupe here.
+	actions = append(actions, distributeGitignore(repoRoot, "/"+shimDir+"/", opts))
+
+	return actions
 }
 
 // distributeGitignore appends a line to .gitignore if missing.

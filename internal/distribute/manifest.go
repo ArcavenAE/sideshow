@@ -17,11 +17,24 @@ import (
 
 // Manifest is the distribute section of a pack.yaml.
 type Manifest struct {
-	Rules     []RuleArtifact     `yaml:"rules,omitempty"`
-	Hooks     []HookArtifact     `yaml:"hooks,omitempty"`
-	ClaudeMD  []ClaudeMDArtifact `yaml:"claude_md,omitempty"`
-	Symlinks  []SymlinkArtifact  `yaml:"symlinks,omitempty"`
-	Gitignore []string           `yaml:"gitignore,omitempty"`
+	Rules        []RuleArtifact        `yaml:"rules,omitempty"`
+	Hooks        []HookArtifact        `yaml:"hooks,omitempty"`
+	ClaudeMD     []ClaudeMDArtifact    `yaml:"claude_md,omitempty"`
+	Symlinks     []SymlinkArtifact     `yaml:"symlinks,omitempty"`
+	Gitignore    []string              `yaml:"gitignore,omitempty"`
+	CustomBridge *CustomBridgeArtifact `yaml:"custom_bridge,omitempty"`
+}
+
+// CustomBridgeArtifact declares the customization bridge for packs whose
+// upstream runtime reads a custom/ sub-directory inside the gitignored
+// pack shim dir (e.g. bmad 6.4+ reads _bmad/custom/). The bridge symlinks
+// that path into the checked-in per-repo customization dir so upstream
+// customization writes land in tracked territory and survive pack version
+// switches. Packs without a custom_bridge declaration get no bridge.
+// See docs/customization-bridge.md.
+type CustomBridgeArtifact struct {
+	UpstreamPath string `yaml:"upstream_path"` // e.g. _bmad/custom (relative to repo root)
+	PerRepoDir   string `yaml:"per_repo_dir"`  // e.g. _bmad-custom (relative to repo root)
 }
 
 // RuleArtifact is a file to copy into .claude/rules/.
@@ -79,5 +92,6 @@ func (m *Manifest) IsEmpty() bool {
 		len(m.Hooks) == 0 &&
 		len(m.ClaudeMD) == 0 &&
 		len(m.Symlinks) == 0 &&
-		len(m.Gitignore) == 0
+		len(m.Gitignore) == 0 &&
+		m.CustomBridge == nil
 }

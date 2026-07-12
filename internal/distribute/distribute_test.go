@@ -624,3 +624,193 @@ func TestManifest_IsEmpty(t *testing.T) {
 		t.Error("manifest with rules should not be empty")
 	}
 }
+
+// --- Custom bridge tests ---
+
+func bmadBridge() CustomBridgeArtifact {
+	return CustomBridgeArtifact{
+		UpstreamPath: "_bmad/custom",
+		PerRepoDir:   "_bmad-custom",
+	}
+}
+
+func TestCustomBridge_FreshRepo(t *testing.T) {
+	t.Parallel()
+	repoRoot := t.TempDir()
+
+	actions := distributeCustomBridge(repoRoot, bmadBridge(), defaultOpts(t.TempDir()))
+	if len(actions) != 3 {
+		t.Fatalf("actions = %d, want 3", len(actions))
+	}
+	for _, a := range actions {
+		if a.Status != "wrote" {
+			t.Errorf("action %s/%s status = %q (%s), want wrote", a.Type, a.Path, a.Status, a.Detail)
+		}
+	}
+
+	// Per-repo dir exists with .gitkeep
+	if _, err := os.Stat(filepath.Join(repoRoot, "_bmad-custom", ".gitkeep")); err != nil {
+		t.Errorf("_bmad-custom/.gitkeep missing: %v", err)
+	}
+
+	// Symlink resolves: a write through _bmad/custom/ lands in _bmad-custom/
+	throughLink := filepath.Join(repoRoot, "_bmad", "custom", "agents.toml")
+	if err := os.WriteFile(throughLink, []byte("x = 1\n"), 0o644); err != nil {
+		t.Fatalf("write through bridge symlink: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "_bmad-custom", "agents.toml")); err != nil {
+		t.Errorf("write through symlink did not land in _bmad-custom: %v", err)
+	}
+
+	// Gitignore carries the shim dir
+	gi, err := os.ReadFile(filepath.Join(repoRoot, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(gi), "/_bmad/") {
+		t.Errorf(".gitignore missing /_bmad/ line, got %q", string(gi))
+	}
+}
+
+func TestCustomBridge_Idempotent(t *testing.T) {
+	t.Parallel()
+	repoRoot := t.TempDir()
+	opts := defaultOpts(t.TempDir())
+
+	distributeCustomBridge(repoRoot, bmadBridge(), opts)
+	second := distributeCustomBridge(repoRoot, bmadBridge(), opts)
+
+	for _, a := range second {
+		if a.Status != "skipped" {
+			t.Errorf("second run action %s/%s status = %q (%s), want skipped", a.Type, a.Path, a.Status, a.Detail)
+		}
+	}
+}
+
+func TestCustomBridge_PreservesExistingCustomization(t *testing.T) {
+	t.Parallel()
+	repoRoot := t.TempDir()
+
+	// Pre-existing customization content
+	customDir := filepath.Join(repoRoot, "_bmad-custom")
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(customDir, "agents.toml"), []byte("keep = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	actions := distributeCustomBridge(repoRoot, bmadBridge(), defaultOpts(t.TempDir()))
+	if actions[0].Status != "skipped" {
+		t.Errorf("per-repo dir action status = %q, want skipped", actions[0].Status)
+	}
+
+	data, err := os.ReadFile(filepath.Join(customDir, "agents.toml"))
+	if err != nil || string(data) != "keep = true\n" {
+		t.Errorf("existing customization modified: %q, %v", string(data), err)
+	}
+	if _, err := os.Stat(filepath.Join(customDir, ".gitkeep")); !os.IsNotExist(err) {
+		t.Error(".gitkeep should not be added to a pre-existing customization dir")
+	}
+}
+
+func TestCustomBridge_ConflictAtSymlinkPath(t *testing.T) {
+	t.Parallel()
+	repoRoot := t.TempDir()
+
+	// A real directory occupies the bridge path (e.g. upstream installer
+	// materialized _bmad/custom/ before sideshow ran).
+	if err := os.MkdirAll(filepath.Join(repoRoot, "_bmad", "custom"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	actions := distributeCustomBridge(repoRoot, bmadBridge(), defaultOpts(t.TempDir()))
+	var symlinkAction *Action
+	for i := range actions {
+		if actions[i].Type == "symlink" {
+			symlinkAction = &actions[i]
+		}
+	}
+	if symlinkAction == nil {
+		t.Fatal("no symlink action emitted")
+	}
+	if symlinkAction.Status != "conflict" {
+		t.Errorf("symlink action status = %q (%s), want conflict", symlinkAction.Status, symlinkAction.Detail)
+	}
+}
+
+func TestCustomBridge_DryRun(t *testing.T) {
+	t.Parallel()
+	repoRoot := t.TempDir()
+	opts := defaultOpts(t.TempDir())
+	opts.DryRun = true
+
+	actions := distributeCustomBridge(repoRoot, bmadBridge(), opts)
+	for _, a := range actions {
+		if a.Status != "wrote" {
+			t.Errorf("dry-run action %s/%s status = %q, want wrote", a.Type, a.Path, a.Status)
+		}
+	}
+
+	// Nothing on disk
+	for _, p := range []string{"_bmad", "_bmad-custom", ".gitignore"} {
+		if _, err := os.Stat(filepath.Join(repoRoot, p)); !os.IsNotExist(err) {
+			t.Errorf("dry-run created %s", p)
+		}
+	}
+}
+
+func TestCustomBridge_InvalidPaths(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		bridge CustomBridgeArtifact
+	}{
+		{"absolute upstream", CustomBridgeArtifact{UpstreamPath: "/etc/bmad/custom", PerRepoDir: "_bmad-custom"}},
+		{"absolute per-repo", CustomBridgeArtifact{UpstreamPath: "_bmad/custom", PerRepoDir: "/tmp/custom"}},
+		{"escaping upstream", CustomBridgeArtifact{UpstreamPath: "../outside/custom", PerRepoDir: "_bmad-custom"}},
+		{"escaping per-repo", CustomBridgeArtifact{UpstreamPath: "_bmad/custom", PerRepoDir: "../outside"}},
+		{"no shim parent", CustomBridgeArtifact{UpstreamPath: "custom", PerRepoDir: "_bmad-custom"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			repoRoot := t.TempDir()
+			actions := distributeCustomBridge(repoRoot, tc.bridge, defaultOpts(t.TempDir()))
+			if len(actions) != 1 || actions[0].Status != "error" {
+				t.Errorf("actions = %+v, want single error action", actions)
+			}
+		})
+	}
+}
+
+func TestLoadPackYAML_CustomBridge(t *testing.T) {
+	t.Parallel()
+	packRoot := t.TempDir()
+	yaml := `name: bmad
+version: 6.4.0
+distribute:
+  custom_bridge:
+    upstream_path: _bmad/custom
+    per_repo_dir: _bmad-custom
+`
+	if err := os.WriteFile(filepath.Join(packRoot, "pack.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := LoadPackYAML(packRoot)
+	if err != nil {
+		t.Fatalf("LoadPackYAML: %v", err)
+	}
+	if p.Distribute.CustomBridge == nil {
+		t.Fatal("CustomBridge not parsed")
+	}
+	if p.Distribute.CustomBridge.UpstreamPath != "_bmad/custom" ||
+		p.Distribute.CustomBridge.PerRepoDir != "_bmad-custom" {
+		t.Errorf("CustomBridge = %+v", *p.Distribute.CustomBridge)
+	}
+	if p.Distribute.IsEmpty() {
+		t.Error("manifest with custom_bridge should not be IsEmpty")
+	}
+}
