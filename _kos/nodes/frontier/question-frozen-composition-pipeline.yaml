@@ -8,11 +8,17 @@ tags:
   - cosign
   - provenance
 content: |
-  bmad@6.3.0 is not one repository — it's a composition of five npm
-  modules from separate sources (core + bmm built-in, cis@0.1.9 +
-  gds@0.2.2 + tea@1.7.2 from separate npm packages each with their own
-  GitHub repos). Cloning BMAD-METHOD alone produces a broken install
-  because external modules aren't in that repo.
+  bmad@6.3.0 is not one repository — it's a composition of modules
+  from separate sources (core + bmm built-in; cis/gds/tea/bmb/wds
+  external). Cloning BMAD-METHOD alone produces a broken install
+  because external modules aren't in that repo. CORRECTION
+  (finding-070, 2026-07-12): external modules are GIT-CLONED from
+  their GitHub repos by the installer, not npm-installed — the
+  npmPackage field in upstream metadata is metadata only. At 6.3.x
+  they clone default-branch HEAD (no pin mechanism: 6.3.0 bundles are
+  permanently build-time-recorded, not rebuild-reproducible); at
+  6.4.0+ the installer resolves the highest stable git tag unless
+  --pin CODE=TAG is passed.
 
   Frozen-composition publishing solves this: ArcavenAE CI runs upstream
   installers once in a controlled runner, emits signed tarballs + SBOM +
@@ -33,10 +39,24 @@ content: |
     + CycloneDX SBOM (planned, `aae-orc-a3f2`)
   - Publishes to GitHub Releases
 
+  **Scale + determinism validated 2026-07-12 (findings 070-072):**
+  the full stable ladder 6.3.0-6.10.0 built with zero per-version
+  pipeline changes; as-of-release-date pinning shipped (per module,
+  highest pure-semver tag dated <= the bmad npm publish date, passed
+  as --pin, verified post-install since upstream silently ignores
+  malformed pins; pin_policy/as_of_date/requested_pins + per-module
+  SHAs recorded in install.meta.json). Nine releases published with
+  per-rung compositions (bmb everywhere, wds at 6.7.0+; bmad-loop and
+  automator excluded). Consumer manual fetch+verify validated E2E
+  (sha256 + cosign verify-blob against a published release). The
+  pack-support register + check-support.sh gate refuse versions
+  outside the validated bracket (orc elem-pack-support-register).
+
   Why frontier rather than bedrock: the shape is shipped but the
   *generality* across packs is not. bmad is the proof. VSDD ecosystem
-  is the next test (`aae-orc-amet`). Promotion to bedrock pending a
-  second pack going end-to-end through the same pipeline.
+  is the next test (`aae-orc-amet`, draft register + skippy
+  validation in flight). Promotion to bedrock pending a second pack
+  going end-to-end through the same pipeline.
 
   Open sub-questions:
   - Per-pack pipeline customization — how much variance is too much?

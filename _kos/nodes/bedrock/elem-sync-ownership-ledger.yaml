@@ -1,0 +1,52 @@
+id: elem-sync-ownership-ledger
+type: element
+confidence: bedrock
+title: "sync-manifest ownership ledger: reconciling sync makes activation flips honest"
+tags:
+  - sideshow
+  - bindings
+  - activation
+content: |
+  `commands sync` writes an ownership ledger (sync-manifest.yaml
+  beside packs/ in the sideshow data dir) recording every artifact it
+  writes: pack, version, binding kind, destination path. The next
+  sync removes recorded artifacts no longer owned by any active
+  binding — so flipping the active version no longer strands the
+  outgoing version's extra skills as a mixed-version chimera.
+
+  Safety properties (test-covered): only manifest-recorded paths
+  inside the binding target dirs (~/.claude/commands, ~/.claude/
+  skills) are ever removed; pre-manifest strays and user-authored
+  artifacts are never touched (never delete what sideshow didn't
+  record writing).
+
+  Shipped alongside as one activation-honesty surface (PR #48):
+  - `sideshow use <pack> <version>` — validate installed, flip
+    current, update registry, reconciling re-sync
+  - `install --no-activate` — installing is no longer silently
+    activating (first install of a pack still activates)
+  - `list` reads the store: every installed version shown, active
+    marked (non-active versions are no longer invisible)
+
+  Empirical validation against real packs (the finding-072 repro):
+  the 6.10.0 -> 6.3.0 flip that previously stranded 11 mixed-version
+  skills reports "Removed 11 stale artifact(s)" with final state
+  exactly the active version's set.
+
+  The ledger is also the substrate for cross-pack collision detection
+  (aae-orc-em8e: warn when a write targets a path recorded to a
+  different pack) and the future .tool-versions-style per-scope
+  activation resolution (aae-orc-76sh) driving `use` per project.
+edges:
+  - target: question-unified-binding-abstraction
+    type: instantiates
+  - target: question-five-layer-doctor
+    type: supports
+  - target: elem-command-sync
+    type: derives
+provenance:
+  created_by: claude
+  session: session-2026-07-12
+  created_at: "2026-07-12"
+  evidence:
+    - aae-orc:_kos/findings/finding-072-tandem-install-activation-chain.md

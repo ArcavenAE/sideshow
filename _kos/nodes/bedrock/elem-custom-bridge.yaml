@@ -1,0 +1,61 @@
+id: elem-custom-bridge
+type: element
+confidence: bedrock
+title: "custom_bridge: declaration-driven symlink from upstream custom/ surface into checked-in _{pack}-custom/"
+tags:
+  - sideshow
+  - customization
+  - bmad-65
+content: |
+  A pack opts into the customization bridge by declaring it in
+  pack.yaml:
+
+    distribute:
+      custom_bridge:
+        upstream_path: _bmad/custom
+        per_repo_dir: _bmad-custom
+
+  Distribution (`sideshow init --scope project`, `sideshow project
+  init <pack>`) then: creates the checked-in per-repo dir (seeded from
+  the pack's shipped custom/ template when one exists — bmad 6.4+'s
+  four-file TOML scaffold — else a .gitkeep); symlinks
+  `upstream_path -> ../per_repo_dir` with refuse-on-conflict semantics
+  (regular file or wrong-target symlink is reported, never replaced);
+  gitignores the shim dir. Existing customization content is never
+  touched. Idempotent.
+
+  Declaration-driven, not version-sniffed: packs without the key get
+  no bridge, so pre-6.4 and 6.4+ bmad packs coexist under one code
+  path. Version-awareness concentrates at pack-build time (the
+  producer decides what to declare); the consumer side is
+  version-agnostic. The bridge symlink targets the repo-level
+  customization dir, so customization survives `sideshow use` flips
+  in BOTH directions.
+
+  Answers the open sub-questions from the originating frontier
+  question: packs without an upstream custom/ convention simply don't
+  declare (no symlink, no bridge); upstream structural changes are
+  absorbed by changing the declaration in newer bundles; symlink
+  validation lands with doctor (aae-orc-xteh) and cross-pack binding
+  ownership (aae-orc-em8e).
+
+  Shipped: PR #47 (impl + 7 tests) + PR #48 (template seeding);
+  producer declaration emitted for all bmad bundles by
+  sideshow-packs build-bmad.sh. E2E validated against a real
+  installed bmad 6.10.0: creation, idempotent re-run, write-through
+  (card at _bmad/custom/agents/ lands in _bmad-custom/agents/).
+  Closed: aae-orc-mkpo, aae-orc-5g9m (boundary doc).
+edges:
+  - target: question-customization-bridge
+    type: partially_resolves
+  - target: elem-per-repo-customization
+    type: implements
+  - target: question-immutable-base-overlays
+    type: supports
+provenance:
+  created_by: claude
+  session: session-2026-07-12
+  created_at: "2026-07-12"
+  evidence:
+    - aae-orc:_kos/findings/finding-072-tandem-install-activation-chain.md
+    - sideshow:docs/customization-bridge.md

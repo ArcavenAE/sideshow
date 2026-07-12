@@ -23,23 +23,22 @@ content: |
   Customization survives version switches (`_bmad/` may be replaced;
   `_bmad-custom/` does not move).
 
-  Tracked: `aae-orc-mkpo` (implementation, open). Boundary doc shipped
-  in `aae-orc-5g9m` (closed session-037) — see
-  `docs/customization-bridge.md` in the sideshow repo.
+  **RESOLVED 2026-07-12 → elem-custom-bridge.** Implementation shipped
+  (sideshow PR #47 + template seeding in PR #48; `aae-orc-mkpo`
+  closed), E2E validated against a real installed bmad 6.10.0
+  (creation, idempotency, write-through — aae-orc finding-072).
+  Boundary doc `docs/customization-bridge.md` graduated into the
+  bedrock element. `aae-orc-10vq` (overlay spec) is unblocked.
 
-  This blocks `aae-orc-10vq` (overlay spec) — overlays may need to
-  interact with the customization surface, and the boundary has to be
-  decided first.
-
-  Open sub-questions:
-  - What about packs that have no upstream `custom/` convention?
-    Probably nothing — the `_{pack}-custom/` shape is already
-    sufficient; no symlink needed.
-  - What about packs whose upstream changes the customization surface
-    structurally (6.4 → 6.5+)? Re-render the symlink, or assume
-    customization is portable?
-  - Does the symlink need any sideshow-side validation, or is it
-    inherently fragile in a Git checkout?
+  The open sub-questions resolved as:
+  - Packs without an upstream custom/ convention: no `custom_bridge`
+    declaration → no bridge; `_{pack}-custom/` alone suffices.
+  - Upstream structural changes: absorbed at pack-build time by
+    changing the declaration in newer bundles (declaration-driven,
+    not version-sniffed).
+  - Symlink validation: doctor (`aae-orc-xteh`) + cross-pack binding
+    ownership (`aae-orc-em8e`) own detection; refuse-on-conflict
+    semantics protect at creation time.
 edges:
   - target: aae-orc::question-bmad-65-sideshow-readiness
     type: supports
