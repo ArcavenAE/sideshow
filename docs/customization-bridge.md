@@ -1,8 +1,13 @@
 # Customization Bridge — `_<pack>-custom/` ↔ upstream `_<pack>/custom/`
 
-**Status:** committed direction (boundary doc). Implementation tracked
-in `aae-orc-mkpo`. Charter overlay-spec work (`aae-orc-10vq`) depends
-on this resolution.
+**Status:** implemented (consumer side) — `custom_bridge` declaration in
+pack.yaml's `distribute` section, applied by `sideshow init --scope
+project` via `internal/distribute`. Producer side emits the declaration
+in sideshow-packs `build-bmad.sh`. End-to-end validation against a real
+bmad 6.4+ install (bmad-customize round-trip + version-switch survival)
+still pending before bedrock promotion — see "Why the bridge isn't
+bedrock yet" below. `aae-orc-mkpo`. Charter overlay-spec work
+(`aae-orc-10vq`) depends on this resolution.
 
 ## The collision
 
