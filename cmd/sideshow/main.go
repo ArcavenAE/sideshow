@@ -108,7 +108,7 @@ func main() {
 		}
 	case "status":
 		err = runStatus()
-	case "version":
+	case "version", "--version", "-V":
 		fmt.Printf("sideshow %s\n", version)
 	case "help", "--help", "-h":
 		usage()
