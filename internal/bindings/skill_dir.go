@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -128,6 +129,19 @@ func shouldRewrite(path string) bool {
 		return true
 	}
 	return false
+}
+
+// Artifacts returns the destination skill directories this binding owns
+// — one per skill dir the pack ships, mirroring exactly what Sync writes.
+func (b *SkillDirBinding) Artifacts() ([]string, error) {
+	dst := claudeSkillsDir()
+	ids := skillCanonicalIds(b.packPath)
+	out := make([]string, 0, len(ids))
+	for id := range ids {
+		out = append(out, filepath.Join(dst, id))
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // Validate checks that the pack's .claude/skills/ directory contains at

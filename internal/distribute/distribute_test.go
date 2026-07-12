@@ -814,3 +814,46 @@ distribute:
 		t.Error("manifest with custom_bridge should not be IsEmpty")
 	}
 }
+
+func TestCustomBridge_SeedsPackCustomTemplate(t *testing.T) {
+	t.Parallel()
+	repoRoot := t.TempDir()
+	packRoot := t.TempDir()
+
+	// Pack ships a custom/ template (bmad 6.4+ four-file scaffold shape).
+	tplDir := filepath.Join(packRoot, "custom")
+	if err := os.MkdirAll(tplDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"config.toml":      "[agents]\n",
+		"config.user.toml": "# user overrides\n",
+	} {
+		if err := os.WriteFile(filepath.Join(tplDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	opts := defaultOpts(packRoot)
+	actions := distributeCustomBridge(repoRoot, bmadBridge(), opts)
+	if actions[0].Status != "wrote" {
+		t.Fatalf("dir action = %q (%s), want wrote", actions[0].Status, actions[0].Detail)
+	}
+	if !strings.Contains(actions[0].Detail, "seeded") {
+		t.Errorf("dir action detail = %q, want seeded mention", actions[0].Detail)
+	}
+
+	// Template files landed; no .gitkeep when seeded.
+	if _, err := os.Stat(filepath.Join(repoRoot, "_bmad-custom", "config.toml")); err != nil {
+		t.Errorf("seeded config.toml missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "_bmad-custom", ".gitkeep")); !os.IsNotExist(err) {
+		t.Error(".gitkeep should not be written when template seeds the dir")
+	}
+
+	// Existing customization is still never touched on a second pass.
+	second := distributeCustomBridge(repoRoot, bmadBridge(), opts)
+	if second[0].Status != "skipped" {
+		t.Errorf("second pass dir action = %q, want skipped", second[0].Status)
+	}
+}

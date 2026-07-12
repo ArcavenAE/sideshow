@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -115,6 +116,55 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 	})
 
 	return synced, walkErr
+}
+
+// Artifacts returns the destination command files this binding owns,
+// mirroring Sync's two passes: every .md under commands/ (by basename)
+// plus bmad-*.md anywhere else in the pack.
+func (b *MarkdownCommandBinding) Artifacts() ([]string, error) {
+	claudeDir := claudeCommandsDir()
+	seen := map[string]struct{}{}
+	var out []string
+
+	commandsSubdir := filepath.Join(b.packPath, "commands")
+	if info, err := os.Stat(commandsSubdir); err == nil && info.IsDir() {
+		_ = filepath.WalkDir(commandsSubdir, func(path string, d fs.DirEntry, werr error) error {
+			if werr != nil || d.IsDir() {
+				return werr
+			}
+			if !strings.HasSuffix(path, ".md") {
+				return nil
+			}
+			base := filepath.Base(path)
+			if _, ok := seen[base]; !ok {
+				seen[base] = struct{}{}
+				out = append(out, filepath.Join(claudeDir, base))
+			}
+			return nil
+		})
+	}
+
+	_ = filepath.WalkDir(b.packPath, func(path string, d fs.DirEntry, werr error) error {
+		if werr != nil || d.IsDir() {
+			return werr
+		}
+		name := filepath.Base(path)
+		if !strings.HasPrefix(name, "bmad-") || !strings.HasSuffix(name, ".md") {
+			return nil
+		}
+		rel, _ := filepath.Rel(b.packPath, path)
+		if strings.HasPrefix(rel, "commands/") {
+			return nil
+		}
+		if _, ok := seen[name]; !ok {
+			seen[name] = struct{}{}
+			out = append(out, filepath.Join(claudeDir, name))
+		}
+		return nil
+	})
+
+	sort.Strings(out)
+	return out, nil
 }
 
 // Validate checks the binding's pack path exists. Content-level validation

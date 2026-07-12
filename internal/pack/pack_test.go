@@ -258,7 +258,7 @@ func TestInstallFromLocal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := InstallFromLocal("testpack", src); err != nil {
+	if err := InstallFromLocal("testpack", src, true); err != nil {
 		t.Fatalf("InstallFromLocal() error: %v", err)
 	}
 
@@ -387,7 +387,7 @@ func TestInstallFromLocal_RejectsSourceTarballShape(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := InstallFromLocal("bmad", source)
+	err := InstallFromLocal("bmad", source, true)
 	if err == nil {
 		t.Fatal("InstallFromLocal accepted upstream source tarball; expected rejection")
 	}
@@ -483,7 +483,7 @@ func TestInstallFromLocal_UnifiesInstallerSiblingLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := InstallFromLocal("bmad", source); err != nil {
+	if err := InstallFromLocal("bmad", source, true); err != nil {
 		t.Fatalf("InstallFromLocal: %v", err)
 	}
 
@@ -537,7 +537,7 @@ func TestInstallFromLocal_AlreadyUnifiedPassesThrough(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := InstallFromLocal("bmad", source); err != nil {
+	if err := InstallFromLocal("bmad", source, true); err != nil {
 		t.Fatalf("InstallFromLocal: %v", err)
 	}
 

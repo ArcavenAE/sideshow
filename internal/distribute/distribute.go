@@ -566,9 +566,12 @@ func distributeCustomBridge(repoRoot string, bridge CustomBridgeArtifact, opts O
 
 	var actions []Action
 
-	// 1. Per-repo customization dir (checked in). Create with .gitkeep
-	// if absent; existing content is the user's data — never touched.
+	// 1. Per-repo customization dir (checked in). Create if absent —
+	// seeded from the pack's custom/ template when the pack ships one
+	// (bmad 6.4+ ships the four-file TOML scaffold), .gitkeep otherwise.
+	// Existing content is the user's data — never touched.
 	perRepoAbs := filepath.Join(repoRoot, perRepo)
+	templateDir := filepath.Join(opts.PackRoot, "custom")
 	dirAction := Action{Type: "custom_bridge", Path: perRepo + "/"}
 	if _, statErr := os.Stat(perRepoAbs); statErr == nil {
 		dirAction.Status = "skipped"
@@ -578,10 +581,20 @@ func distributeCustomBridge(repoRoot string, bridge CustomBridgeArtifact, opts O
 		dirAction.Detail = fmt.Sprintf("stat %s: %v", perRepo, statErr)
 	} else if opts.DryRun {
 		dirAction.Status = "wrote"
-		dirAction.Detail = "would create per-repo customization dir (+ .gitkeep)"
+		if hasTemplateContent(templateDir) {
+			dirAction.Detail = "would create per-repo customization dir (seeded from pack custom/ template)"
+		} else {
+			dirAction.Detail = "would create per-repo customization dir (+ .gitkeep)"
+		}
 	} else if mkErr := os.MkdirAll(perRepoAbs, 0o755); mkErr != nil {
 		dirAction.Status = "error"
 		dirAction.Detail = fmt.Sprintf("create dir: %v", mkErr)
+	} else if seeded, seedErr := seedCustomTemplate(templateDir, perRepoAbs); seedErr != nil {
+		dirAction.Status = "error"
+		dirAction.Detail = fmt.Sprintf("seed from pack custom/ template: %v", seedErr)
+	} else if seeded > 0 {
+		dirAction.Status = "wrote"
+		dirAction.Detail = fmt.Sprintf("created per-repo customization dir (seeded %d file(s) from pack custom/ template)", seeded)
 	} else if wErr := os.WriteFile(filepath.Join(perRepoAbs, ".gitkeep"), nil, 0o644); wErr != nil {
 		dirAction.Status = "error"
 		dirAction.Detail = fmt.Sprintf("write .gitkeep: %v", wErr)
@@ -604,6 +617,46 @@ func distributeCustomBridge(repoRoot string, bridge CustomBridgeArtifact, opts O
 	actions = append(actions, distributeGitignore(repoRoot, "/"+shimDir+"/", opts))
 
 	return actions
+}
+
+// hasTemplateContent reports whether a pack ships a non-empty custom/
+// template directory.
+func hasTemplateContent(templateDir string) bool {
+	entries, err := os.ReadDir(templateDir)
+	return err == nil && len(entries) > 0
+}
+
+// seedCustomTemplate copies the pack's custom/ template tree into the
+// freshly created per-repo customization dir. Returns the number of
+// files copied; (0, nil) when the pack ships no template.
+func seedCustomTemplate(templateDir, destDir string) (int, error) {
+	if !hasTemplateContent(templateDir) {
+		return 0, nil
+	}
+	count := 0
+	err := filepath.WalkDir(templateDir, func(path string, d os.DirEntry, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		rel, relErr := filepath.Rel(templateDir, path)
+		if relErr != nil {
+			return relErr
+		}
+		target := filepath.Join(destDir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if writeErr := os.WriteFile(target, data, 0o644); writeErr != nil {
+			return writeErr
+		}
+		count++
+		return nil
+	})
+	return count, err
 }
 
 // distributeGitignore appends a line to .gitignore if missing.
