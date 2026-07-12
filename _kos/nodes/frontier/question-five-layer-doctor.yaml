@@ -41,11 +41,11 @@ edges:
   - target: aae-orc::question-sideshow-install-architecture
     type: derives
   - target: question-sideshow-lock
-    type: depends-on
+    type: derives
   - target: question-pack-weaving-engine
-    type: related
+    type: supports
   - target: question-immutable-base-overlays
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049

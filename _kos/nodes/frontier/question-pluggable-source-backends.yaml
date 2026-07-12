@@ -40,7 +40,7 @@ edges:
   - target: aae-orc::question-sideshow-install-architecture
     type: derives
   - target: question-frozen-composition-pipeline
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049

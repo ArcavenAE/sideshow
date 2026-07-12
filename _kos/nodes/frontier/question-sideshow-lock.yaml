@@ -39,7 +39,7 @@ edges:
   - target: elem-orc-declared-shape
     type: implements
   - target: question-immutable-base-overlays
-    type: depends-on
+    type: derives
 provenance:
   created_by: human
   session: session-049

@@ -24,7 +24,7 @@ edges:
   - target: aae-orc::question-sideshow-install-architecture
     type: implements
   - target: elem-pack-content-gitignored
-    type: related
+    type: supports
   - target: grv-global-as-user-install-name
     type: supersedes
 provenance:

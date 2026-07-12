@@ -47,7 +47,7 @@ edges:
   - target: grv-npm-installer-on-user-machines
     type: discovered_from
   - target: question-sideshow-lock
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049
