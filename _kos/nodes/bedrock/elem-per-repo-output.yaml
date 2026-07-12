@@ -19,7 +19,7 @@ content: |
   Both survive pack version upgrades.
 edges:
   - target: elem-per-repo-customization
-    type: sibling
+    type: supports
 provenance:
   created_by: human
   session: session-049

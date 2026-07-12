@@ -40,7 +40,7 @@ edges:
   - target: grv-update-alternatives-default
     type: discovered_from
   - target: elem-user-install-shape
-    type: related
+    type: derives
 provenance:
   created_by: human
   session: session-049

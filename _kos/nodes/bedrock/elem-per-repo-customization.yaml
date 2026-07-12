@@ -22,9 +22,9 @@ content: |
   user-install link) does not touch `_{pack}-custom/`.
 edges:
   - target: question-customization-bridge
-    type: related
+    type: supports
   - target: elem-pack-content-gitignored
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049

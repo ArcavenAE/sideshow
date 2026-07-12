@@ -23,7 +23,7 @@ edges:
   - target: aae-orc::question-sideshow-install-architecture
     type: implements
   - target: question-sideshow-lock
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049

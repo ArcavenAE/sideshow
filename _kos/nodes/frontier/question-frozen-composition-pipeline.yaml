@@ -50,7 +50,7 @@ edges:
   - target: question-source-material-provenance
     type: implements
   - target: question-immutable-base-overlays
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049

@@ -42,12 +42,14 @@ content: |
   - At what point does accumulated overlay debt force a re-issue
     instead of another overlay?
 edges:
+  - target: question-customization-bridge
+    type: derives
   - target: aae-orc::question-sideshow-install-architecture
     type: derives
   - target: question-source-material-provenance
-    type: related
+    type: supports
   - target: question-five-layer-doctor
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049

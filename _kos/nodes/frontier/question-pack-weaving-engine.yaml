@@ -45,11 +45,11 @@ edges:
   - target: aae-orc::question-sideshow-install-architecture
     type: derives
   - target: question-five-layer-doctor
-    type: related
+    type: supports
   - target: question-immutable-base-overlays
-    type: related
+    type: supports
   - target: elem-per-repo-customization
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049

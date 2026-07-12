@@ -42,11 +42,9 @@ content: |
     inherently fragile in a Git checkout?
 edges:
   - target: aae-orc::question-bmad-65-sideshow-readiness
-    type: related
+    type: supports
   - target: elem-per-repo-customization
     type: implements
-  - target: question-immutable-base-overlays
-    type: blocks
 provenance:
   created_by: human
   session: session-049

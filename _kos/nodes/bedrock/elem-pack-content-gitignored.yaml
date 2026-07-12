@@ -19,9 +19,9 @@ content: |
   `elem-per-repo-customization`.
 edges:
   - target: elem-user-install-shape
-    type: related
+    type: supports
   - target: elem-per-repo-customization
-    type: related
+    type: supports
 provenance:
   created_by: human
   session: session-049
