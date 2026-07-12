@@ -32,7 +32,8 @@ Usage:
                                           Create config shim for BMAD agents
   sideshow init --scope project [--manifest <path>] [--pack <name>] [--dry-run]
                                           Distribute pack artifacts to subrepos
-  sideshow list                           List installed packs
+  sideshow use <pack> <version>           Activate an installed version + sync bindings
+  sideshow list                           List installed packs (all versions, active marked)
   sideshow commands sync                  Sync commands to ~/.claude/commands/
   sideshow status                         Show installation status
   sideshow version                        Show version
@@ -40,6 +41,8 @@ Usage:
 Install options:
   --from <path>          Source directory (required for now)
   --yes, -y              Skip confirmation prompts
+  --no-activate          Install without flipping the active version
+                         (first install of a pack always activates)
   --no-permissions       Don't configure Claude Code read permissions
   --scope user|project   Where to add permissions (default: user)
 
@@ -75,6 +78,8 @@ func main() {
 		err = runInit(os.Args[2:])
 	case "install":
 		err = runInstall(os.Args[2:])
+	case "use":
+		err = runUse(os.Args[2:])
 	case "list":
 		err = runList()
 	case "commands":
@@ -393,6 +398,7 @@ func runInstall(args []string) error {
 	var fromPath string
 	autoYes := false
 	noPerms := false
+	noActivate := false
 	scope := permissions.ScopeUser
 	scopeExplicit := false
 
@@ -405,6 +411,8 @@ func runInstall(args []string) error {
 			}
 		case "--yes", "-y":
 			autoYes = true
+		case "--no-activate":
+			noActivate = true
 		case "--no-permissions":
 			noPerms = true
 		case "--scope":
@@ -427,7 +435,7 @@ func runInstall(args []string) error {
 		return fmt.Errorf("--from <path> is required (git install not yet implemented)")
 	}
 
-	if err := pack.InstallFromLocal(name, fromPath); err != nil {
+	if err := pack.InstallFromLocal(name, fromPath, !noActivate); err != nil {
 		return err
 	}
 
@@ -470,6 +478,23 @@ func runInstall(args []string) error {
 	return nil
 }
 
+// runUse activates an installed pack version and re-syncs bindings so
+// the flip is honest end-to-end (stale artifacts from the previously
+// active version are reconciled away by the sync manifest).
+func runUse(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: sideshow use <pack> <version>")
+	}
+	name, version := args[0], args[1]
+
+	if err := pack.Activate(name, version); err != nil {
+		return err
+	}
+	fmt.Printf("Activated %s %s\n", name, version)
+
+	return bindings.Sync()
+}
+
 func runList() error {
 	packs, err := pack.List()
 	if err != nil {
@@ -481,9 +506,22 @@ func runList() error {
 		return nil
 	}
 
-	fmt.Printf("%-20s %-15s %s\n", "PACK", "VERSION", "PATH")
+	fmt.Printf("%-20s %-15s %-7s %s\n", "PACK", "VERSION", "ACTIVE", "PATH")
 	for _, p := range packs {
-		fmt.Printf("%-20s %-15s %s\n", p.Name, p.Version, p.Path)
+		versions, active, vErr := pack.InstalledVersions(p.Name)
+		if vErr != nil || len(versions) == 0 {
+			// Fall back to the registry's single-version view.
+			fmt.Printf("%-20s %-15s %-7s %s\n", p.Name, p.Version, "*", p.Path)
+			continue
+		}
+		for _, v := range versions {
+			mark := ""
+			if v == active {
+				mark = "*"
+			}
+			fmt.Printf("%-20s %-15s %-7s %s\n", p.Name, v, mark,
+				filepath.Join(pack.PacksDir(), p.Name, v))
+		}
 	}
 	return nil
 }

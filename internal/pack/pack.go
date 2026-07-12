@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -336,8 +337,64 @@ func detectPackYamlVersion(packPath string) string {
 	return m.Version
 }
 
+// Activate points a pack's current symlink at an installed version and
+// updates the registry to match. The version must already be installed.
+// Bindings are NOT synced here — callers run bindings.Sync after.
+func Activate(name, version string) error {
+	versionDir := filepath.Join(PacksDir(), name, version)
+	info, err := os.Stat(versionDir)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("pack %s version %s is not installed at %s (run 'sideshow list' to see installed versions)", name, version, versionDir)
+	}
+
+	currentLink := filepath.Join(PacksDir(), name, "current")
+	_ = os.Remove(currentLink)
+	if err := os.Symlink(version, currentLink); err != nil {
+		return fmt.Errorf("update current symlink: %w", err)
+	}
+
+	reg, err := LoadRegistry()
+	if err != nil {
+		return fmt.Errorf("load registry: %w", err)
+	}
+	found := false
+	for i := range reg.Packs {
+		if reg.Packs[i].Name == name {
+			reg.Packs[i].Version = version
+			found = true
+		}
+	}
+	if !found {
+		reg.Packs = append(reg.Packs, InstalledPack{
+			Name:        name,
+			Version:     version,
+			Path:        currentLink,
+			InstalledAt: time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	return reg.Save()
+}
+
+// InstalledVersions returns every version directory installed for a pack
+// (sorted) plus the version the current symlink points at ("" if none).
+func InstalledVersions(name string) (versions []string, active string, err error) {
+	dir := filepath.Join(PacksDir(), name)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, e := range entries {
+		if e.IsDir() && e.Name() != "current" {
+			versions = append(versions, e.Name())
+		}
+	}
+	sort.Strings(versions)
+	active, _ = os.Readlink(filepath.Join(dir, "current"))
+	return versions, active, nil
+}
+
 // InstallFromLocal copies a pack from a local path to the sideshow directory.
-func InstallFromLocal(name, sourcePath string) error {
+func InstallFromLocal(name, sourcePath string, activate bool) error {
 	// Expand ~ in source path
 	if strings.HasPrefix(sourcePath, "~/") {
 		home, _ := os.UserHomeDir()
@@ -430,8 +487,17 @@ func InstallFromLocal(name, sourcePath string) error {
 		return fmt.Errorf("copy pack: %w", err)
 	}
 
-	// Create current symlink
+	// Create/flip the current symlink. A first install always activates
+	// (current + registry must exist); later installs honor the caller's
+	// activate flag so installing is no longer silently activating.
 	currentLink := filepath.Join(PacksDir(), name, "current")
+	_, curErr := os.Lstat(currentLink)
+	firstInstall := os.IsNotExist(curErr)
+	if !activate && !firstInstall {
+		fmt.Printf("Installed %d files to %s\n", count, destDir)
+		fmt.Printf("Not activated: current stays as-is. Run 'sideshow use %s %s' to activate.\n", name, version)
+		return nil
+	}
 	_ = os.Remove(currentLink) // remove old symlink if exists
 	if err := os.Symlink(version, currentLink); err != nil {
 		return fmt.Errorf("create current symlink: %w", err)

@@ -31,6 +31,11 @@ type Binding interface {
 	// Returns the number of artifacts written.
 	Sync() (int, error)
 
+	// Artifacts returns the destination paths this binding owns — the
+	// exact set Sync writes. Used for the sync-manifest ownership ledger
+	// so stale artifacts from a previously active version are removed.
+	Artifacts() ([]string, error)
+
 	// Validate checks the binding is internally consistent.
 	Validate() error
 }
@@ -70,26 +75,60 @@ func Sync() error {
 		return nil
 	}
 
-	totalSynced := 0
+	var all []Binding
 	for _, p := range packs {
-		bindings, err := DiscoverBindings(p)
+		discovered, err := DiscoverBindings(p)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: discover %s: %v\n", p.Name, err)
 			continue
 		}
+		all = append(all, discovered...)
+	}
 
-		for _, b := range bindings {
-			n, err := b.Sync()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "warning: sync %s/%s: %v\n", p.Name, b.Kind(), err)
-				continue
-			}
-			totalSynced += n
-		}
+	totalSynced, removed, err := runSync(all)
+	if err != nil {
+		return err
 	}
 
 	fmt.Printf("Synced %d artifacts across all bindings\n", totalSynced)
+	if removed > 0 {
+		fmt.Printf("Removed %d stale artifact(s) from a previously active version\n", removed)
+	}
 	return nil
+}
+
+// runSync syncs every binding, then reconciles the sync manifest:
+// artifacts recorded by the previous sync but owned by no current
+// binding are removed (the stale-binding chimera fix — an activation
+// flip no longer leaves the old version's extra skills behind).
+func runSync(all []Binding) (synced, removed int, err error) {
+	var current []ManifestEntry
+
+	for _, b := range all {
+		n, syncErr := b.Sync()
+		if syncErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: sync %s/%s: %v\n", b.PackName(), b.Kind(), syncErr)
+			continue
+		}
+		synced += n
+
+		arts, artErr := b.Artifacts()
+		if artErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: enumerate %s/%s artifacts: %v\n", b.PackName(), b.Kind(), artErr)
+			continue
+		}
+		for _, a := range arts {
+			current = append(current, ManifestEntry{
+				Pack:    b.PackName(),
+				Version: b.PackVersion(),
+				Kind:    b.Kind(),
+				Path:    a,
+			})
+		}
+	}
+
+	removed, err = reconcile(current)
+	return synced, removed, err
 }
 
 // CountForPack returns the total discoverable artifacts across all bindings
