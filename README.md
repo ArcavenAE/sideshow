@@ -170,40 +170,52 @@ xattr -d com.apple.quarantine "$(mise which sideshow)"
 go install github.com/ArcavenAE/sideshow/cmd/sideshow@latest
 ```
 
-## Usage
+## Quickstart
 
 ```bash
-# Install a content pack
-sideshow install bmad --from ~/work/project/_bmad
+# Install a pack version into the user store (does not change what's active)
+sideshow install bmad --from ~/Downloads/bmad-6.10.0 --no-activate
 
-# Sync commands to the AI tool's global command directory
-sideshow commands sync
-
-# Create per-project config so agents can activate
-sideshow init --user "Michael"
-
-# Check what's installed
+# See every installed version; * marks the active one
 sideshow list
+
+# Activate a version: flips `current`, re-syncs bindings, and removes
+# stale artifacts the outgoing version left behind
+sideshow use bmad 6.10.0
+
+# Wire a repo you work in: creates the _bmad/ runtime shim (symlinks the
+# read surfaces upstream resolvers expect) + the _bmad-custom/ bridge +
+# gitignore entries. Run once per repo.
+cd ~/work/myrepo && sideshow project init bmad
+
+# Verify bindings are fully synced
 sideshow status
 ```
+
+Full walkthrough with signed-release verification and a roster test:
+[`examples/bmad/`](examples/bmad/README.md). How pack content finds its
+paths (rewriting vs shim vs fallback): [`docs/path-resolution.md`](docs/path-resolution.md).
 
 ## Project status
 
 ### Done
 
-- Pack installation from local path with version detection
-- Version-tracked registry with `current` symlink
-- Command sync with path rewriting (global vs per-repo separation)
+- Pack installation from local path with version detection; `--no-activate`
+- Multi-version store with `current` symlink; `sideshow use` version switching
+- Sync with ownership ledger — activation flips remove stale bindings
+- Runtime shim (`runtime_links`) + customization bridge (`custom_bridge`)
+  — upstream `{project-root}/_bmad/` resolvers work per-repo
+- Command/skill sync with path rewriting + read-only fallback footer
 - Claude Code permission management
 - Init command — config shim satisfies BMAD's init gate
 
 ### To do
 
-- Scope levels beyond user — OS, project, repo (#4, #7)
-- Pack sources beyond local path — git, registry (#3)
-- Version switching — change active version per scope
-- Multi-pack composition — load and merge multiple packs
-- Three-layer customization — core, global custom, per-repo custom (#7)
+- Fetch + verify packs directly from signed releases (aae-orc-wk92)
+- Per-scope activation declaration, .tool-versions-style (aae-orc-76sh)
+- Store immutability at install; doctor verification (aae-orc-dihj, xteh)
+- Cross-pack collision detection at sync (aae-orc-em8e)
+- Multi-pack composition; three-layer customization (#7)
 - `sideshow update` and `sideshow remove`
 - Marvel workspace integration (#5)
 
