@@ -1,0 +1,53 @@
+id: elem-runtime-links
+type: element
+confidence: bedrock
+title: "runtime_links: enumerated read-surface symlinks make upstream's project-root model true per-repo"
+tags:
+  - sideshow
+  - bindings
+  - activation
+content: |
+  Packs declare, in pack.yaml beside custom_bridge, the read surfaces
+  their runtime expects at {project-root}/<shim>/:
+
+    distribute:
+      runtime_links:
+        - { link: scripts,          target: scripts }
+        - { link: _config,          target: _config }
+        - { link: config.toml,      target: config.toml }
+        - { link: config.user.toml, target: config.user.toml }
+
+  Distribution symlinks each into the user store THROUGH the current
+  pointer (version flips keep working). Dangling targets are REFUSED
+  (a half-working shim is worse than none); existing files/dirs/
+  foreign symlinks are reported, never replaced; the shim dir derives
+  from custom_bridge's upstream_path. Enumerated deliberately — the
+  build-side reference scanner (sideshow-packs#2) proposes additions
+  per pack version, humans ratify.
+
+  This is what fixes upstream resolvers whose paths live in CODE
+  (bmad 6.10 resolve_party.py -> resolve_config.py, the four-file
+  config chain) — the sync rewriter deliberately never touches code.
+  Paired with the READ-ONLY fallback-footer clause and the frozen
+  store, writes through the shim fail loudly (finding-074's
+  corruption class is closed).
+
+  Evidence: five-surface spec proven by manual symlink test before
+  implementation; red/green (5 unit tests + footer test first); E2E
+  via the real tool — resolve_party installed_agents_resolved
+  false/0 -> true/21. Rolled out at aae-orc, i-orc, eos roots.
+  Resolution model doc: docs/path-resolution.md.
+edges:
+  - target: elem-custom-bridge
+    type: derives
+  - target: question-unified-binding-abstraction
+    type: instantiates
+  - target: elem-sync-ownership-ledger
+    type: supports
+provenance:
+  created_by: claude
+  session: session-2026-07-12
+  created_at: "2026-07-12"
+  evidence:
+    - aae-orc:_kos/findings/finding-074-party-mode-store-corruption-write-through-fallback.md
+    - aae-orc:_kos/findings/finding-075-runtime-shim-shipped-and-validated.md
