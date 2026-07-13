@@ -77,6 +77,8 @@ Workflow files inside this pack may reference paths of the form X{project-root}/
    X__PACK_PATH__/X
 
 3. Per-repo paths (X{project-root}/_bmad-custom/X, X{project-root}/_bmad-output/X) stay relative to the invoking project — these are per-repo, not pack content.
+
+**This substitution is READ-ONLY.** Never write, move, rename, or delete through the substituted pack path — pack content is immutable shared state, not project state. Project-local writes belong in X{project-root}/_bmad-custom/X or X{project-root}/_bmad-output/X. If a workflow requires a writable X{project-root}/_bmad/X, STOP and tell the user instead of substituting.
 <!-- sideshow:fallback-resolution:end -->
 `
 	footer := strings.ReplaceAll(tmpl, "X", "`")

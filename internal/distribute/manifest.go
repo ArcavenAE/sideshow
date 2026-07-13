@@ -23,6 +23,18 @@ type Manifest struct {
 	Symlinks     []SymlinkArtifact     `yaml:"symlinks,omitempty"`
 	Gitignore    []string              `yaml:"gitignore,omitempty"`
 	CustomBridge *CustomBridgeArtifact `yaml:"custom_bridge,omitempty"`
+	RuntimeLinks []RuntimeLink         `yaml:"runtime_links,omitempty"`
+}
+
+// RuntimeLink declares one read surface the pack's runtime expects at
+// {project-root}/<shim>/<link> (e.g. _bmad/scripts). Distribution
+// creates a symlink into the user store THROUGH the current pointer so
+// version flips keep working. Enumerated deliberately — the reference
+// scanner proposes new entries per version, humans ratify (party-mode
+// design round, 2026-07-12; sideshow#52).
+type RuntimeLink struct {
+	Link   string `yaml:"link"`   // entry name inside the shim dir (e.g. scripts)
+	Target string `yaml:"target"` // path inside the pack store root (e.g. scripts)
 }
 
 // CustomBridgeArtifact declares the customization bridge for packs whose
@@ -93,5 +105,6 @@ func (m *Manifest) IsEmpty() bool {
 		len(m.ClaudeMD) == 0 &&
 		len(m.Symlinks) == 0 &&
 		len(m.Gitignore) == 0 &&
-		m.CustomBridge == nil
+		m.CustomBridge == nil &&
+		len(m.RuntimeLinks) == 0
 }
