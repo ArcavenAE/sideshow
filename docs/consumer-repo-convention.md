@@ -25,7 +25,9 @@ repo.
 
 project-repo/                            PROJECT-SCOPE (per-repo)
 ├── _bmad-custom/                        ── CHECKED IN: overrides
-│   ├── agents/                          ──   project-specific agents
+│   ├── agents/                          ──   project-specific agents (TOML)
+│   ├── skills/                          ──   custom-built skills (bmb output;
+│   │   └── <name>/SKILL.md              ──   bound to ~/.claude/skills/ on sync)
 │   ├── workflows/                       ──   per-workflow customize.toml
 │   ├── config.toml                      ──   pack-level customization
 │   └── memories/                        ──   project-specific context
@@ -53,6 +55,7 @@ project-repo/                            PROJECT-SCOPE (per-repo)
 | `_<pack>/custom/` (symlink) | **Gitignore** (the link itself; target is checked in) | Customization-bridge symlink → `../_<pack>-custom/`. Created at `sideshow project init` for packs that ship an upstream `custom/` sub-convention (bmad 6.4+). Lets upstream's `bmad-customize` skill and runtime resolver write to the checked-in per-repo dir. See [`customization-bridge.md`](customization-bridge.md). |
 | `.claude/commands/<pack>-*.md` | **Gitignore** | sideshow syncs to `~/.claude/commands/` at user-scope. Per-project duplicates conflict. |
 | `.claude/skills/<pack>-*/`     | **Gitignore** | sideshow syncs to `~/.claude/skills/` at user-scope. Per-project duplicates conflict. |
+| `_<pack>-custom/skills/<name>/` | **Check in** | Custom-built skills (bmb-authored agents, project-local skills). Each dir needs a `SKILL.md` entry point. Bound to `~/.claude/skills/` on `commands sync` via the custom-sources registry (repo registered by `sideshow project init <pack>`, or auto-registered when sync runs inside the repo). Pack canonical ids win name collisions. Copied verbatim — no path rewrites, no fallback footer. |
 | `sideshow.lock`       | **Check in**  | Pins the pack version the repo was last known to work against. See aae-orc-333y. |
 
 **Previous design note:** sideshow's original charter said

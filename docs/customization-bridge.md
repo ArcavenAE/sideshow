@@ -81,6 +81,32 @@ The bridge applies *only* where an upstream pack defines a `custom/`
 sub-convention. Other packs use `_<pack>-custom/` exactly as before,
 with no symlink, no bridge, no collision.
 
+## Custom-built skills and builder output routing
+
+`_<pack>-custom/skills/<name>/` holds custom-built skills — chiefly
+agents authored by bmad's builder (bmb) — and sideshow binds them to
+`~/.claude/skills/` on `commands sync` (see
+`consumer-repo-convention.md` for the binding rules).
+
+**Builder output must be routed through the bridge.** Upstream's
+`bmad_builder_output_folder` lives in `_bmad/config.toml`, which in
+consumer repos is a symlink into the shared user-scope pack store —
+editing it changes builder routing for every consumer repo on the
+machine. Instead, point the builder at
+`{project-root}/_bmad/custom/skills`: the bridge symlink resolves this
+to the checked-in `_bmad-custom/skills/`, so built skills land in
+project territory, survive pack version swaps, and are picked up by
+the custom-skill binding on the next sync. (The per-repo config
+mechanism for overriding `bmad_builder_output_folder` — upstream's
+four-file chain vs an explicit flag at build time — is upstream
+behavior; until it's verified, setting the output folder explicitly
+when invoking the builder is the reliable path.)
+
+Failure mode this prevents (aae-orc finding-076): a bmb-built agent
+written to a nested `.claude/skills/` inside a subrepo is complete but
+undiscoverable — no session anchored above it reads that directory,
+and sideshow does not bind it.
+
 ## Boundary table
 
 | Path | Owner | Persistence | Bridge applies? |

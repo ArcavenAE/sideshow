@@ -34,7 +34,10 @@ Usage:
                                           Distribute pack artifacts to subrepos
   sideshow use <pack> <version>           Activate an installed version + sync bindings
   sideshow list                           List installed packs (all versions, active marked)
-  sideshow commands sync                  Sync commands to ~/.claude/commands/
+  sideshow commands sync                  Sync commands + skills bindings (pack content
+                                          and registered _<pack>-custom/skills/ sources)
+  sideshow project init <pack>            Apply consumer-repo convention to cwd and
+                                          register it as a custom-skills source
   sideshow status                         Show installation status
   sideshow version                        Show version
 
@@ -69,6 +72,16 @@ func main() {
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(1)
+	}
+
+	// Help anywhere on the command line prints usage and performs no
+	// action. This runs before dispatch so no subcommand can execute
+	// as a side effect of asking for help (sideshow#57).
+	for _, a := range os.Args[1:] {
+		if a == "-h" || a == "--help" {
+			usage()
+			return
+		}
 	}
 
 	var err error
@@ -161,6 +174,8 @@ func runInit(args []string) error {
 			}
 		case "--dry-run":
 			dryRun = true
+		default:
+			return fmt.Errorf("unknown flag for init: %s (see 'sideshow --help')", args[i])
 		}
 	}
 
@@ -608,6 +623,17 @@ func runProjectInitForPack(args []string) error {
 		return fmt.Errorf("distribute: %w", result.Error)
 	}
 
+	// Register this repo as a custom source so `commands sync` binds
+	// _<pack>-custom/skills/ from anywhere, not just from this cwd.
+	if !dryRun {
+		added, regErr := bindings.RegisterCustomSource(cwd, packName)
+		if regErr != nil {
+			fmt.Fprintf(os.Stderr, "  warning: register custom source: %v\n", regErr)
+		} else if added {
+			fmt.Printf("  registered custom source (binds %s/skills/ on sync)\n", filepath.Base(customDir))
+		}
+	}
+
 	wrote := 0
 	skipped := 0
 	for _, a := range result.Actions {
@@ -650,6 +676,18 @@ func runStatus() error {
 			fmt.Printf("  synced:    error: %v\n", err)
 		} else {
 			fmt.Printf("  synced:    %d\n", synced)
+		}
+	}
+
+	sources, err := bindings.ListCustomSources()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: read custom sources: %v\n", err)
+		return nil
+	}
+	if len(sources) > 0 {
+		fmt.Println("\nCustom sources:")
+		for _, s := range sources {
+			fmt.Printf("  %s (pack %s)\n", s.Project, s.Pack)
 		}
 	}
 	return nil
