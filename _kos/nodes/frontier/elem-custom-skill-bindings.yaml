@@ -1,0 +1,52 @@
+id: elem-custom-skill-bindings
+type: element
+confidence: frontier
+title: "custom-skill-dir binding: _{pack}-custom/skills/ bound to ~/.claude/skills/ via a persistent custom-sources registry"
+tags:
+  - sideshow
+  - customization
+  - bindings
+content: |
+  Custom-built skills (chiefly bmb-authored agents) live in the
+  consumer repo's checked-in `_{pack}-custom/skills/<name>/` (SKILL.md
+  entry point required) and are bound to `~/.claude/skills/` on
+  `commands sync` alongside pack skills.
+
+  Because the sync-manifest reconcile removes anything not
+  re-discovered, custom skills need durable discovery: the
+  custom-sources registry (`custom-sources.yaml`, data-dir sibling of
+  `sync-manifest.yaml`) records project+pack pairs. Registration at
+  `sideshow project init <pack>` or automatic when sync runs inside a
+  repo with bindable custom skills. Missing projects prune from the
+  registry; their artifacts reconcile away.
+
+  Rules: pack canonical ids win name collisions (warn + skip);
+  cross-source duplicates skip (first registered wins); content is
+  copied verbatim — no store-path rewrites, no fallback footer,
+  because custom skills live in checked-in project territory, not the
+  user-scope store.
+
+  Builder-output routing rides the custom bridge: bmb output pointed
+  at `{project-root}/_bmad/custom/skills` resolves into checked-in
+  `_bmad-custom/skills/`. The store-symlinked `_bmad/config.toml` is
+  machine-global and must not be edited per-repo
+  (docs/customization-bridge.md).
+
+  Shipped in PR #58 (merged 660f9aa, alpha-20260713-174626-660f9aa).
+  E2E: eos-orc/eos eos-coach — bound, survives foreign-cwd sync,
+  resolves in a live session. Frontier until a second consumer repo
+  and a bmb build-through-the-bridge validate the full loop
+  (aae-orc-gr1q closed; origin aae-orc finding-076, sideshow#56).
+  PR #58 also closed sideshow#57 (subcommands executed on --help;
+  global pre-dispatch help scan now guards every subcommand).
+depends_on:
+  - elem-per-repo-customization
+  - elem-custom-bridge
+  - elem-sync-ownership-ledger
+provenance:
+  created_by: agent:claude@fable-5
+  session: aae-orc-session-2026-07-13
+  created_at: 2026-07-13
+  derived_from:
+    - aae-orc/_kos/findings/finding-076-sideshow-custom-skill-binding-gap.md
+    - https://github.com/ArcavenAE/sideshow/pull/58
