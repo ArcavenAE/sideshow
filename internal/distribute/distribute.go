@@ -96,6 +96,15 @@ func ToRepo(repo project.Subrepo, manifest *Manifest, opts Options) Result {
 		result.Actions = append(result.Actions, actions...)
 	}
 
+	if len(manifest.RuntimeLinks) > 0 {
+		shimDir := "_" + opts.PackName
+		if manifest.CustomBridge != nil {
+			shimDir = filepath.Dir(filepath.Clean(manifest.CustomBridge.UpstreamPath))
+		}
+		actions := distributeRuntimeLinks(repo.AbsPath, shimDir, manifest.RuntimeLinks, opts)
+		result.Actions = append(result.Actions, actions...)
+	}
+
 	for _, line := range manifest.Gitignore {
 		action := distributeGitignore(repo.AbsPath, line, opts)
 		result.Actions = append(result.Actions, action)
@@ -615,6 +624,91 @@ func distributeCustomBridge(repoRoot string, bridge CustomBridgeArtifact, opts O
 	// 3. Gitignore the shim dir. Idempotent append; packs that already
 	// declare the same line in distribute.gitignore dedupe here.
 	actions = append(actions, distributeGitignore(repoRoot, "/"+shimDir+"/", opts))
+
+	return actions
+}
+
+// distributeRuntimeLinks creates the read-surface symlinks a pack's
+// runtime expects at {project-root}/<shim>/ (aae-orc-rpnd; sideshow#52).
+// Every link routes through the store's `current` pointer so version
+// flips keep working. Safety: a link whose target does not exist in the
+// active version is REFUSED (a dangling link is worse than a missing
+// one); existing files/dirs/foreign symlinks are reported, never
+// replaced. The store itself is read-only (finding-074), so upstream
+// write attempts through these links fail loudly.
+func distributeRuntimeLinks(repoRoot, shimDir string, links []RuntimeLink, opts Options) []Action {
+	var actions []Action
+	currentRoot := filepath.Join(pack.PacksDir(), opts.PackName, "current")
+
+	for _, l := range links {
+		linkRel := filepath.Join(shimDir, filepath.Clean(l.Link))
+		action := Action{Type: "runtime_link", Path: linkRel}
+
+		if filepath.IsAbs(l.Link) || filepath.IsAbs(l.Target) ||
+			strings.HasPrefix(filepath.Clean(l.Link), "..") ||
+			strings.HasPrefix(filepath.Clean(l.Target), "..") {
+			action.Status = "error"
+			action.Detail = "invalid runtime_link: link and target must be relative, inside shim and pack"
+			actions = append(actions, action)
+			continue
+		}
+
+		target := filepath.Join(currentRoot, filepath.Clean(l.Target))
+		if _, err := os.Stat(target); err != nil {
+			action.Status = "error"
+			action.Detail = fmt.Sprintf("target %s not present in active pack version — refusing to create a dangling link", l.Target)
+			actions = append(actions, action)
+			continue
+		}
+
+		linkPath := filepath.Join(repoRoot, linkRel)
+		if info, lstatErr := os.Lstat(linkPath); lstatErr == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				existing, _ := os.Readlink(linkPath)
+				if existing == target {
+					action.Status = "skipped"
+					action.Detail = "runtime link already correct"
+				} else {
+					action.Status = "conflict"
+					action.Detail = fmt.Sprintf("symlink exists but points to %q (expected %q)", existing, target)
+				}
+			} else {
+				action.Status = "conflict"
+				action.Detail = "real file or directory exists at runtime-link path (per-project install?) — left untouched"
+			}
+			actions = append(actions, action)
+			continue
+		}
+
+		if opts.DryRun {
+			action.Status = "wrote"
+			action.Detail = fmt.Sprintf("would link %s → %s", linkRel, target)
+			actions = append(actions, action)
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
+			action.Status = "error"
+			action.Detail = fmt.Sprintf("create shim dir: %v", err)
+			actions = append(actions, action)
+			continue
+		}
+		if err := os.Symlink(target, linkPath); err != nil {
+			action.Status = "error"
+			action.Detail = fmt.Sprintf("create symlink: %v", err)
+			actions = append(actions, action)
+			continue
+		}
+
+		action.Status = "wrote"
+		action.Detail = fmt.Sprintf("linked %s → %s", linkRel, target)
+		action.Artifact = pack.DistributedArtifact{
+			Type:   "symlink",
+			Path:   linkRel,
+			Target: target,
+		}
+		actions = append(actions, action)
+	}
 
 	return actions
 }

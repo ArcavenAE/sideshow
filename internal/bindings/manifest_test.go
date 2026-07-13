@@ -3,6 +3,7 @@ package bindings
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -113,5 +114,14 @@ func TestArtifacts_MatchSyncDestinations(t *testing.T) {
 	}
 	if len(arts) != 2 || arts[0] != want[0] || arts[1] != want[1] {
 		t.Errorf("Artifacts() = %v, want %v", arts, want)
+	}
+}
+
+func TestFallbackFooter_ReadOnlyClause(t *testing.T) {
+	out := appendFallbackFooter("body", "/tmp/pack")
+	for _, want := range []string{"READ-ONLY", "Never write", "_bmad-custom"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("footer missing read-only clause fragment %q", want)
+		}
 	}
 }

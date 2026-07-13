@@ -857,3 +857,129 @@ func TestCustomBridge_SeedsPackCustomTemplate(t *testing.T) {
 		t.Errorf("second pass dir action = %q, want skipped", second[0].Status)
 	}
 }
+
+// --- Runtime links tests (aae-orc-rpnd; sideshow#52) ---
+
+func testRuntimeLinks() []RuntimeLink {
+	return []RuntimeLink{
+		{Link: "scripts", Target: "scripts"},
+		{Link: "_config", Target: "_config"},
+		{Link: "config.toml", Target: "config.toml"},
+		{Link: "config.user.toml", Target: "config.user.toml"},
+	}
+}
+
+// seedFakeStore creates a fake user store with a current symlink so link
+// targets resolve, returning the store pack dir. SIDESHOW_HOME scoping
+// keeps pack.PacksDir() inside the test sandbox.
+func seedFakeStore(t *testing.T, packName string) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("SIDESHOW_HOME", home)
+	versionDir := filepath.Join(home, "packs", packName, "9.9.9")
+	for _, d := range []string{"scripts", "_config"} {
+		if err := os.MkdirAll(filepath.Join(versionDir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{"config.toml", "config.user.toml"} {
+		if err := os.WriteFile(filepath.Join(versionDir, f), []byte("# t\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("9.9.9", filepath.Join(home, "packs", packName, "current")); err != nil {
+		t.Fatal(err)
+	}
+	return versionDir
+}
+
+func TestRuntimeLinks_FreshRepoCreatesAllThroughCurrent(t *testing.T) {
+	seedFakeStore(t, "bmad")
+	repoRoot := t.TempDir()
+	opts := Options{PackName: "bmad", PackVersion: "9.9.9", PackRoot: t.TempDir()}
+
+	actions := distributeRuntimeLinks(repoRoot, "_bmad", testRuntimeLinks(), opts)
+	for _, a := range actions {
+		if a.Status != "wrote" {
+			t.Errorf("%s: status = %q (%s), want wrote", a.Path, a.Status, a.Detail)
+		}
+	}
+	// Links exist, resolve, and point through current (not the version dir).
+	target, err := os.Readlink(filepath.Join(repoRoot, "_bmad", "scripts"))
+	if err != nil {
+		t.Fatalf("scripts link missing: %v", err)
+	}
+	if !strings.Contains(target, "current") {
+		t.Errorf("link target %q must route through current", target)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "_bmad", "config.toml")); err != nil {
+		t.Errorf("config.toml link does not resolve: %v", err)
+	}
+}
+
+func TestRuntimeLinks_Idempotent(t *testing.T) {
+	seedFakeStore(t, "bmad")
+	repoRoot := t.TempDir()
+	opts := Options{PackName: "bmad", PackVersion: "9.9.9", PackRoot: t.TempDir()}
+
+	distributeRuntimeLinks(repoRoot, "_bmad", testRuntimeLinks(), opts)
+	second := distributeRuntimeLinks(repoRoot, "_bmad", testRuntimeLinks(), opts)
+	for _, a := range second {
+		if a.Status != "skipped" {
+			t.Errorf("re-run %s: status = %q, want skipped", a.Path, a.Status)
+		}
+	}
+}
+
+func TestRuntimeLinks_RefusesConflict(t *testing.T) {
+	seedFakeStore(t, "bmad")
+	repoRoot := t.TempDir()
+	// A real directory occupies _bmad/scripts (e.g. a genuine per-project install).
+	if err := os.MkdirAll(filepath.Join(repoRoot, "_bmad", "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{PackName: "bmad", PackVersion: "9.9.9", PackRoot: t.TempDir()}
+
+	actions := distributeRuntimeLinks(repoRoot, "_bmad", testRuntimeLinks()[:1], opts)
+	if actions[0].Status != "conflict" {
+		t.Errorf("status = %q (%s), want conflict", actions[0].Status, actions[0].Detail)
+	}
+	// The real dir is untouched.
+	if fi, err := os.Lstat(filepath.Join(repoRoot, "_bmad", "scripts")); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("pre-existing real directory was replaced")
+	}
+}
+
+func TestRuntimeLinks_RefusesDanglingTarget(t *testing.T) {
+	seedFakeStore(t, "bmad")
+	repoRoot := t.TempDir()
+	opts := Options{PackName: "bmad", PackVersion: "9.9.9", PackRoot: t.TempDir()}
+
+	actions := distributeRuntimeLinks(repoRoot, "_bmad",
+		[]RuntimeLink{{Link: "nope", Target: "does-not-exist"}}, opts)
+	if actions[0].Status != "error" {
+		t.Errorf("status = %q (%s), want error for dangling target", actions[0].Status, actions[0].Detail)
+	}
+	if _, err := os.Lstat(filepath.Join(repoRoot, "_bmad", "nope")); !os.IsNotExist(err) {
+		t.Error("dangling link was created — worse than none (Sam's clause)")
+	}
+}
+
+func TestRuntimeLinks_NoDeclarationNoOp(t *testing.T) {
+	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	repoRoot := t.TempDir()
+	repo := project.Subrepo{Name: "r", AbsPath: repoRoot, Present: true}
+	m := &Manifest{Gitignore: []string{"/x/"}}
+
+	result := ToRepo(repo, m, Options{PackName: "bmad", PackRoot: t.TempDir()})
+	for _, a := range result.Actions {
+		if a.Type == "runtime_link" {
+			t.Errorf("runtime_link action emitted without declaration: %+v", a)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(repoRoot, "_bmad")); err == nil {
+		if entries, _ := os.ReadDir(filepath.Join(repoRoot, "_bmad")); len(entries) > 0 {
+			t.Error("_bmad populated without runtime_links declaration")
+		}
+	}
+}
