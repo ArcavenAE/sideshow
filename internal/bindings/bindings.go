@@ -62,8 +62,12 @@ func DiscoverBindings(p pack.InstalledPack) ([]Binding, error) {
 	return result, nil
 }
 
-// Sync discovers and syncs every binding for every installed pack, printing
-// a human-readable summary to stdout for CLI consumption.
+// Sync discovers and syncs every binding for every installed pack plus
+// every registered custom source, printing a human-readable summary to
+// stdout for CLI consumption. When run inside a consumer repo that has
+// bindable custom skills for an installed pack, the repo is
+// auto-registered as a custom source so later syncs from elsewhere
+// keep its skills alive.
 func Sync() error {
 	packs, err := pack.List()
 	if err != nil {
@@ -76,6 +80,7 @@ func Sync() error {
 	}
 
 	var all []Binding
+	packSkillOwners := make(map[string]string)
 	for _, p := range packs {
 		discovered, err := DiscoverBindings(p)
 		if err != nil {
@@ -83,7 +88,23 @@ func Sync() error {
 			continue
 		}
 		all = append(all, discovered...)
+
+		if resolved, evalErr := filepath.EvalSymlinks(p.Path); evalErr == nil {
+			for id := range skillCanonicalIds(resolved) {
+				packSkillOwners[id] = p.Name
+			}
+		}
 	}
+
+	if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+		autoRegisterCustomSources(cwd, packs)
+	}
+
+	custom, err := discoverCustomBindings(packs, packSkillOwners)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: discover custom sources: %v\n", err)
+	}
+	all = append(all, custom...)
 
 	totalSynced, removed, err := runSync(all)
 	if err != nil {
@@ -95,6 +116,90 @@ func Sync() error {
 		fmt.Printf("Removed %d stale artifact(s) from a previously active version\n", removed)
 	}
 	return nil
+}
+
+// autoRegisterCustomSources registers the working directory as a custom
+// source for every installed pack it carries bindable custom skills
+// for. Best-effort: registration failures warn, never fail the sync.
+func autoRegisterCustomSources(cwd string, packs []pack.InstalledPack) {
+	for _, p := range packs {
+		if !hasCustomSkillContent(cwd, p.Name) {
+			continue
+		}
+		added, err := RegisterCustomSource(cwd, p.Name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: register custom source %s: %v\n", cwd, err)
+			continue
+		}
+		if added {
+			fmt.Printf("Registered custom source %s (pack %s)\n", cwd, p.Name)
+		}
+	}
+}
+
+// discoverCustomBindings loads the custom-source registry and returns a
+// binding per source that still exists, has its pack installed, and has
+// bindable skills. Skill names already owned by a pack (canonical id)
+// or claimed by an earlier source are skipped with a warning — pack
+// content wins collisions. Sources whose project directory no longer
+// exists are pruned from the registry; their previously synced skills
+// fall out via manifest reconciliation.
+func discoverCustomBindings(packs []pack.InstalledPack, packSkillOwners map[string]string) ([]Binding, error) {
+	reg, err := loadCustomSources()
+	if err != nil {
+		return nil, err
+	}
+	if len(reg.Sources) == 0 {
+		return nil, nil
+	}
+
+	installed := make(map[string]struct{}, len(packs))
+	for _, p := range packs {
+		installed[p.Name] = struct{}{}
+	}
+
+	var kept []CustomSource
+	pruned := false
+	claimed := make(map[string]string) // skill name -> claiming project
+	var out []Binding
+
+	for _, s := range reg.Sources {
+		if _, statErr := os.Stat(s.Project); statErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: custom source %s missing on disk — pruning from registry\n", s.Project)
+			pruned = true
+			continue
+		}
+		kept = append(kept, s)
+
+		if _, ok := installed[s.Pack]; !ok {
+			continue
+		}
+
+		var skills []string
+		for _, name := range customSkillIds(s.Project, s.Pack) {
+			if owner, ok := packSkillOwners[name]; ok {
+				fmt.Fprintf(os.Stderr, "warning: skipping custom skill %s from %s: name owned by pack %s\n", name, s.Project, owner)
+				continue
+			}
+			if prev, ok := claimed[name]; ok {
+				fmt.Fprintf(os.Stderr, "warning: skipping custom skill %s from %s: already bound from %s\n", name, s.Project, prev)
+				continue
+			}
+			claimed[name] = s.Project
+			skills = append(skills, name)
+		}
+		if len(skills) == 0 {
+			continue
+		}
+		out = append(out, NewCustomSkillDirBinding(s.Pack, s.Project, skills))
+	}
+
+	if pruned {
+		if saveErr := saveCustomSources(kept); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: save custom sources after prune: %v\n", saveErr)
+		}
+	}
+	return out, nil
 }
 
 // runSync syncs every binding, then reconciles the sync manifest:
