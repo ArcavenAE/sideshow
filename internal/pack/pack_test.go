@@ -549,3 +549,88 @@ func TestInstallFromLocal_AlreadyUnifiedPassesThrough(t *testing.T) {
 		t.Errorf("expected core/config.yaml: %v", err)
 	}
 }
+
+// makeModeFixture creates a sideshow-native source pack containing one
+// executable and one plain file, returning its path.
+func makeModeFixture(t *testing.T) string {
+	t.Helper()
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "pack.yaml"), []byte("name: modes\nversion: \"1.0.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(src, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "bin", "tool.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "doc.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return src
+}
+
+func TestInstallFromLocal_PreservesFileModes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIDESHOW_HOME", home)
+	src := makeModeFixture(t)
+
+	if err := InstallFromLocal("modes", src, true); err != nil {
+		t.Fatalf("InstallFromLocal: %v", err)
+	}
+
+	packRoot := filepath.Join(home, "packs", "modes", "1.0.0")
+	tests := []struct {
+		rel  string
+		want os.FileMode
+	}{
+		{filepath.Join("bin", "tool.sh"), 0o755},
+		{"doc.md", 0o644},
+	}
+	for _, tt := range tests {
+		info, err := os.Stat(filepath.Join(packRoot, tt.rel))
+		if err != nil {
+			t.Fatalf("stat %s: %v", tt.rel, err)
+		}
+		if got := info.Mode().Perm(); got != tt.want {
+			t.Errorf("%s mode = %o, want %o", tt.rel, got, tt.want)
+		}
+	}
+}
+
+func TestInstallFromLocal_ExecManifestVerified(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIDESHOW_HOME", home)
+	src := makeModeFixture(t)
+	if err := os.WriteFile(filepath.Join(src, "exec-manifest.txt"), []byte("bin/tool.sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallFromLocal("modes", src, true); err != nil {
+		t.Fatalf("InstallFromLocal with satisfied exec-manifest: %v", err)
+	}
+}
+
+func TestInstallFromLocal_ExecManifestDriftFailsLoudly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIDESHOW_HOME", home)
+	src := makeModeFixture(t)
+	// Census references an entry the source does not satisfy: the listed
+	// path exists but is not executable, plus one missing path.
+	if err := os.Chmod(filepath.Join(src, "bin", "tool.sh"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "exec-manifest.txt"), []byte("bin/tool.sh\nbin/absent.sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := InstallFromLocal("modes", src, true)
+	if err == nil {
+		t.Fatal("InstallFromLocal succeeded despite exec-manifest drift")
+	}
+	for _, want := range []string{"exec-manifest.txt", "bin/tool.sh (not executable)", "bin/absent.sh (missing)"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err.Error(), want)
+		}
+	}
+}

@@ -473,18 +473,39 @@ func InstallFromLocal(name, sourcePath string, activate bool) error {
 			return os.MkdirAll(destPath, 0o755)
 		}
 
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
+		perm := info.Mode().Perm()
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
-		if err := os.WriteFile(destPath, data, 0o644); err != nil {
+		if err := os.WriteFile(destPath, data, perm); err != nil {
 			return fmt.Errorf("write %s: %w", destPath, err)
+		}
+		// WriteFile applies perm only at create time (and subject to
+		// umask); force the exact source mode so exec bits survive
+		// reinstalls over an existing tree. Read-only store freeze
+		// (aae-orc-dihj) must map 0755 -> 0555 here, never 0444.
+		if err := os.Chmod(destPath, perm); err != nil {
+			return fmt.Errorf("chmod %s: %w", destPath, err)
 		}
 		count++
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("copy pack: %w", err)
+	}
+
+	// When the pack ships an executable census, the installed tree must
+	// match it. The build pipeline treats exec bits as a fatal invariant;
+	// the install path must not silently destroy the property at the
+	// last hop.
+	if err := verifyExecManifest(sourcePath, destDir); err != nil {
+		return err
 	}
 
 	// Create/flip the current symlink. A first install always activates
@@ -530,6 +551,49 @@ func InstallFromLocal(name, sourcePath string, activate bool) error {
 
 	fmt.Printf("Installed %d files to %s\n", count, destDir)
 	fmt.Println("Run 'sideshow commands sync' to update Claude Code commands.")
+	return nil
+}
+
+// execManifestName is the optional executable census emitted by the
+// sideshow-packs build pipeline: one pack-root-relative path per line,
+// each of which must carry an exec bit in the installed tree.
+const execManifestName = "exec-manifest.txt"
+
+// verifyExecManifest checks the installed tree at destDir against the
+// pack's exec-manifest.txt when the source ships one. Absence of the
+// manifest is not an error; any listed path that is missing or
+// non-executable after install is.
+func verifyExecManifest(sourcePath, destDir string) error {
+	data, err := os.ReadFile(filepath.Join(sourcePath, execManifestName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", execManifestName, err)
+	}
+
+	var drift []string
+	for _, line := range strings.Split(string(data), "\n") {
+		rel := strings.TrimSpace(line)
+		if rel == "" || strings.HasPrefix(rel, "#") {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(destDir, filepath.FromSlash(rel)))
+		switch {
+		case err != nil:
+			drift = append(drift, rel+" (missing)")
+		case info.Mode().Perm()&0o100 == 0:
+			drift = append(drift, rel+" (not executable)")
+		}
+	}
+	if len(drift) > 0 {
+		return fmt.Errorf(
+			"%s verification failed: installed tree at %s does not match "+
+				"the pack's executable census (%d of its entries drifted); "+
+				"the store copy should not be used:\n  %s",
+			execManifestName, destDir, len(drift), strings.Join(drift, "\n  "),
+		)
+	}
 	return nil
 }
 
