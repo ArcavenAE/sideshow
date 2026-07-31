@@ -665,6 +665,14 @@ func runStatus() error {
 
 	for _, p := range packs {
 		fmt.Printf("%s %s\n", p.Name, p.Version)
+		if act, actErr := pack.LoadActivation(p.Path); actErr == nil && act.PluginClass() {
+			scope := act.DefaultScope
+			if scope == "" {
+				scope = "per-repo"
+			}
+			fmt.Printf("  activation: %s (%s); bindings do not apply\n", act.Mechanism, scope)
+			continue
+		}
 		available, err := bindings.CountForPack(p.Name, p.Path)
 		if err != nil {
 			fmt.Printf("  available: error: %v\n", err)
