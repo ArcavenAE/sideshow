@@ -39,6 +39,7 @@ Usage:
   sideshow project init <pack>            Apply consumer-repo convention to cwd and
                                           register it as a custom-skills source
   sideshow status                         Show installation status
+  sideshow coexist <pack> [--repo <path>]  Read-only foreign-install census and coexistence findings
   sideshow version                        Show version
 
 Install options:
@@ -121,6 +122,8 @@ func main() {
 		}
 	case "status":
 		err = runStatus()
+	case "coexist":
+		err = runCoexist(os.Args[2:])
 	case "version", "--version", "-V":
 		fmt.Printf("sideshow %s\n", version)
 	case "help", "--help", "-h":
