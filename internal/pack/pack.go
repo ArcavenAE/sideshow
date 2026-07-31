@@ -508,6 +508,11 @@ func InstallFromLocal(name, sourcePath string, activate bool) error {
 		return err
 	}
 
+	activation, err := LoadActivation(destDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: read activation contract: %v\n", err)
+	}
+
 	// Create/flip the current symlink. A first install always activates
 	// (current + registry must exist); later installs honor the caller's
 	// activate flag so installing is no longer silently activating.
@@ -517,6 +522,7 @@ func InstallFromLocal(name, sourcePath string, activate bool) error {
 	if !activate && !firstInstall {
 		fmt.Printf("Installed %d files to %s\n", count, destDir)
 		fmt.Printf("Not activated: current stays as-is. Run 'sideshow use %s %s' to activate.\n", name, version)
+		activation.PrintInstallNotice()
 		return nil
 	}
 	_ = os.Remove(currentLink) // remove old symlink if exists
@@ -550,7 +556,11 @@ func InstallFromLocal(name, sourcePath string, activate bool) error {
 	}
 
 	fmt.Printf("Installed %d files to %s\n", count, destDir)
-	fmt.Println("Run 'sideshow commands sync' to update Claude Code commands.")
+	if activation.PluginClass() {
+		activation.PrintInstallNotice()
+	} else {
+		fmt.Println("Run 'sideshow commands sync' to update Claude Code commands.")
+	}
 	return nil
 }
 

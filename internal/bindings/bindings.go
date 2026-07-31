@@ -82,6 +82,15 @@ func Sync() error {
 	var all []Binding
 	packSkillOwners := make(map[string]string)
 	for _, p := range packs {
+		// Plugin-class packs activate outside the binding sync
+		// (per-repo, via their declared mechanism). Announce them
+		// instead of silently counting zero bindings, and never let
+		// their content leak into user-scope bindings.
+		if act, actErr := pack.LoadActivation(p.Path); actErr == nil && act.PluginClass() {
+			fmt.Printf("%s %s: plugin-class pack (%s); bindings do not apply, see the pack's enablement runbook\n",
+				p.Name, p.Version, act.Mechanism)
+			continue
+		}
 		discovered, err := DiscoverBindings(p)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: discover %s: %v\n", p.Name, err)

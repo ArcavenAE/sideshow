@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ArcavenAE/sideshow/internal/pack"
 )
 
 // Manifest is the distribute section of a pack.yaml.
@@ -75,9 +77,10 @@ type SymlinkArtifact struct {
 
 // PackYAML is the top-level pack.yaml with the distribute section.
 type PackYAML struct {
-	Name       string   `yaml:"name"`
-	Version    string   `yaml:"version"`
-	Distribute Manifest `yaml:"distribute"`
+	Name       string           `yaml:"name"`
+	Version    string           `yaml:"version"`
+	Activation *pack.Activation `yaml:"activation,omitempty"`
+	Distribute Manifest         `yaml:"distribute"`
 }
 
 // LoadPackYAML reads a pack.yaml file and returns its distribute manifest.
