@@ -5,6 +5,7 @@
 package bindings
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,6 +48,15 @@ func DiscoverBindings(p pack.InstalledPack) ([]Binding, error) {
 	packPath, err := filepath.EvalSymlinks(p.Path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve pack path %s: %w", p.Path, err)
+	}
+
+	// Plugin-layout trees are refused here structurally, independent of
+	// the activation-block guard in Sync: even a plugin pack with no
+	// pack.yaml at all (so the activation guard cannot fire) never has
+	// its content discovered for user scope. The per-repo path uses
+	// DiscoverPluginLayout instead.
+	if IsPluginLayout(packPath) {
+		return nil, fmt.Errorf("%s %s: %w", p.Name, p.Version, ErrPluginLayout)
 	}
 
 	var result []Binding
@@ -106,6 +116,11 @@ func Sync() error {
 			continue
 		}
 		discovered, err := DiscoverBindings(p)
+		if errors.Is(err, ErrPluginLayout) {
+			fmt.Fprintf(os.Stderr, "ERROR: %s %s: plugin-layout tree with no readable activation contract; excluded from user-scope sync\n",
+				p.Name, p.Version)
+			continue
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: discover %s: %v\n", p.Name, err)
 			continue
