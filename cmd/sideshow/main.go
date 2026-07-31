@@ -665,12 +665,23 @@ func runStatus() error {
 
 	for _, p := range packs {
 		fmt.Printf("%s %s\n", p.Name, p.Version)
-		if act, actErr := pack.LoadActivation(p.Path); actErr == nil && act.PluginClass() {
+		act, actErr := pack.LoadActivation(p.Path)
+		if actErr != nil {
+			// Fail closed, matching the sync loop: no binding counts
+			// for a pack whose activation contract cannot be read.
+			fmt.Printf("  activation: ERROR: %v; excluded from user-scope sync\n", actErr)
+			continue
+		}
+		if act.PluginClass() {
 			scope := act.DefaultScope
 			if scope == "" {
 				scope = "per-repo"
 			}
 			fmt.Printf("  activation: %s (%s); bindings do not apply\n", act.Mechanism, scope)
+			continue
+		}
+		if act != nil && act.PerRepoRequired {
+			fmt.Printf("  activation: per-repo required; user-scope bindings do not apply\n")
 			continue
 		}
 		available, err := bindings.CountForPack(p.Name, p.Path)

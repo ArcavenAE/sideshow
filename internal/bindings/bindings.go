@@ -86,9 +86,23 @@ func Sync() error {
 		// (per-repo, via their declared mechanism). Announce them
 		// instead of silently counting zero bindings, and never let
 		// their content leak into user-scope bindings.
-		if act, actErr := pack.LoadActivation(p.Path); actErr == nil && act.PluginClass() {
+		act, actErr := pack.LoadActivation(p.Path)
+		if actErr != nil {
+			// Fail closed: an unreadable activation block could be
+			// hiding a per-repo-only declaration, so the pack is
+			// excluded from user-scope sync entirely.
+			fmt.Fprintf(os.Stderr, "ERROR: %s %s: activation unreadable (%v); excluded from user-scope sync\n",
+				p.Name, p.Version, actErr)
+			continue
+		}
+		if act.PluginClass() {
 			fmt.Printf("%s %s: plugin-class pack (%s); bindings do not apply, see the pack's enablement runbook\n",
 				p.Name, p.Version, act.Mechanism)
+			continue
+		}
+		if act != nil && act.PerRepoRequired {
+			fmt.Printf("%s %s: per-repo-required pack; user-scope bindings do not apply, see the pack's enablement runbook\n",
+				p.Name, p.Version)
 			continue
 		}
 		discovered, err := DiscoverBindings(p)
