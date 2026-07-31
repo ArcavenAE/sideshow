@@ -113,7 +113,7 @@ func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
 			data = []byte(content)
 		}
 
-		if err := os.WriteFile(target, data, 0o644); err != nil {
+		if err := writeWithSourceMode(target, data, path); err != nil {
 			return fmt.Errorf("write %s: %w", target, err)
 		}
 		return nil

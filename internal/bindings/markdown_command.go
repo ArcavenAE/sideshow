@@ -69,7 +69,7 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 			content = appendFallbackFooter(content, b.packPath)
 
 			destPath := filepath.Join(claudeDir, filepath.Base(path))
-			if err := os.WriteFile(destPath, []byte(content), 0o644); err != nil {
+			if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
 				return fmt.Errorf("write command %s: %w", destPath, err)
 			}
 			synced++
@@ -108,7 +108,7 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 		content = appendFallbackFooter(content, b.packPath)
 
 		destPath := filepath.Join(claudeDir, name)
-		if err := os.WriteFile(destPath, []byte(content), 0o644); err != nil {
+		if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
 			return nil // skip on write error
 		}
 		synced++
