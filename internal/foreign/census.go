@@ -210,6 +210,15 @@ func TakeCensus(configDir, pack string) (*Census, error) {
 	return c, nil
 }
 
+// UserEnabled reports whether the identity carries a user-scope
+// (machine-wide) enable set to true. Callers use it to refuse flows
+// that would leave a per-repo-required pack activating everywhere
+// (the containment mandate; Diagnose grades the same state ERROR).
+func (c *Census) UserEnabled(identity string) bool {
+	e, ok := c.userEnables[identity]
+	return ok && e.value
+}
+
 // RepoView resolves the census against one repo's settings scopes.
 type RepoView struct {
 	RepoDir string

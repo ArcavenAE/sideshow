@@ -46,6 +46,8 @@ Usage:
   sideshow activate <pack> [--repo <path>] [--agent <name>]  Consented persona flip (repo default agent)
   sideshow deactivate <pack> [--repo <path>]  Remove the persona flip only (prefix-guarded)
   sideshow coexist-check <pack> [--repo <path>]  Read-only enable/adopt preflight (ten checks)
+  sideshow adopt <pack> [--repo <path>] [--rewrite-agent] [--dry-run]  Convert a repo from the foreign (claude-mp) channel
+  sideshow adopt <pack> --finish          Report remaining foreign residue (print-only)
   sideshow version                        Show version
 
 Install options:
@@ -138,6 +140,8 @@ func main() {
 		err = runDisable(os.Args[2:])
 	case "coexist-check":
 		err = runCoexistCheck(os.Args[2:])
+	case "adopt":
+		err = runAdopt(os.Args[2:])
 	case "coexist":
 		err = runCoexist(os.Args[2:])
 	case "version", "--version", "-V":
