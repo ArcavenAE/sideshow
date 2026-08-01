@@ -14,24 +14,30 @@ Prerequisites: `gh`, `cosign`, and `python3` (macOS:
 `brew install gh cosign`). Every verification step below fails
 without them.
 
+The `-r2` in the tag and artifact name is a packaging revision: the
+same upstream bmad, re-issued with corrected packaging (the original
+releases predate the pack.yaml `runtime_links` emit; sideshow#109).
+Always prefer the highest revision of a version. The extracted
+directory carries no revision.
+
 ```bash
 mkdir -p /tmp/bmad-install && cd /tmp/bmad-install
-gh release download bmad-v6.10.0 -R ArcavenAE/sideshow-packs \
-  -p 'bmad-6.10.0-arcaven.tar.gz*' -p 'install.meta.json'
+gh release download bmad-v6.10.0-r2 -R ArcavenAE/sideshow-packs --clobber \
+  -p 'bmad-6.10.0-r2-arcaven.tar.gz*' -p 'install.meta.json'
 
 # Integrity: tarball sha256 must match the provenance manifest
 shasum -a 256 -c <(python3 -c \
   "import json; m=json.load(open('install.meta.json')); \
-   print(m['artifact']['tarball_sha256'], ' bmad-6.10.0-arcaven.tar.gz')")
+   print(m['artifact']['tarball_sha256'], ' bmad-6.10.0-r2-arcaven.tar.gz')")
 
 # Authenticity: cosign keyless verification against the CI identity
 cosign verify-blob \
-  --bundle bmad-6.10.0-arcaven.tar.gz.bundle \
+  --bundle bmad-6.10.0-r2-arcaven.tar.gz.bundle \
   --certificate-identity-regexp 'github.com/ArcavenAE/sideshow-packs' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  bmad-6.10.0-arcaven.tar.gz          # expect: Verified OK
+  bmad-6.10.0-r2-arcaven.tar.gz       # expect: Verified OK
 
-tar -xzf bmad-6.10.0-arcaven.tar.gz
+tar -xzf bmad-6.10.0-r2-arcaven.tar.gz
 ```
 
 ## 2. Install and activate
