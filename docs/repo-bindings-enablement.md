@@ -235,7 +235,45 @@ running one (equivalence is only provable at version equality);
 
 Retreat: `sideshow disable vsdd-factory` removes the bindings, and
 deleting the suppression override from `.claude/settings.local.json`
-restores the foreign channel exactly as found.
+restores the foreign channel exactly as found. If the repo carried its
+own per-repo enable before adopting, that entry is restored rather than
+deleted, so a failed adoption leaves the foreign channel dispatching
+exactly as it was.
+
+### When the enable is machine-wide
+
+Adopt refuses outright if the foreign identity is enabled at USER
+scope. Converting one repo would leave every other repo on the machine
+loading the foreign channel, which is the posture the containment
+mandate grades an error. Move the enable per repo first:
+
+```sh
+sideshow adopt vsdd-factory --migrate-user-scope --dry-run
+sideshow adopt vsdd-factory --migrate-user-scope --yes
+```
+
+The migration pins the foreign channel in each swept repo that
+*depends* on the machine-wide enable, removes the machine-wide entry,
+and then verifies against disk, per repo, that removing it changed
+nothing. A repo already enabled independently gets no write; a repo
+that suppresses the identity gets no write. Any mismatch, or a factory
+run in flight in any swept repo, rolls the whole migration back.
+
+The sweep set is the adoption target, the sideshow ledger's repos, and
+any project-scope install the harness recorded. Extend it with
+`--also-repo <path>` (repeatable) and `--sweep-root <dir>` (scans for
+git checkouts, three levels deep).
+
+**The limit is stated in the plan, and it is real:** sideshow cannot
+enumerate every repo on the machine. Any repo outside the sweep set
+that relied on the machine-wide enable stops loading the foreign
+channel. Only you can complete that list, which is why the sweep
+sources are printed rather than assumed.
+
+Per-repo enables land in `.claude/settings.local.json` (untracked) by
+default. `--scope project` writes `.claude/settings.json` instead,
+which every clone of that repo inherits, so it also requires
+`--commit-consent`.
 
 **Machine-level retirement is not automated.** After adopting the
 repos you care about:
@@ -248,6 +286,11 @@ prints every remaining foreign trace (installs per scope, orphaned
 enables, the cache tree, the marketplace) with the operator command
 that retires each one. Sideshow executes none of them — uninstalling
 the plugin channel is your act, run only what you consent to.
+
+The marketplace question is decided rather than deferred: the report
+reads the install registry and says either "serves only vsdd-factory,
+so removal is safe" with the command, or "KEEP" naming the other
+plugins that marketplace serves.
 
 ## Divergence notice
 

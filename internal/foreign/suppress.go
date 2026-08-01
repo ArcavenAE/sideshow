@@ -7,37 +7,25 @@ import (
 	"path/filepath"
 )
 
-// SuppressInRepo and UnsuppressInRepo are the ONE consented write in
-// this otherwise read-only package: they set (or remove) a repo-side
+// SuppressInRepo and UnsuppressInRepo set (or remove) a repo-side
 // enabledPlugins override in the CONSUMER repo's
 // .claude/settings.local.json. This is exactly option 2 of the
 // refusal menu (RefusalOptions) and the T10 trial mechanism: a
 // project/local false beats a user-scope true, so the foreign
 // identity stops dispatching in THIS repo only. Nothing here touches
-// harness state, the foreign install, its cache, or any other repo —
-// paqn clause (d) holds: sideshow never auto-disables or
-// auto-uninstalls a foreign install; these run only inside explicit,
-// consented verbs (adopt).
+// the foreign install, its cache, or any other repo. Paqn clause (d)
+// holds: sideshow never auto-disables or auto-uninstalls a foreign
+// install; these run only inside explicit, consented verbs (adopt).
+//
+// The scope-general writers live in enables.go; these two are the
+// narrow repo-suppression pair, kept separate because Unsuppress
+// deliberately refuses to touch a true value the user chose.
 
 // SuppressInRepo writes enabledPlugins[identity] = false into the
 // repo's settings.local.json, preserving every other key. Reports
 // whether the file was created.
 func SuppressInRepo(repoDir, identity string) (created bool, err error) {
-	path := localSettingsPath(repoDir)
-	settings, existed, err := readSettingsObject(path)
-	if err != nil {
-		return false, err
-	}
-	enables, err := enabledPluginsObject(settings, path)
-	if err != nil {
-		return false, err
-	}
-	enables[identity] = false
-	settings["enabledPlugins"] = enables
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, fmt.Errorf("create settings dir: %w", err)
-	}
-	return !existed, writeSettingsObject(path, settings)
+	return SetEnable(localSettingsPath(repoDir), identity, false)
 }
 
 // UnsuppressInRepo removes the identity's override only when it is

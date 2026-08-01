@@ -271,6 +271,41 @@ func TestAdopt_RollsBackSuppressionOnEnableFailure(t *testing.T) {
 	}
 }
 
+// TestAdopt_RollbackRestoresAPriorLocalEnable covers the repo shape a
+// per-repo enable leaves behind: the identity is enabled TRUE in the
+// same file and key adopt's suppression writes. Rollback must restore
+// that true, not delete the key. Deleting it turns the foreign channel
+// off in a repo the operator never converted.
+//
+// This is the shape the user-scope migration produces, and the shape
+// any hand-written local enable already had.
+func TestAdopt_RollbackRestoresAPriorLocalEnable(t *testing.T) {
+	opts, repo, _ := fixture(t, "project")
+	// The only enable is a local-scope true, as after a migration.
+	if err := os.Remove(filepath.Join(repo, ".claude", "settings.json")); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, repo, ".claude/settings.local.json",
+		"{\n  \"enabledPlugins\": {\n    \"vsdd-factory@claude-mp\": true\n  }\n}\n", 0o644)
+
+	// Break the store so enable fails after suppression is written.
+	if err := os.RemoveAll(filepath.Join(opts.StoreRoot, "hooks")); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotDir(t, repo)
+
+	if _, err := Adopt(opts); err == nil {
+		t.Fatal("Adopt succeeded against a broken store")
+	}
+	if diff := diffSnapshots(before, snapshotDir(t, repo)); len(diff) != 0 {
+		t.Errorf("repo not restored after rollback: %v", diff)
+	}
+	enables, _ := readLocalSettings(t, repo)["enabledPlugins"].(map[string]any)
+	if v, ok := enables["vsdd-factory@claude-mp"].(bool); !ok || !v {
+		t.Errorf("prior local enable not restored: %v", enables)
+	}
+}
+
 func snapshotDir(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	snap := map[string]string{}

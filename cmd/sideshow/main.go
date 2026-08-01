@@ -49,6 +49,8 @@ Usage:
   sideshow coexist-check <pack> [--repo <path>]  Read-only enable/adopt preflight (ten checks)
   sideshow adopt <pack> [--repo <path>] [--rewrite-agent] [--dry-run]  Convert a repo from the foreign (claude-mp) channel
   sideshow adopt <pack> --finish          Report remaining foreign residue (print-only)
+  sideshow adopt <pack> --migrate-user-scope [--also-repo <path>] [--sweep-root <dir>] [--yes]
+                                          Move a machine-wide foreign enable to per-repo enables
   sideshow version                        Show version
 
 Install options:
