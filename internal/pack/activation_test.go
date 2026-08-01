@@ -122,8 +122,7 @@ func captureStdout(t *testing.T, fn func()) string {
 }
 
 func TestInstallFromLocal_PluginClassNoticeReplacesSyncHint(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("SIDESHOW_HOME", home)
+	freezeSafeHome(t)
 	src := t.TempDir()
 	packYAML := "name: vsdd-factory\nversion: \"1.0.0-rc.23\"\n" +
 		"activation:\n  default_scope: per-repo\n  per_repo_required: true\n" +
@@ -157,8 +156,7 @@ func TestInstallFromLocal_PluginClassNoticeReplacesSyncHint(t *testing.T) {
 }
 
 func TestInstallFromLocal_UnknownMechanismWarns(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("SIDESHOW_HOME", home)
+	freezeSafeHome(t)
 	src := t.TempDir()
 	packYAML := "name: mystery\nversion: \"1.0.0\"\n" +
 		"activation:\n  mechanism: quantum-entangle\n"

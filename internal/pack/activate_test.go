@@ -18,7 +18,7 @@ func writePackYAML(t *testing.T, dir, version string) {
 }
 
 func TestActivateAndInstalledVersions(t *testing.T) {
-	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	freezeSafeHome(t)
 
 	// Two installed versions, current pointing at 2.0.0.
 	for _, v := range []string{"1.0.0", "2.0.0"} {
@@ -76,7 +76,7 @@ func TestActivateAndInstalledVersions(t *testing.T) {
 }
 
 func TestInstallFromLocal_NoActivateKeepsCurrent(t *testing.T) {
-	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	freezeSafeHome(t)
 
 	src1 := t.TempDir()
 	writePackYAML(t, src1, "1.0.0")
