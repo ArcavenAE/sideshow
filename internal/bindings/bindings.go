@@ -140,7 +140,11 @@ func Sync() error {
 
 	custom, err := discoverCustomBindings(packs, packSkillOwners)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: discover custom sources: %v\n", err)
+		// Fail closed before anything is written: a collision (or an
+		// unreadable source registry) must block the sync loudly, not
+		// downgrade to a warning while the sync serves a silently
+		// chosen winner (sideshow#110 ruling).
+		return fmt.Errorf("custom sources: %w", err)
 	}
 	all = append(all, custom...)
 
@@ -220,8 +224,14 @@ func discoverCustomBindings(packs []pack.InstalledPack, packSkillOwners map[stri
 				continue
 			}
 			if prev, ok := claimed[name]; ok {
-				fmt.Fprintf(os.Stderr, "warning: skipping custom skill %s from %s: already bound from %s\n", name, s.Project, prev)
-				continue
+				// Ruled 2026-08-01 (sideshow#110): a name collision
+				// between two registered repos refuses the sync
+				// instead of silently serving the registry-order
+				// winner. A user editing their own skill must never
+				// wonder why the edit does not take effect.
+				return nil, fmt.Errorf(
+					"custom skill %q is declared by two registered repos: %s and %s; user-scope skills are shared across all registered repos, so one of them must rename the skill (or unregister as a source) before sync can proceed",
+					name, prev, s.Project)
 			}
 			claimed[name] = s.Project
 			skills = append(skills, name)
