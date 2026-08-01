@@ -30,7 +30,13 @@ func applySlashCommands(d *Declaration, repoRoot string, opts Options) []Action 
 
 	for _, cmd := range d.SlashCommands {
 		a := Action{Type: "shim", Name: cmd.ID, Path: cmd.Target}
-		abs := filepath.Join(repoRoot, cmd.Target)
+		abs, err := resolveWriteTarget(repoRoot, cmd.Target)
+		if err != nil {
+			a.Outcome = Failed
+			a.Detail = err.Error()
+			actions = append(actions, a)
+			continue
+		}
 
 		onExists := cmd.OnExists
 		if onExists == "" {

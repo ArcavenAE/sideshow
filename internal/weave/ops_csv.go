@@ -3,7 +3,6 @@ package weave
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -26,7 +25,13 @@ func applyCSVInjections(d *Declaration, repoRoot string, opts Options) []Action 
 
 	for _, inj := range d.CSVInjections {
 		a := Action{Type: "csv", Name: inj.Name, Path: inj.Target}
-		abs := filepath.Join(repoRoot, inj.Target)
+		abs, err := resolveWriteTarget(repoRoot, inj.Target)
+		if err != nil {
+			a.Outcome = Failed
+			a.Detail = err.Error()
+			actions = append(actions, a)
+			continue
+		}
 
 		content, err := os.ReadFile(abs)
 		if err != nil {
