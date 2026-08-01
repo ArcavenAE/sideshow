@@ -39,6 +39,13 @@ func manifestPath() string {
 
 // loadManifest reads the previous sync manifest. A missing file returns
 // an empty manifest, not an error.
+// LoadManifest exposes the sync-manifest receipt for read-only
+// consumers (doctor). A missing file is an empty manifest, not an
+// error; a malformed one is an error.
+func LoadManifest() (*SyncManifest, error) {
+	return loadManifest()
+}
+
 func loadManifest() (*SyncManifest, error) {
 	data, err := os.ReadFile(manifestPath())
 	if err != nil {

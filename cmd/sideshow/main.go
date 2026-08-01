@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,6 +48,9 @@ Usage:
   sideshow activate <pack> [--repo <path>] [--agent <name>]  Consented persona flip (repo default agent)
   sideshow deactivate <pack> [--repo <path>]  Remove the persona flip only (prefix-guarded)
   sideshow coexist-check <pack> [--repo <path>]  Read-only enable/adopt preflight (ten checks)
+  sideshow doctor [<pack>] [--layer <n,...>] [--repo <path>] [--json] [--strict]
+                                          Read-only health report over store, receipts,
+                                          and ledger (layers 1,3,4,5; docs/doctor-spec.md)
   sideshow adopt <pack> [--repo <path>] [--rewrite-agent] [--dry-run]  Convert a repo from the foreign (claude-mp) channel
   sideshow adopt <pack> --finish          Report remaining foreign residue (print-only)
   sideshow adopt <pack> --migrate-user-scope [--also-repo <path>] [--sweep-root <dir>] [--yes]
@@ -143,6 +147,8 @@ func main() {
 		err = runDisable(os.Args[2:])
 	case "coexist-check":
 		err = runCoexistCheck(os.Args[2:])
+	case "doctor":
+		err = runDoctor(os.Args[2:])
 	case "adopt":
 		err = runAdopt(os.Args[2:])
 	case "coexist":
@@ -158,6 +164,12 @@ func main() {
 	}
 
 	if err != nil {
+		var ec exitCodeError
+		if errors.As(err, &ec) {
+			// The command already printed its report; the code is
+			// the whole message.
+			os.Exit(ec.code)
+		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

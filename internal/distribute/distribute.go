@@ -17,6 +17,18 @@ import (
 // markerPrefix is used to identify sideshow-managed files and sections.
 const markerPrefix = "<!-- managed by sideshow"
 
+// MarkerPrefix exposes the managed-file marker prefix for read-only
+// verification (doctor checks receipted rules files kept it).
+const MarkerPrefix = markerPrefix
+
+// SectionBegin and SectionEnd expose the CLAUDE.md section markers
+// for read-only verification (doctor checks receipted sections stay
+// paired).
+func SectionBegin(id string) string { return sectionBegin(id) }
+
+// SectionEnd is SectionBegin's closing pair.
+func SectionEnd(id string) string { return sectionEnd(id) }
+
 // sectionBegin returns the begin marker for a CLAUDE.md section.
 func sectionBegin(id string) string {
 	return fmt.Sprintf("<!-- sideshow:%s:begin -->", id)
