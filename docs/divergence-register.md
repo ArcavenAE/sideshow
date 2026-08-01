@@ -35,6 +35,15 @@ addendum 3, T16 corrected), and upstream ships generic names (`jira`,
 34 generic agent names) — unprefixed bound names would be silently
 hijacked on consumer machines.
 
+**Measured upside (2026-08-01, .23 pilot round 2, aae-orc#128):**
+prefixed bare names are also cheaper in context than the plugin
+channel's namespace-qualified forms. With identical artifact counts
+(258 skills / 49 agents / 281 commands), the headless `system/init`
+frame was 14,444 bytes on this channel vs 17,085 on the plugin
+channel (~15% smaller); the whole delta is naming form plus the
+populated `plugins[]` array. The pack's announcement cost over a
+bare repo measured ~7.5 KB (~1.9K tokens) on the pilot machine.
+
 ## 3. Upstream telemetry predicates match nothing here
 
 Repo-scope addressing has no namespace qualifier (trial T20), so the
@@ -126,3 +135,18 @@ filed on forestage), but it is priced here because anything that
 plans to OBSERVE hook activity on this channel by parsing NDJSON will
 under-report. Use the dispatcher's own logs under `.factory/logs/`
 for ground truth.
+
+## 12. Project scope: content is portable, registration is not
+
+Project scope materializes full copies (exec-bit parity verified on
+the .23 pilot, round 2), but three pieces of a project-scope enable
+remain machine-bound: the `plugins/<pack>` compat symlink, the hook
+command in committed `.claude/settings.json`, and
+`env.CLAUDE_PLUGIN_ROOT` — all absolute store paths. A teammate
+checking out a committed project-scope enable gets working bindings
+with dangling registration (sideshow#98). Priced here so nobody
+sells project scope as team-ready on checkout; the structural fix is
+the second-developer setup verb (aae-orc-d3nq.21): committed halves
+reference `${CLAUDE_PLUGIN_ROOT}` unexpanded, and the per-machine
+env shim goes to `settings.local.json`, written by setup on each
+machine.
