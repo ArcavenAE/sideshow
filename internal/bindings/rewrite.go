@@ -21,20 +21,29 @@ import (
 // The implementation uses nul-byte sentinels to protect the per-repo
 // prefixes from being caught by the pack-content rewrite.
 //
-// Currently the pack prefix is hardcoded as "_bmad" because bmad is the
-// only pack sideshow manages. When a second pack with a different prefix
-// lands, this will need parameterizing.
+// rewritePaths keeps the historical bmad default; every binding that
+// syncs a differently prefixed pack calls rewritePathsForPrefix with
+// that pack's prefix (aae-orc-d3nq.50).
 func rewritePaths(content, packPath string) string {
-	const customSentinel = "\x00BMAD_CUSTOM\x00"
-	const outputSentinel = "\x00BMAD_OUTPUT\x00"
+	return rewritePathsForPrefix(content, packPath, "_bmad")
+}
 
-	content = strings.ReplaceAll(content, "{project-root}/_bmad-custom/", customSentinel)
-	content = strings.ReplaceAll(content, "{project-root}/_bmad-output/", outputSentinel)
+// rewritePathsForPrefix is rewritePaths parameterized on the pack's
+// project-root prefix (e.g. "_bmad", "_gds"): {project-root}/<prefix>/
+// references become absolute store paths while the sibling per-repo
+// dirs (<prefix>-custom/, <prefix>-output/) stay project-relative.
+func rewritePathsForPrefix(content, packPath, prefix string) string {
+	const customSentinel = "\x00PACK_CUSTOM\x00"
+	const outputSentinel = "\x00PACK_OUTPUT\x00"
 
-	content = strings.ReplaceAll(content, "{project-root}/_bmad/", packPath+"/")
+	root := "{project-root}/" + prefix
+	content = strings.ReplaceAll(content, root+"-custom/", customSentinel)
+	content = strings.ReplaceAll(content, root+"-output/", outputSentinel)
 
-	content = strings.ReplaceAll(content, customSentinel, "{project-root}/_bmad-custom/")
-	content = strings.ReplaceAll(content, outputSentinel, "{project-root}/_bmad-output/")
+	content = strings.ReplaceAll(content, root+"/", packPath+"/")
+
+	content = strings.ReplaceAll(content, customSentinel, root+"-custom/")
+	content = strings.ReplaceAll(content, outputSentinel, root+"-output/")
 
 	return content
 }
