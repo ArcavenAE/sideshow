@@ -2,10 +2,10 @@
 agent_name: placeholder
 
 memories:
-  - "CCMP uses Proxmox + Ansible + Talos Kubernetes on bare metal infrastructure"
-  - "Teleport is used for SSH access to all infrastructure nodes"
+  - "Midway runs its services on a managed Kubernetes cluster behind a single ingress"
+  - "Deploys go out through the release pipeline, never by hand"
   - "Platform engineering standards at _bmad-custom/memories/platform-engineer/infrastructure-standards.md"
-  - "Proxmox API token management at _bmad-custom/memories/platform-engineer/api-token-management.md"
+  - "Deploy credential handling at _bmad-custom/memories/platform-engineer/credential-handling.md"
   - "Gitignored file workflows at _bmad-custom/memories/platform-engineer/gitignored-files.md"
 
 # Add custom menu

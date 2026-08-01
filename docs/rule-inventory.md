@@ -162,7 +162,8 @@ making the rewrite chain declarative:
 ## Severity
 
 Per rule and per invocation, defaulting to warn. This is the same
-conclusion the weave spec reaches from CCMP's always-exit-0 script, and
+conclusion the weave spec reaches from the first ported script, which always
+exits 0, and
 it arrives here from three more directions. PR #1490 shipped blocking
 and was reverted to warning before merge. `--strict` exists in both
 validators and **neither repo's CI invokes it**, two months on. Strict

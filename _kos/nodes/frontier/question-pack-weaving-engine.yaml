@@ -9,8 +9,8 @@ tags:
 content: |
   What started in session-029 as "ship a file-ref validator" turned out
   to be a full post-install weaving engine. Five existing per-project
-  `bmad-post-update.sh` scripts (~2500 lines of shell across ccmp, peu,
-  ftc, switchboard, project alpha) are the prior art — already
+  `bmad-post-update.sh` scripts (~2500 lines of shell across switchboard,
+  ftc, and three further projects) are the prior art — already
   implementing five distinct operations:
 
   - csv-row-append (extend a CSV manifest with project-specific rows)
@@ -26,7 +26,7 @@ content: |
   Tracked by umbrella `aae-orc-a44c` (open, P1) with sub-issues:
   - `aae-orc-n8w7` (P2) — path (a) spec + rule inventory
   - `aae-orc-036p` (P2) — BMAD Node validator → rule inventory
-  - `aae-orc-kugb` (P2) — path (b) Go impl + CCMP port
+  - `aae-orc-kugb` (P2) — path (b) Go impl + first port
   - `aae-orc-ll31/8hu9/ojmn/l2w3` (P3) — port the four remaining scripts
   - `aae-orc-hd84` (P3) — mdcheck subprocess rule-type
 
@@ -37,7 +37,8 @@ content: |
 
   Open sub-questions:
   - Path (a) — declarative weave.yaml spec — or path (b) — Go-native impl
-    with CCMP as the reference port? Decision pending probe outcome.
+    with the shortest script as the reference port? RESOLVED: both, path (a)
+    then (b). Shipped 2026-08-01; see docs/pack-weaving-spec.md.
   - How does the engine compose with the five-layer doctor (which
     *verifies* what weaving did)?
   - What's the minimum useful subset to ship first?

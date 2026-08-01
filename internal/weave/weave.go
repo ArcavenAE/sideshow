@@ -88,8 +88,9 @@ type Declaration struct {
 	SlashCommands    []SlashCommand    `yaml:"slash_commands"`
 	Verification     *Verification     `yaml:"verification"`
 
-	// ApplyUpstreamPatches is `none` or a list. finding-029's table claimed
-	// ccmp applies patches; the script contains no patch code, so this
+	// ApplyUpstreamPatches is `none` or a list. finding-029's table claimed the
+	// first ported project applies patches; its script contains no patch code
+	// at all (see finding-097), so this
 	// operation has no verified prior art yet and stays a stub. See
 	// ops_patch.go.
 	ApplyUpstreamPatches yaml.Node `yaml:"apply_upstream_patches"`

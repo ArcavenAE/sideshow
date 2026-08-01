@@ -1,0 +1,138 @@
+# Worked example: one custom agent, its memories, and its slash command.
+#
+# "midway" is a SYNTHETIC project. This example was derived from a real
+# 240-line bmad-post-update.sh by substituting the project name and the five
+# memory strings, then executing the result; the golden fixture at
+# internal/weave/testdata/midway/ is the output of that run. Structure,
+# operation order, row shapes, and the awk semantics are unchanged from the
+# original, so the example exercises the same engine paths the real script did.
+# See internal/weave/testdata/midway/PROVENANCE.md.
+schema_version: 0.1.0
+pack: bmad
+
+vars:
+  project: midway
+
+custom_agents:
+  - id: platform-engineer
+    name: Sam
+    source: _bmad-custom/agents/sam-platform-engineer.md
+    slash_command_id: bmad-agent-custom-{{project}}-sam
+
+csv_injections:
+  - name: agent-manifest
+    target: _bmad/_config/agent-manifest.csv
+    guard: '"platform-engineer"'
+    rows:
+      - |-
+        "platform-engineer","Sam","Platform Engineer","⚙️","Platform Engineer & DevOps Architect","Expert in CI/CD pipelines, Kubernetes, Infrastructure as Code, GitOps, and observability platforms. Automation-focused, reliability-oriented, developer-productivity minded.","Automation-focused, reliability-oriented. Speaks in pipelines, containers, and deployment strategies. Infrastructure as code advocate. Direct and practical.","- Automation First: Automate everything repeatable - Infrastructure as Code: Version control all infrastructure - GitOps: Git as single source of truth for operations - Immutable Infrastructure: Never modify, always replace - Security by Default: Shift security left","custom","_bmad-custom/agents/sam-platform-engineer.md"
+
+  - name: bmad-help
+    target: _bmad/_config/bmad-help.csv
+    guard: 'bmad-agent-custom-{{project}}-sam'
+    rows:
+      - |-
+        custom,anytime,Design CI/CD Pipeline,DP,,_bmad-custom/agents/sam-platform-engineer.md,bmad-agent-custom-midway-sam,false,platform-engineer,bmad:Automation-focused reliability-oriented:agent:platform-engineer,Sam,⚙️ Platform Engineer,Create Mode,Design CI/CD pipeline with automated testing and deployment,output_folder,pipeline design
+      - |-
+        custom,anytime,Design Kubernetes,DK,,_bmad-custom/agents/sam-platform-engineer.md,bmad-agent-custom-midway-sam,false,platform-engineer,bmad:Automation-focused reliability-oriented:agent:platform-engineer,Sam,⚙️ Platform Engineer,Create Mode,Design Kubernetes cluster architecture and deployment strategy,output_folder,kubernetes design
+      - |-
+        custom,anytime,Design IaC,DI,,_bmad-custom/agents/sam-platform-engineer.md,bmad-agent-custom-midway-sam,false,platform-engineer,bmad:Automation-focused reliability-oriented:agent:platform-engineer,Sam,⚙️ Platform Engineer,Create Mode,Create Infrastructure as Code strategy,output_folder,iac strategy
+      - |-
+        custom,anytime,Design Observability,DO,,_bmad-custom/agents/sam-platform-engineer.md,bmad-agent-custom-midway-sam,false,platform-engineer,bmad:Automation-focused reliability-oriented:agent:platform-engineer,Sam,⚙️ Platform Engineer,Create Mode,Design monitoring logging and tracing architecture,output_folder,observability design
+      - |-
+        custom,anytime,Design GitOps,DG,,_bmad-custom/agents/sam-platform-engineer.md,bmad-agent-custom-midway-sam,false,platform-engineer,bmad:Automation-focused reliability-oriented:agent:platform-engineer,Sam,⚙️ Platform Engineer,Create Mode,Design GitOps workflow and automation,output_folder,gitops design
+      - |-
+        custom,anytime,Deployment Strategy,DST,,_bmad-custom/agents/sam-platform-engineer.md,bmad-agent-custom-midway-sam,false,platform-engineer,bmad:Automation-focused reliability-oriented:agent:platform-engineer,Sam,⚙️ Platform Engineer,Create Mode,Plan blue-green canary or rolling deployment,output_folder,deployment strategy
+
+  - name: default-party
+    target: _bmad/bmm/teams/default-party.csv
+    guard: '"platform-engineer"'
+    rows:
+      - |-
+        "platform-engineer","Sam","Platform Engineer","⚙️","Platform Engineer & DevOps Architect","Expert in CI/CD pipelines, Kubernetes, Infrastructure as Code, GitOps, and observability platforms. Automation-focused, reliability-oriented, developer-productivity minded.","Automation-focused, reliability-oriented. Speaks in pipelines, containers, and deployment strategies. Infrastructure as code advocate. Direct and practical.","Automation First: Automate everything repeatable. Infrastructure as Code: Version control all infrastructure. GitOps: Git as single source of truth. Immutable Infrastructure: Never modify, always replace.","custom","_bmad-custom/agents/sam-platform-engineer.md"
+
+memory_injections:
+  - targets:
+      - _bmad/_config/agents/bmm-architect.customize.yaml
+      - _bmad/_config/agents/bmm-dev.customize.yaml
+    anchor: '# Add custom menu'
+    on_missing_anchor: fail
+    memories:
+      - |-
+        Midway runs its services on a managed Kubernetes cluster behind a single ingress
+      - |-
+        Deploys go out through the release pipeline, never by hand
+      - |-
+        Platform engineering standards at _bmad-custom/memories/platform-engineer/infrastructure-standards.md
+      - |-
+        Deploy credential handling at _bmad-custom/memories/platform-engineer/credential-handling.md
+      - |-
+        Gitignored file workflows at _bmad-custom/memories/platform-engineer/gitignored-files.md
+
+slash_commands:
+  - id: bmad-agent-custom-{{project}}-sam
+    target: .claude/commands/bmad-agent-custom-{{project}}-sam.md
+    on_exists: skip
+    # Verbatim from the script's heredoc. The body is a fixed template, not
+    # derived from the agent file; only the agent path varies per agent.
+    body: |
+      ---
+      name: 'sam-platform-engineer'
+      description: 'Platform Engineer for CI/CD, Kubernetes, IaC, GitOps, observability'
+      disable-model-invocation: true
+      ---
+
+      You must fully embody this agent's persona and follow all activation instructions exactly as specified. NEVER break character until given an exit command.
+
+      <agent-activation CRITICAL="TRUE">
+      1. LOAD the FULL agent file from {project-root}/_bmad-custom/agents/sam-platform-engineer.md
+      2. READ its entire contents - this contains the complete agent persona, menu, and instructions
+      3. FOLLOW every step in the <activation> section precisely
+      4. DISPLAY the welcome/greeting as instructed
+      5. PRESENT the numbered menu
+      6. WAIT for user input before proceeding
+      </agent-activation>
+
+verification:
+  # The source script computes a VERIFY_OK flag, prints [OK] or [WARN], and
+  # never exits nonzero: there is no `exit` statement anywhere in its 240
+  # lines. Parity therefore means warn-only. Strict is opt-in, matching what
+  # BMAD-METHOD's own validator learned (#1490 shipped blocking, #1494
+  # reverted to warning).
+  on_failure: warn
+  required_files:
+    - _bmad-custom/agents/sam-platform-engineer.md
+    - _bmad-custom/memories/platform-engineer/infrastructure-standards.md
+    - _bmad-custom/memories/platform-engineer/credential-handling.md
+    - _bmad-custom/memories/platform-engineer/gitignored-files.md
+    - _bmad-custom/{{project}}-agent-memories.yaml
+  csv_contains:
+    - target: _bmad/_config/agent-manifest.csv
+      needle: '"platform-engineer"'
+
+apply_upstream_patches: none
+
+# DIVERGENCES from the source script, recorded rather than silently resolved.
+#
+# 1. `<project>-agent-memories.yaml` is declared the "single source of truth"
+#    for memories in the script header, its section comment, and its closing
+#    banner. The script never reads it; the verification step only checks that
+#    it exists. The memories were hardcoded in the PLATFORM_MEMORIES bash
+#    array, and the array and the file had different counts and different
+#    orders, so one memory had never reached an agent. This file reproduces the
+#    ARRAY, which is what runs. The yaml stays under
+#    verification.required_files because that is exactly what the script did.
+#
+# 2. The script contains no upstream-patch code, so apply_upstream_patches is
+#    `none` and this example does not exercise that operation. finding-029's
+#    per-project table says otherwise; finding-097 records the correction.
+#
+# 3. The awk rule /^memories: \[\]/ is unreachable. The preceding /^memories:/
+#    already matches `memories: []`. Dead rule, carried forward in neither this
+#    file nor the engine.
+#
+# 4. The script writes the generated memories block to a fixed path,
+#    /tmp/memories.yaml, and reads it back inside awk. Two projects running
+#    post-update at the same time race on that file and can cross-inject each
+#    other's memories. The engine holds the block in memory, so the hazard does
+#    not survive the port. Recorded because the shell prior art has it.

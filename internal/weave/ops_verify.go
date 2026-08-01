@@ -12,7 +12,7 @@ type Verification struct {
 	// OnFailure is "warn" (default) or "error".
 	//
 	// Warn is the default, and it is the most consequential default in the
-	// spec. CCMP's script computes a VERIFY_OK flag, prints [OK] or [WARN], and
+	// spec. The first ported script computes a VERIFY_OK flag, prints [OK] or [WARN], and
 	// contains no exit statement in 240 lines: it always exits 0. Upstream's own
 	// file-reference validator shipped blocking in BMAD-METHOD PR #1490 and was
 	// reverted to warning before merge in #1494, because it turned CI red

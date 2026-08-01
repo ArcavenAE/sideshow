@@ -47,10 +47,11 @@ platform.
   strict is opt-in. Contract:
   [`docs/pack-weaving-spec.md`](docs/pack-weaving-spec.md). Verification
   rule-types inventoried from upstream prior art:
-  [`docs/rule-inventory.md`](docs/rule-inventory.md). First port (ccmp)
-  is byte-identical to its shell original, established by running both
-  against identical trees; the golden fixture and its provenance are at
-  `internal/weave/testdata/ccmp/`. Beads `aae-orc-n8w7`, `aae-orc-036p`,
+  [`docs/rule-inventory.md`](docs/rule-inventory.md). The first port is
+  byte-identical to its shell original, established by running both
+  against identical trees. The published fixture uses a synthetic
+  stand-in project so it carries no site-specific detail; provenance at
+  `internal/weave/testdata/midway/`. Beads `aae-orc-n8w7`, `aae-orc-036p`,
   `aae-orc-kugb` under umbrella `aae-orc-a44c`.
 
 ## Frontier (session-029 commitments)
@@ -120,9 +121,10 @@ orc `charter.md` F24 and `_kos/nodes/frontier/question-sideshow-install-architec
 - **Remaining weave ports.** Four `bmad-post-update.sh` scripts are not
   yet ported: `aae-orc-ll31`, `aae-orc-8hu9`, `aae-orc-ojmn`,
   `aae-orc-l2w3`. One of them must supply the `apply_upstream_patches`
-  shape, which the ccmp port does not exercise: finding-029's table
-  attributes patches to ccmp, and reading the script shows it has no
-  patch code, so the operation has no verified prior art. The engine
+  shape, which the first port does not exercise: finding-029's table
+  attributes patches to that project, and reading its script shows it has
+  no patch code (finding-097), so the operation has no verified prior art.
+  The engine
   refuses anything but `none` until one does. Subprocess rule-type
   (`aae-orc-hd84`) is blocked differently than expected: the mdcheck
   upstream repo now returns 404, so the only pin is a local clone at

@@ -94,15 +94,16 @@ func diffSnapshots(t *testing.T, want, got map[string]string, ignore func(string
 	}
 }
 
-// TestCCMPParity asserts the engine reproduces the real shell script byte for
-// byte. testdata/ccmp/after was captured by executing
-// i-orc/ccmp/scripts/bmad-post-update.sh against a byte-identical copy of
-// testdata/ccmp/before. See testdata/ccmp/PROVENANCE.md.
-func TestCCMPParity(t *testing.T) {
+// TestMidwayParity asserts the engine reproduces a real bmad-post-update.sh
+// byte for byte. testdata/midway/after was captured by executing a
+// synthetic-data variant of that script against a byte-identical copy of
+// testdata/midway/before. See testdata/midway/PROVENANCE.md for what the
+// substitution changed and what it does not establish.
+func TestMidwayParity(t *testing.T) {
 	root := t.TempDir()
-	copyTree(t, filepath.Join("testdata", "ccmp", "before"), root)
+	copyTree(t, filepath.Join("testdata", "midway", "before"), root)
 
-	decl, err := Load(filepath.Join("testdata", "ccmp", "weave.yaml"))
+	decl, err := Load(filepath.Join("testdata", "midway", "weave.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func TestCCMPParity(t *testing.T) {
 		t.Fatalf("unexpected failures: %+v", failures)
 	}
 
-	want := snapshot(t, filepath.Join("testdata", "ccmp", "after"))
+	want := snapshot(t, filepath.Join("testdata", "midway", "after"))
 	got := snapshot(t, root)
 	// The declaration itself is not part of the shell script's output.
 	diffSnapshots(t, want, got, func(p string) bool {
@@ -123,13 +124,13 @@ func TestCCMPParity(t *testing.T) {
 	})
 }
 
-// TestCCMPParityIsIdempotent asserts a second application changes nothing, and
+// TestMidwayParityIsIdempotent asserts a second application changes nothing, and
 // that every operation reports skipped rather than silently reapplying.
-func TestCCMPParityIsIdempotent(t *testing.T) {
+func TestMidwayParityIsIdempotent(t *testing.T) {
 	root := t.TempDir()
-	copyTree(t, filepath.Join("testdata", "ccmp", "before"), root)
+	copyTree(t, filepath.Join("testdata", "midway", "before"), root)
 
-	decl, err := Load(filepath.Join("testdata", "ccmp", "weave.yaml"))
+	decl, err := Load(filepath.Join("testdata", "midway", "weave.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,16 +156,16 @@ func TestCCMPParityIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestCCMPRowsMatchTheShellSource guards the byte-exactness of the ported rows
+// TestMidwayRowsMatchTheShellSource guards the byte-exactness of the ported rows
 // independently of the tree diff, so a fixture regeneration cannot quietly
 // launder a transcription error.
-func TestCCMPRowsMatchTheShellSource(t *testing.T) {
-	decl, err := Load(filepath.Join("testdata", "ccmp", "weave.yaml"))
+func TestMidwayRowsMatchTheShellSource(t *testing.T) {
+	decl, err := Load(filepath.Join("testdata", "midway", "weave.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	after := snapshot(t, filepath.Join("testdata", "ccmp", "after"))
+	after := snapshot(t, filepath.Join("testdata", "midway", "after"))
 	targets := map[string]string{
 		"agent-manifest": "_bmad/_config/agent-manifest.csv",
 		"bmad-help":      "_bmad/_config/bmad-help.csv",
@@ -184,10 +185,10 @@ func TestCCMPRowsMatchTheShellSource(t *testing.T) {
 		}
 	}
 
-	// The script hardcodes 5 memories in its PLATFORM_MEMORIES array while
-	// _bmad-custom/ccmp-agent-memories.yaml carries 6. The array is what runs,
-	// so the array is the parity target. See the divergence note in
-	// examples/ccmp/weave.yaml.
+	// The script hardcodes 5 memories in its PLATFORM_MEMORIES array while the
+	// <project>-agent-memories.yaml it calls its single source of truth carries
+	// 6. The array is what runs, so the array is the parity target. See the
+	// divergence note in examples/midway/weave.yaml.
 	mems := decl.MemoryInjections[0].Memories
 	if len(mems) != 5 {
 		t.Fatalf("want 5 memories to match the shell array, got %d", len(mems))
