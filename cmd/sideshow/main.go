@@ -40,6 +40,7 @@ Usage:
                                           register it as a custom-skills source
   sideshow status                         Show installation status
   sideshow coexist <pack> [--repo <path>]  Read-only foreign-install census and coexistence findings
+  sideshow coexist-check <pack> [--repo <path>]  Read-only enable/adopt preflight (ten checks)
   sideshow version                        Show version
 
 Install options:
@@ -122,6 +123,8 @@ func main() {
 		}
 	case "status":
 		err = runStatus()
+	case "coexist-check":
+		err = runCoexistCheck(os.Args[2:])
 	case "coexist":
 		err = runCoexist(os.Args[2:])
 	case "version", "--version", "-V":
