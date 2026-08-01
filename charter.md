@@ -38,6 +38,20 @@ platform.
   that have no pack directory.
 - **Gitflow not adopted yet** — trunk `main` until the distribution
   story (cosign + GitHub Releases) goes live.
+- **Pack weaving.** The installer owns the pack directory; the repo owns
+  everything it adds to it. A repo declares its post-install additions
+  in `_<pack>-custom/weave.yaml` and `internal/weave` applies them after
+  content distribution. Five operation types, drawn from what the five
+  `bmad-post-update.sh` scripts (about 2500 lines of shell) actually do,
+  not from a designed taxonomy. Verification is warn-only by default;
+  strict is opt-in. Contract:
+  [`docs/pack-weaving-spec.md`](docs/pack-weaving-spec.md). Verification
+  rule-types inventoried from upstream prior art:
+  [`docs/rule-inventory.md`](docs/rule-inventory.md). First port (ccmp)
+  is byte-identical to its shell original, established by running both
+  against identical trees; the golden fixture and its provenance are at
+  `internal/weave/testdata/ccmp/`. Beads `aae-orc-n8w7`, `aae-orc-036p`,
+  `aae-orc-kugb` under umbrella `aae-orc-a44c`.
 
 ## Frontier (session-029 commitments)
 
@@ -103,6 +117,16 @@ orc `charter.md` F24 and `_kos/nodes/frontier/question-sideshow-install-architec
   `docs/schema-versioning.md`.
 - **Cross-orchestrator precedence** (`aae-orc-59dt`). Shared store by
   default; alternatives escape when orchestrators diverge.
+- **Remaining weave ports.** Four `bmad-post-update.sh` scripts are not
+  yet ported: `aae-orc-ll31`, `aae-orc-8hu9`, `aae-orc-ojmn`,
+  `aae-orc-l2w3`. One of them must supply the `apply_upstream_patches`
+  shape, which the ccmp port does not exercise: finding-029's table
+  attributes patches to ccmp, and reading the script shows it has no
+  patch code, so the operation has no verified prior art. The engine
+  refuses anything but `none` until one does. Subprocess rule-type
+  (`aae-orc-hd84`) is blocked differently than expected: the mdcheck
+  upstream repo now returns 404, so the only pin is a local clone at
+  commit `fef3f76`. Details in `docs/rule-inventory.md`.
 
 ## Graveyard
 

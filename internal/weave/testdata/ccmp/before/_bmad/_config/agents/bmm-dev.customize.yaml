@@ -1,0 +1,8 @@
+# Customization for agent
+agent_name: placeholder
+
+memories:
+  - "stale memory that must be replaced"
+
+# Add custom menu
+menu: []

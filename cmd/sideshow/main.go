@@ -14,6 +14,7 @@ import (
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"github.com/ArcavenAE/sideshow/internal/permissions"
 	"github.com/ArcavenAE/sideshow/internal/project"
+	"github.com/ArcavenAE/sideshow/internal/weave"
 )
 
 // Set by ldflags at build time. Defaults are for local builds.
@@ -661,6 +662,41 @@ func runProjectInitForPack(args []string) error {
 	}
 
 	fmt.Printf("Done: %d wrote, %d already present\n", wrote, skipped)
+
+	// Weaving runs last, because it operates on the tree the steps above
+	// produce. See docs/pack-weaving-spec.md.
+	if err := runWeave(cwd, packName, dryRun); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runWeave applies the repo's weave declaration, if it has one.
+//
+// Failures are reported and do not fail the install by default. That default is
+// deliberate: see docs/pack-weaving-spec.md § verification for the three lines
+// of evidence behind it.
+func runWeave(cwd, packName string, dryRun bool) error {
+	res, found, err := weave.ApplyForPack(cwd, packName, weave.Options{DryRun: dryRun})
+	if err != nil {
+		// A malformed or unsupported declaration is an install error: the repo
+		// asked for weaving and did not get it.
+		return fmt.Errorf("weave: %w", err)
+	}
+	if !found {
+		return nil
+	}
+
+	applied, skipped, failed := res.Counts()
+	fmt.Printf("Weave: %d applied, %d skipped, %d failed\n", applied, skipped, failed)
+	for _, a := range res.Actions {
+		switch a.Outcome {
+		case weave.Applied:
+			fmt.Printf("  %s %s: %s\n", a.Type, a.Name, a.Detail)
+		case weave.Failed:
+			fmt.Fprintf(os.Stderr, "  %s %s: %s\n", a.Type, a.Name, a.Detail)
+		}
+	}
 	return nil
 }
 
