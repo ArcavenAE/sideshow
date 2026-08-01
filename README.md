@@ -185,8 +185,15 @@ sideshow use bmad 6.10.0
 
 # Wire a repo you work in: creates the _bmad/ runtime shim (symlinks the
 # read surfaces upstream resolvers expect) + the _bmad-custom/ bridge +
-# gitignore entries. Run once per repo.
+# gitignore entries, and registers the repo as a custom-skills source.
+# Run once per repo.
 cd ~/work/myrepo && sideshow project init bmad
+
+# Stop serving a repo's custom skills (throwaway checkout, wrong-dir
+# init): removes it from the source registry; the next sync withdraws
+# its skills. Note that syncing from inside a repo that still carries
+# _bmad-custom/skills/ re-registers it.
+sideshow project unregister bmad --repo /tmp/scratch-checkout
 
 # Verify bindings are fully synced
 sideshow status

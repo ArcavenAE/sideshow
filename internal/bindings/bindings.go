@@ -202,7 +202,7 @@ func discoverCustomBindings(packs []pack.InstalledPack, packSkillOwners map[stri
 
 	var kept []CustomSource
 	pruned := false
-	claimed := make(map[string]string) // skill name -> claiming project
+	claimed := make(map[string]CustomSource) // skill name -> claiming source
 	var out []Binding
 
 	for _, s := range reg.Sources {
@@ -224,16 +224,30 @@ func discoverCustomBindings(packs []pack.InstalledPack, packSkillOwners map[stri
 				continue
 			}
 			if prev, ok := claimed[name]; ok {
-				// Ruled 2026-08-01 (sideshow#110): a name collision
-				// between two registered repos refuses the sync
-				// instead of silently serving the registry-order
-				// winner. A user editing their own skill must never
-				// wonder why the edit does not take effect.
+				// Ruled 2026-08-01 (sideshow#110), content-aware
+				// amendment: identical content is a benign duplicate
+				// (worktrees and second checkouts of one project are
+				// routine here) and one copy serves; differing
+				// content refuses the sync instead of silently
+				// serving the registry-order winner. A user editing
+				// their own skill must never wonder why the edit
+				// does not take effect.
+				prevDir := filepath.Join(customSkillsDir(prev.Project, prev.Pack), name)
+				curDir := filepath.Join(customSkillsDir(s.Project, s.Pack), name)
+				same, cmpErr := sameDirContent(prevDir, curDir)
+				if cmpErr != nil {
+					return nil, fmt.Errorf("compare custom skill %q between %s and %s: %w", name, prev.Project, s.Project, cmpErr)
+				}
+				if same {
+					fmt.Fprintf(os.Stderr, "note: custom skill %s in %s is byte-identical to the copy in %s; serving one copy\n", name, s.Project, prev.Project)
+					continue
+				}
 				return nil, fmt.Errorf(
-					"custom skill %q is declared by two registered repos: %s and %s; user-scope skills are shared across all registered repos, so one of them must rename the skill (or unregister as a source) before sync can proceed",
-					name, prev, s.Project)
+					"custom skill %q is declared with differing content by two registered repos: %s and %s; user-scope skills are shared across all registered repos, so rename the skill in one of them, or run 'sideshow project unregister %s' in the repo that should stop serving it, before sync can proceed",
+					name, prev.Project, s.Project, s.Pack,
+				)
 			}
-			claimed[name] = s.Project
+			claimed[name] = s
 			skills = append(skills, name)
 		}
 		if len(skills) == 0 {
