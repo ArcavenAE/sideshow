@@ -137,6 +137,23 @@ func TestRun_ContentCollisionRefuses(t *testing.T) {
 	}
 }
 
+func TestRun_BoundRepoOwnArtifactsAreNotCollisions(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	// The repo is bound: its ledger row exists and the materialized
+	// artifacts are the ledger's own writes, not collisions.
+	write(t, opts.RepoDir, ".claude/skills/vsdd-pr-manager/SKILL.md", "# ours\n")
+	write(t, "", opts.LedgerPath, "schema_version: \"0.1.0\"\nrepos:\n  "+opts.RepoDir+":\n    vsdd-factory:\n      version: 1.0.0-rc.23\n      store_path: /store/1.0.0-rc.23\n      settings_scope: local\n")
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if sevs := severities(rep, 9); len(sevs) != 0 {
+		t.Errorf("check 9 fired on a bound repo's own artifacts: %v", sevs)
+	}
+}
+
 func TestRun_RunningFactorySignals(t *testing.T) {
 	t.Parallel()
 	opts := baseOptions(t)
