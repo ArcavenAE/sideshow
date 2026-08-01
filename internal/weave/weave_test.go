@@ -94,16 +94,16 @@ func TestVarsSubstituted(t *testing.T) {
 	d := loadFrom(t, `schema_version: 0.1.0
 pack: bmad
 vars:
-  project: ccmp
+  project: midway
 slash_commands:
   - id: bmad-agent-custom-{{project}}-sam
     target: .claude/commands/bmad-agent-custom-{{project}}-sam.md
     body: "x"
 `)
-	if got := d.SlashCommands[0].ID; got != "bmad-agent-custom-ccmp-sam" {
+	if got := d.SlashCommands[0].ID; got != "bmad-agent-custom-midway-sam" {
 		t.Fatalf("id = %q", got)
 	}
-	if got := d.SlashCommands[0].Target; !strings.Contains(got, "ccmp") {
+	if got := d.SlashCommands[0].Target; !strings.Contains(got, "midway") {
 		t.Fatalf("target = %q", got)
 	}
 }

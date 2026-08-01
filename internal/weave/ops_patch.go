@@ -4,9 +4,10 @@ import "gopkg.in/yaml.v3"
 
 // applyUpstreamPatches re-applies project-local edits to installer-owned files.
 //
-// Deliberately unimplemented. finding-029's per-project table lists ccmp as
-// applying patches C1 C2 E1 E2 I1 I3; reading ccmp's script shows it contains
-// no patch code at all, so the first port does not exercise this operation and
+// Deliberately unimplemented. finding-029's per-project table lists the first
+// ported project as applying patches C1 C2 E1 E2 I1 I3; reading that script
+// shows it contains no patch code at all (finding-097 records the correction),
+// so the first port does not exercise this operation and
 // there is no verified prior art to port from. Writing the schema now, from the
 // table rather than from working code, is how the table's error would propagate
 // into the engine.

@@ -17,8 +17,8 @@ upgrade it overwrites the directory they lived in.
 Five projects solved this the same way and independently: a
 `bmad-post-update.sh` script, run by hand after every install, that
 re-applies the project's local additions to the freshly installed tree.
-About 2500 lines of shell across ccmp, peu, ftc, switchboard, and one
-further project. Weaving is that script turned into data.
+About 2500 lines of shell across switchboard, ftc, and three further
+projects. Weaving is that script turned into data.
 
 The one principle everything below derives from:
 
@@ -56,7 +56,7 @@ required.
 schema_version: 0.1.0
 pack: bmad
 vars:
-  project: ccmp
+  project: midway
 custom_agents: [...]
 csv_injections: [...]
 memory_injections: [...]
@@ -72,8 +72,15 @@ error, not an empty string: the five shell scripts all interpolated
 `$PROJECT` style variables, and a silent empty substitution there would
 write to a path one segment short of the intended one.
 
-A worked example, ported from ccmp and verified byte-for-byte against
-its script, is at [`examples/ccmp/weave.yaml`](../examples/ccmp/weave.yaml).
+A worked example is at
+[`examples/midway/weave.yaml`](../examples/midway/weave.yaml). `midway` is a
+synthetic project standing in for one of the five, so the published example
+carries no site-specific operational detail; it was derived from a real script
+by substituting the project name and the memory strings, then executing the
+result. See
+[`internal/weave/testdata/midway/PROVENANCE.md`](../internal/weave/testdata/midway/PROVENANCE.md)
+for what that substitution changed and what the fixture does and does not
+establish.
 
 ## Operation types
 
@@ -128,7 +135,7 @@ Replace a YAML block in one or more customize files.
   anchor: '# Add custom menu'
   on_missing_anchor: fail
   memories:
-    - CCMP uses Proxmox + Ansible + Talos Kubernetes on bare metal infrastructure
+    - Midway runs its services on a managed Kubernetes cluster behind a single ingress
 ```
 
 Semantics, matching the awk the scripts use: delete any existing
@@ -184,9 +191,9 @@ Re-apply project-local edits to installer-owned files.
 apply_upstream_patches: none        # or a list of patch declarations
 ```
 
-No CCMP surface. finding-029's per-project table lists ccmp as applying
-patches C1 C2 E1 E2 I1 I3; reading the script shows it contains no
-patch code at all. The correction is recorded on `aae-orc-kugb`. This
+No surface in the first port. finding-029's per-project table lists that
+project as applying patches C1 C2 E1 E2 I1 I3; reading its script shows it
+contains no patch code at all. The correction is recorded in `finding-097`. This
 operation therefore has no verified prior art in the first port, and
 its declaration shape stays a stub until one of the other four scripts
 supplies it. Writing the schema now, from the table rather than from
@@ -207,9 +214,9 @@ verification:
 
 **Warn is the default, and this is the most consequential default in
 the spec.** Three independent lines of evidence point the same way.
-CCMP's script computes a `VERIFY_OK` flag, prints `[OK]` or `[WARN]`,
-and contains no `exit` statement anywhere in its 240 lines: it always
-exits 0. BMAD-METHOD's own file-reference validator shipped blocking in
+The first ported script computes a `VERIFY_OK` flag, prints `[OK]` or
+`[WARN]`, and contains no `exit` statement anywhere in its 240 lines: it
+always exits 0. BMAD-METHOD's own file-reference validator shipped blocking in
 PR #1490 and was reverted to warning before merge in #1494, precisely
 because it turned CI red against an existing corpus. Two months later,
 strict promotion is still an unshipped step in both that repo and
@@ -293,8 +300,8 @@ running the destructive default.
 
 - [`rule-inventory.md`](rule-inventory.md): the verification rule-types,
   inventoried from upstream prior art (`aae-orc-036p`)
-- [`examples/ccmp/weave.yaml`](../examples/ccmp/weave.yaml): first port,
-  byte-verified against its shell original
+- [`examples/midway/weave.yaml`](../examples/midway/weave.yaml): worked
+  example, derived from the first port's shell original
 - [`schema-versioning.md`](schema-versioning.md): the `schema_version` rule
 - [`customization-bridge.md`](customization-bridge.md): how
   `_{pack}-custom/` reaches upstream's own customization surface
