@@ -41,6 +41,9 @@ Usage:
                                           and registered _<pack>-custom/skills/ sources)
   sideshow project init <pack>            Apply consumer-repo convention to cwd and
                                           register it as a custom-skills source
+  sideshow project unregister <pack> [--repo <path>]
+                                          Remove a repo from the custom-skills source
+                                          registry (next sync withdraws its skills)
   sideshow status                         Show installation status
   sideshow coexist <pack> [--repo <path>]  Read-only foreign-install census and coexistence findings
   sideshow enable <pack>[@<ver>] [--repo <path>] [--scope local|project]  Activate a pack in one repo (repo-bindings)
@@ -131,6 +134,8 @@ func main() {
 		switch os.Args[2] {
 		case "init":
 			err = runProjectInitForPack(os.Args[3:])
+		case "unregister":
+			err = runProjectUnregister(os.Args[3:])
 		default:
 			fmt.Fprintf(os.Stderr, "unknown project subcommand: %s\n", os.Args[2])
 			os.Exit(1)
@@ -640,6 +645,55 @@ func runCommandsSync() error {
 // current working directory — chiefly gitignore entries so consumer
 // repos don't commit sideshow-managed scaffolding.
 // Implements aae-orc-f6ei.
+// runProjectUnregister removes a repo + pack pair from the
+// custom-skills source registry:
+//
+//	sideshow project unregister <pack> [--repo <path>]
+//
+// The escape hatch registration never had: project init and sync
+// auto-register, and until this verb the only exits were deleting the
+// directory or hand-editing custom-sources.yaml.
+func runProjectUnregister(args []string) error {
+	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
+		return fmt.Errorf("usage: sideshow project unregister <pack> [--repo <path>]")
+	}
+	packName := args[0]
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve working directory: %w", err)
+	}
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--repo":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--repo requires a path")
+			}
+			i++
+			repoDir = args[i]
+		default:
+			return fmt.Errorf("unknown flag for project unregister: %s (see 'sideshow --help')", args[i])
+		}
+	}
+
+	removed, err := bindings.UnregisterCustomSource(repoDir, packName)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		fmt.Printf("%s is not a registered %s custom-skills source; nothing to do\n", repoDir, packName)
+		return nil
+	}
+	fmt.Printf("Unregistered %s as a %s custom-skills source.\n", repoDir, packName)
+	fmt.Println("Run 'sideshow commands sync' to withdraw its served skills.")
+	// Sync auto-registers any cwd that carries custom skill content,
+	// so an unregister only sticks for repos you do not sync from
+	// within. Say so rather than letting the re-registration surprise.
+	if entries, dirErr := os.ReadDir(filepath.Join(repoDir, "_"+packName+"-custom", "skills")); dirErr == nil && len(entries) > 0 {
+		fmt.Printf("note: %s still contains _%s-custom/skills/; a sync run from inside it will re-register it\n", repoDir, packName)
+	}
+	return nil
+}
+
 func runProjectInitForPack(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: sideshow project init <pack> [--dry-run]")

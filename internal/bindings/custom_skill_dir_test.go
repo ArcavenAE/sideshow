@@ -165,6 +165,44 @@ func TestDiscoverCustomBindings_CollisionsAndPrune(t *testing.T) {
 	}
 }
 
+func TestDiscoverCustomBindings_IdenticalDuplicateServesOneCopy(t *testing.T) {
+	// Content-aware amendment to the sideshow#110 ruling: a second
+	// checkout of the same project (worktree, clone) declares the
+	// same skills with byte-identical content; that is benign and one
+	// copy serves. Only differing content refuses.
+	t.Setenv("SIDESHOW_HOME", t.TempDir())
+
+	checkoutA := t.TempDir()
+	checkoutB := t.TempDir()
+	for _, c := range []string{checkoutA, checkoutB} {
+		writeFile(t, filepath.Join(c, "_bmad-custom", "skills", "twin", "SKILL.md"), "# same bytes\n")
+		writeFile(t, filepath.Join(c, "_bmad-custom", "skills", "twin", "assets", "a.txt"), "same\n")
+		if _, err := RegisterCustomSource(c, "bmad"); err != nil {
+			t.Fatalf("register %s: %v", c, err)
+		}
+	}
+
+	got, err := discoverCustomBindings([]pack.InstalledPack{{Name: "bmad", Version: "6.10.0"}}, nil)
+	if err != nil {
+		t.Fatalf("identical duplicate must not refuse: %v", err)
+	}
+	total := 0
+	for _, b := range got {
+		total += len(b.(*CustomSkillDirBinding).skills)
+	}
+	if total != 1 {
+		t.Errorf("served copies = %d, want exactly 1", total)
+	}
+
+	// Diverge one copy: the same pair now refuses.
+	writeFile(t, filepath.Join(checkoutB, "_bmad-custom", "skills", "twin", "SKILL.md"), "# edited\n")
+	if _, err := discoverCustomBindings([]pack.InstalledPack{{Name: "bmad", Version: "6.10.0"}}, nil); err == nil {
+		t.Fatal("diverged duplicate must refuse")
+	} else if !strings.Contains(err.Error(), "unregister") {
+		t.Errorf("refusal must name the unregister remedy: %v", err)
+	}
+}
+
 func TestDiscoverCustomBindings_CrossSourceCollisionRefuses(t *testing.T) {
 	// Ruled 2026-08-01 (sideshow#110): two registered repos declaring
 	// the same skill name is a sync error naming both repos, never a

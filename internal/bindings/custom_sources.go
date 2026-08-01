@@ -97,6 +97,41 @@ func RegisterCustomSource(project, packName string) (bool, error) {
 	return true, nil
 }
 
+// UnregisterCustomSource removes a consumer repo + pack pair from the
+// registry (the escape hatch registration never had: project init and
+// sync auto-register, and until this verb the only exits were deleting
+// the directory or hand-editing the registry). Returns true if the
+// pair was present and removed. The next 'commands sync' withdraws
+// the source's served skills via the ownership reconcile.
+func UnregisterCustomSource(project, packName string) (bool, error) {
+	abs, err := filepath.Abs(project)
+	if err != nil {
+		return false, fmt.Errorf("resolve project path: %w", err)
+	}
+
+	reg, err := loadCustomSources()
+	if err != nil {
+		return false, err
+	}
+
+	kept := reg.Sources[:0]
+	removed := false
+	for _, s := range reg.Sources {
+		if s.Project == abs && s.Pack == packName {
+			removed = true
+			continue
+		}
+		kept = append(kept, s)
+	}
+	if !removed {
+		return false, nil
+	}
+	if err := saveCustomSources(kept); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ListCustomSources returns the registered sources for status display.
 func ListCustomSources() ([]CustomSource, error) {
 	reg, err := loadCustomSources()
