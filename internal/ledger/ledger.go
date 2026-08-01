@@ -84,3 +84,59 @@ func (l *Ledger) RepoDirs() []string {
 	}
 	return out
 }
+
+// SetRow records a (repo, pack) binding. The enable verb is the
+// caller; repoDir is normalized to an absolute path.
+func (l *Ledger) SetRow(repoDir, packName string, row Row) error {
+	abs, err := filepath.Abs(repoDir)
+	if err != nil {
+		return fmt.Errorf("resolve repo dir: %w", err)
+	}
+	if l.Repos == nil {
+		l.Repos = map[string]map[string]Row{}
+	}
+	if l.Repos[abs] == nil {
+		l.Repos[abs] = map[string]Row{}
+	}
+	l.Repos[abs][packName] = row
+	return nil
+}
+
+// DeleteRow removes a (repo, pack) binding, pruning an emptied repo
+// entry. Reports whether a row was present.
+func (l *Ledger) DeleteRow(repoDir, packName string) bool {
+	abs, err := filepath.Abs(repoDir)
+	if err != nil {
+		return false
+	}
+	packs, ok := l.Repos[abs]
+	if !ok {
+		return false
+	}
+	if _, ok := packs[packName]; !ok {
+		return false
+	}
+	delete(packs, packName)
+	if len(packs) == 0 {
+		delete(l.Repos, abs)
+	}
+	return true
+}
+
+// Save persists the ledger with a stable schema version.
+func (l *Ledger) Save(path string) error {
+	if l.SchemaVersion == "" {
+		l.SchemaVersion = "0.1.0"
+	}
+	data, err := yaml.Marshal(l)
+	if err != nil {
+		return fmt.Errorf("marshal repo-bindings ledger: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create sideshow data dir: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write repo-bindings ledger: %w", err)
+	}
+	return nil
+}
