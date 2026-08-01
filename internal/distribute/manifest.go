@@ -23,6 +23,7 @@ type Manifest struct {
 	Hooks        []HookArtifact        `yaml:"hooks,omitempty"`
 	ClaudeMD     []ClaudeMDArtifact    `yaml:"claude_md,omitempty"`
 	Symlinks     []SymlinkArtifact     `yaml:"symlinks,omitempty"`
+	Files        []FileArtifact        `yaml:"files,omitempty"`
 	Gitignore    []string              `yaml:"gitignore,omitempty"`
 	CustomBridge *CustomBridgeArtifact `yaml:"custom_bridge,omitempty"`
 	RuntimeLinks []RuntimeLink         `yaml:"runtime_links,omitempty"`
@@ -55,6 +56,27 @@ type CustomBridgeArtifact struct {
 type RuleArtifact struct {
 	Source string `yaml:"source"` // relative to pack root
 	Target string `yaml:"target"` // relative to repo root (e.g. .claude/rules/task-workflow.md)
+}
+
+// FileArtifact is an arbitrary file to place at a repo-relative path.
+//
+// This is the escape hatch for project-lifecycle scaffolding that does not fit
+// a typed artifact: .editorconfig, lefthook.yml, .golangci.yml,
+// rust-toolchain.toml, .github/workflows/*.yml. Target is any path relative to
+// the repo root; source is relative to the pack root.
+//
+// Unlike RuleArtifact, a file artifact is written VERBATIM with no ownership
+// marker prepended. Rules can carry an HTML comment because they are markdown.
+// These cannot: `#` is the comment character in YAML, TOML, INI, and
+// .editorconfig; `//` in Go and Rust; and JSON has no comment syntax at all.
+// Injecting a marker would corrupt the file for its actual consumer, and
+// prepending a line would break anything whose first line is significant.
+//
+// Ownership is therefore tracked out of band, by the sha256 recorded in the
+// distribution receipt (pack.DistributedArtifact.Checksum). See distributeFile.
+type FileArtifact struct {
+	Source string `yaml:"source"` // relative to pack root
+	Target string `yaml:"target"` // relative to repo root (e.g. .editorconfig)
 }
 
 // HookArtifact is a hook to merge into .claude/settings.json.
@@ -107,6 +129,7 @@ func (m *Manifest) IsEmpty() bool {
 		len(m.Hooks) == 0 &&
 		len(m.ClaudeMD) == 0 &&
 		len(m.Symlinks) == 0 &&
+		len(m.Files) == 0 &&
 		len(m.Gitignore) == 0 &&
 		m.CustomBridge == nil &&
 		len(m.RuntimeLinks) == 0

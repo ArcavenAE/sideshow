@@ -60,6 +60,14 @@ type Options struct {
 	PackName    string
 	PackVersion string
 	PackRoot    string // resolved pack root on disk
+
+	// PriorChecksums maps a repo-relative target path to the sha256 sideshow
+	// recorded the last time it wrote that path into THIS repo for THIS pack.
+	// Only `files:` artifacts consult it, because they carry no in-file
+	// ownership marker. Nil is safe and means "no prior record": every existing
+	// target is then treated as user-authored and left alone, which is the
+	// fail-safe direction.
+	PriorChecksums map[string]string
 }
 
 // ToRepo distributes artifacts from the manifest to a single subrepo.
@@ -103,6 +111,11 @@ func ToRepo(repo project.Subrepo, manifest *Manifest, opts Options) Result {
 		}
 		actions := distributeRuntimeLinks(repo.AbsPath, shimDir, manifest.RuntimeLinks, opts)
 		result.Actions = append(result.Actions, actions...)
+	}
+
+	for _, file := range manifest.Files {
+		action := distributeFile(repo.AbsPath, file, opts)
+		result.Actions = append(result.Actions, action)
 	}
 
 	for _, line := range manifest.Gitignore {
@@ -806,6 +819,145 @@ func distributeGitignore(repoRoot string, line string, opts Options) Action {
 		Line: line,
 	}
 	return action
+}
+
+// distributeFile places an arbitrary file at a repo-relative path.
+//
+// Ownership is decided by comparing the on-disk content against the checksum
+// recorded when sideshow last wrote this path (opts.PriorChecksums), because a
+// file artifact carries no in-file marker. Four cases:
+//
+//	absent                          -> write ("created")
+//	present, hash == recorded       -> sideshow's, unmodified: refresh or skip
+//	present, hash != recorded       -> user edited it: SKIP, report drift
+//	present, no record              -> not ours: SKIP, user-authored
+//
+// The third case is the one the marker model gets wrong. distributeRule
+// overwrites whenever it sees its marker, so a user edit to a managed rule file
+// is lost silently. Here an edit is detected and preserved.
+func distributeFile(repoRoot string, file FileArtifact, opts Options) Action {
+	action := Action{Type: "files", Path: file.Target}
+
+	if file.Source == "" || file.Target == "" {
+		action.Status = "error"
+		action.Detail = "file artifact needs both source and target"
+		return action
+	}
+	// A target must stay inside the repo. `..` would let a pack write anywhere
+	// on the filesystem, and unlike the typed artifacts this path is arbitrary.
+	cleaned := filepath.Clean(file.Target)
+	if filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		action.Status = "error"
+		action.Detail = "target escapes the repo root"
+		return action
+	}
+
+	sourceData, err := os.ReadFile(filepath.Join(opts.PackRoot, file.Source))
+	if err != nil {
+		action.Status = "error"
+		action.Detail = fmt.Sprintf("read source: %v", err)
+		return action
+	}
+
+	sourceSum := sha256hex(sourceData)
+	action.Artifact = pack.DistributedArtifact{
+		Type:     "files",
+		Path:     file.Target,
+		Checksum: "sha256:" + sourceSum,
+	}
+
+	targetPath := filepath.Join(repoRoot, cleaned)
+	existing, readErr := os.ReadFile(targetPath)
+	switch {
+	case readErr != nil && !os.IsNotExist(readErr):
+		action.Status = "error"
+		action.Detail = fmt.Sprintf("read target: %v", readErr)
+		return action
+
+	case readErr == nil:
+		onDisk := sha256hex(existing)
+		recorded, known := opts.PriorChecksums[file.Target]
+		switch {
+		case !known:
+			action.Status = "skipped"
+			action.Detail = "exists and sideshow has no record of writing it (user-authored)"
+			return action
+		case strings.TrimPrefix(recorded, "sha256:") != onDisk:
+			action.Status = "skipped"
+			action.Detail = "modified since sideshow wrote it (user edit preserved)"
+			return action
+		case onDisk == sourceSum:
+			action.Status = "skipped"
+			action.Detail = "already current"
+			return action
+		}
+	}
+
+	if opts.DryRun {
+		action.Status = "wrote"
+		if readErr == nil {
+			action.Detail = "would update (sideshow-managed, unmodified)"
+		} else {
+			action.Detail = "would create"
+		}
+		return action
+	}
+
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		action.Status = "error"
+		action.Detail = fmt.Sprintf("create dir: %v", err)
+		return action
+	}
+	// Verbatim. No marker, no trailing newline fixup: the pack ships the bytes
+	// the consumer needs to parse.
+	if err := os.WriteFile(targetPath, sourceData, 0o644); err != nil {
+		action.Status = "error"
+		action.Detail = fmt.Sprintf("write: %v", err)
+		return action
+	}
+
+	action.Status = "wrote"
+	action.Detail = "created"
+	if readErr == nil {
+		action.Detail = "updated (sideshow-managed, unmodified)"
+	}
+	return action
+}
+
+// PriorChecksums returns the checksums recorded for file artifacts the last time
+// sideshow distributed packName into repoName, keyed by repo-relative path. It
+// is the read side of what RecordResults writes. An absent record yields an
+// empty map, which distributeFile treats as "own nothing".
+func PriorChecksums(reg *pack.Registry, projectID, root, manifest, repoName, packName string) map[string]string {
+	out := map[string]string{}
+	if reg == nil {
+		return out
+	}
+	proj := reg.FindProject(projectID)
+	if proj == nil {
+		return out
+	}
+	for _, inst := range proj.Installations {
+		if inst.Root != root || inst.Manifest != manifest {
+			continue
+		}
+		for _, repo := range inst.Repos {
+			if repo.Name != repoName {
+				continue
+			}
+			for _, pd := range repo.Packs {
+				if pd.Pack != packName {
+					continue
+				}
+				for _, a := range pd.Artifacts {
+					if a.Type == "files" && a.Path != "" && a.Checksum != "" {
+						out[a.Path] = a.Checksum
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 func sha256hex(data []byte) string {
