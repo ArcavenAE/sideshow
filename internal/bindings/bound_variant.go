@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ArcavenAE/sideshow/internal/pack"
+	"github.com/ArcavenAE/sideshow/internal/preserve"
 )
 
 // The bound variant is the transformed derivative of a plugin pack's
@@ -48,6 +49,14 @@ func BoundVariantDir(packName, version string) string {
 func RenderBoundVariant(storeRoot string, inv *PluginInventory, packName, prefix, destDir string) (*PluginInventory, error) {
 	if prefix == "" {
 		return nil, fmt.Errorf("empty binding prefix for pack %s", packName)
+	}
+	// The bound variant is class 2 (regenerable machine state), so
+	// clearing it is correct — but destDir is a parameter, and this is
+	// the one removal in the codebase with no containment predicate
+	// above it. The floor is what stands between a miswired caller and
+	// a recursive delete of whatever it pointed at (aae-orc-d3nq.42).
+	if err := preserve.Check(destDir); err != nil {
+		return nil, err
 	}
 	if err := os.RemoveAll(destDir); err != nil {
 		return nil, fmt.Errorf("clear bound variant dir: %w", err)

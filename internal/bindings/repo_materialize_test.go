@@ -369,3 +369,93 @@ func TestMaterializeRepo_HarnessDirIsAParameter(t *testing.T) {
 		t.Errorf("parameterized harness dir not pruned (err=%v)", err)
 	}
 }
+
+// TestRemoveRepoArtifacts_PreserveFloorRefusesClassOne is the floor
+// firing in the real removal path (aae-orc-d3nq.42). Containment and
+// the floor are independent checks: containment asks whether a path is
+// inside the area sideshow manages, the floor asks whether it is
+// something nobody may delete. These rows are shaped to slip past
+// containment — they resolve UNDER <repo>/.claude — so only the floor
+// stands between a corrupt ledger and a running factory.
+func TestRemoveRepoArtifacts_PreserveFloorRefusesClassOne(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+
+	planted := map[string]string{
+		".claude/.factory/wave-state.yaml":        "wave: 3\n",
+		".claude/_vsdd-factory-custom/weave.yaml": "schema_version: 0.1.0\n",
+		".claude/_vsdd-factory-output/report.md":  "# results\n",
+		".claude/.worktrees/STORY-14/main.go":     "package main\n",
+	}
+	for rel, content := range planted {
+		p := filepath.Join(repo, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	target := RepoTarget{RepoDir: repo, Scope: ScopeLocal}
+	for _, bad := range []RepoArtifact{
+		{Kind: ArtifactSkillDir, Path: ".claude/.factory"},
+		{Kind: ArtifactAgentFile, Path: ".claude/.factory/wave-state.yaml"},
+		{Kind: ArtifactSkillDir, Path: ".claude/_vsdd-factory-custom"},
+		{Kind: ArtifactSkillDir, Path: ".claude/_vsdd-factory-output"},
+		{Kind: ArtifactSkillDir, Path: ".claude/.worktrees/STORY-14"},
+	} {
+		_, err := RemoveRepoArtifacts(target, []RepoArtifact{bad})
+		if err == nil {
+			t.Errorf("artifact %+v: removal accepted, want the preserve floor to refuse", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "protected user state") {
+			t.Errorf("artifact %+v: refused for the wrong reason: %v", bad, err)
+		}
+	}
+
+	// Nothing was removed, including by the rows that were refused
+	// partway through a set.
+	for rel, content := range planted {
+		got, err := os.ReadFile(filepath.Join(repo, rel))
+		if err != nil {
+			t.Fatalf("class 1 file %s removed: %v", rel, err)
+		}
+		if string(got) != content {
+			t.Errorf("class 1 file %s modified", rel)
+		}
+	}
+}
+
+// A protected path anywhere in the set refuses the whole set, so a
+// partial removal cannot begin.
+func TestRemoveRepoArtifacts_PreserveFloorIsASetPreflight(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	for _, rel := range []string{".claude/skills/vsdd-jira/SKILL.md", ".claude/.factory/STATE.md"} {
+		p := filepath.Join(repo, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	target := RepoTarget{RepoDir: repo, Scope: ScopeLocal}
+	set := []RepoArtifact{
+		{Kind: ArtifactSkillDir, Path: ".claude/skills/vsdd-jira"},
+		{Kind: ArtifactSkillDir, Path: ".claude/.factory"},
+	}
+	removed, err := RemoveRepoArtifacts(target, set)
+	if err == nil {
+		t.Fatal("set containing class 1 state was accepted")
+	}
+	if removed != 0 {
+		t.Errorf("removed %d paths before refusing; the floor must preflight the whole set", removed)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".claude", "skills", "vsdd-jira", "SKILL.md")); err != nil {
+		t.Errorf("legitimate artifact removed despite the set being refused: %v", err)
+	}
+}

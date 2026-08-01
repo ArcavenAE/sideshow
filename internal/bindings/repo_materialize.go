@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ArcavenAE/sideshow/internal/preserve"
 )
 
 // execManifestName is the pack-root executable census emitted by the
@@ -347,6 +349,14 @@ func RemoveRepoArtifacts(t RepoTarget, artifacts []RepoArtifact) (int, error) {
 			(rel != "." || rootAsParentDir)
 		if !underHarness && !compatRemovalAllowed(a) {
 			return 0, fmt.Errorf("refusing removal: artifact %q (kind %s) resolves outside the allowed binding roots of %s", a.Path, a.Kind, repoDir)
+		}
+		// The compiled preserve floor, checked independently of the
+		// containment predicate above (aae-orc-d3nq.42). Containment
+		// answers "is this inside the area I manage"; the floor answers
+		// "is this something nobody may delete". Both must pass, so a
+		// bug in the first is survivable while the second holds.
+		if err := preserve.Check(p); err != nil {
+			return 0, err
 		}
 		abs[i] = p
 	}
