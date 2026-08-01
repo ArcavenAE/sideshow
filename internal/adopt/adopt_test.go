@@ -313,3 +313,80 @@ func diffSnapshots(a, b map[string]string) []string {
 	}
 	return out
 }
+
+// storeWith points SIDESHOW_HOME at a registry holding exactly the
+// given pack versions, so the store gate resolves against a real
+// registry instead of the injected StoreRoot seam.
+func storeWith(t *testing.T, versions ...string) {
+	t.Helper()
+	home := t.TempDir()
+	var b strings.Builder
+	b.WriteString("packs:\n")
+	for _, v := range versions {
+		fmt.Fprintf(&b, "  - name: vsdd-factory\n    version: %q\n    path: %q\n",
+			v, filepath.Join(home, "packs", "vsdd-factory", v))
+	}
+	mustWrite(t, home, "registry.yaml", b.String(), 0o644)
+	t.Setenv("SIDESHOW_HOME", home)
+}
+
+// TestAdopt_DefaultVersionAbsentFromStoreRefuses is the regression
+// guard for sideshow#96. The default path sets adoptVersion to the
+// foreign tree's running version, so the equality gate compares that
+// value against itself and never fires. Nothing then confirmed the
+// store actually held it, and enable failed at step 2 after step 1 had
+// written.
+func TestAdopt_DefaultVersionAbsentFromStoreRefuses(t *testing.T) {
+	opts, repo, _ := fixture(t, "project")
+	// The real seam: no injected StoreRoot, and a store that holds a
+	// different version than the foreign tree runs (rc.23).
+	opts.StoreRoot = ""
+	storeWith(t, "1.0.0-rc.99")
+
+	_, err := Adopt(opts)
+	if err == nil {
+		t.Fatal("adopt proceeded with a version the store does not hold")
+	}
+	for _, want := range []string{"1.0.0-rc.23", "1.0.0-rc.99", "--allow-version-change"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal does not name %q: %v", want, err)
+		}
+	}
+
+	// Refused BEFORE step 1: the repo is exactly as found.
+	if _, statErr := os.Stat(filepath.Join(repo, ".claude", "settings.local.json")); !os.IsNotExist(statErr) {
+		t.Error("step 1 wrote a suppression override before the refusal")
+	}
+}
+
+// TestAdopt_DryRunPredictsStoreRefusal is the other half: a dry run
+// must validate every step of the plan it prints, not just the
+// preconditions of step one. Before the fix it printed step 2 and
+// then reported "the real run would proceed".
+func TestAdopt_DryRunPredictsStoreRefusal(t *testing.T) {
+	opts, _, _ := fixture(t, "project")
+	opts.StoreRoot = ""
+	opts.DryRun = true
+	storeWith(t, "1.0.0-rc.99")
+
+	_, err := Adopt(opts)
+	if err == nil {
+		t.Fatal("dry run predicted success for a plan whose step 2 cannot resolve")
+	}
+	if !strings.Contains(err.Error(), "would REFUSE") {
+		t.Errorf("dry run did not report a refusal: %v", err)
+	}
+}
+
+// TestAdopt_DefaultVersionPresentInStoreProceeds pins the other side,
+// so the gate cannot be satisfied by refusing everything.
+func TestAdopt_DefaultVersionPresentInStoreProceeds(t *testing.T) {
+	opts, _, _ := fixture(t, "project")
+	opts.StoreRoot = ""
+	opts.DryRun = true
+	storeWith(t, "1.0.0-rc.23")
+
+	if _, err := Adopt(opts); err != nil {
+		t.Fatalf("dry run refused a version the store holds: %v", err)
+	}
+}
