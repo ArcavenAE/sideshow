@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -328,4 +329,108 @@ func TestHookEntries_WiresAllTwelveEvents(t *testing.T) {
 			t.Errorf("event %s not wired", ev)
 		}
 	}
+}
+
+// writeMidWaveFactory plants the class-1 durable state a repo running a
+// factory carries mid-wave: the worktree and its run state, the pack's
+// customization and output trees, and a STORY wave checkout. Returns a
+// snapshot of exactly that state.
+func writeMidWaveFactory(t *testing.T, repo string) map[string]string {
+	t.Helper()
+	for rel, content := range map[string]string{
+		".factory/STATE.md":                   "# wave 3 in flight\n",
+		".factory/wave-state.yaml":            "wave: 3\nstatus: running\n",
+		".factory/logs/burst-014.log":         "burst 14 output\n",
+		".factory-project/config.toml":        "[project]\nname = \"x\"\n",
+		".worktrees/STORY-14/src/main.go":     "package main\n",
+		"_vsdd-factory-custom/weave.yaml":     "schema_version: 0.1.0\n",
+		"_vsdd-factory-custom/skills/mine.md": "# my skill\n",
+		"_vsdd-factory-output/report-014.md":  "# results\n",
+		"HANDOFF.md":                          "# handoff\n",
+	} {
+		p := filepath.Join(repo, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	snap := map[string]string{}
+	for _, dir := range []string{".factory", ".factory-project", ".worktrees", "_vsdd-factory-custom", "_vsdd-factory-output"} {
+		for rel, hash := range snapshot(t, filepath.Join(repo, dir)) {
+			snap[dir+"/"+rel] = hash
+		}
+	}
+	return snap
+}
+
+// TestEnableDisable_MidWaveFactorySurvives is the aae-orc-d3nq.42
+// acceptance criterion: class 1 durable user state is bit-identical
+// across a full enable/disable cycle. Sideshow has no uninstall verb,
+// so disable's ledger replay is the removal path that runs inside a
+// user's repo, and it is the one that has to be safe.
+func TestEnableDisable_MidWaveFactorySurvives(t *testing.T) {
+	t.Parallel()
+	store := writeStore(t)
+	repo := writeRepo(t)
+	opts := baseOpts(t, repo, store)
+
+	classOne := writeMidWaveFactory(t, repo)
+	if len(classOne) == 0 {
+		t.Fatal("fixture planted no class 1 state")
+	}
+
+	// A mid-wave factory makes the running-factory guard refuse, which
+	// is correct and is tested elsewhere. The case worth pinning here is
+	// the one past it: an operator who knowingly overrides still must not
+	// lose class 1 state. The guard is policy; the floor is the property
+	// that holds when policy has been overridden.
+	opts.OverrideStaleLock = true
+
+	if err := Enable(opts); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if diff := diffSnapshots(classOne, snapshotClassOne(t, repo)); diff != "" {
+		t.Fatalf("enable disturbed class 1 state:\n%s", diff)
+	}
+
+	if err := Disable(opts); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	if diff := diffSnapshots(classOne, snapshotClassOne(t, repo)); diff != "" {
+		t.Fatalf("disable disturbed class 1 state:\n%s", diff)
+	}
+}
+
+func snapshotClassOne(t *testing.T, repo string) map[string]string {
+	t.Helper()
+	snap := map[string]string{}
+	for _, dir := range []string{".factory", ".factory-project", ".worktrees", "_vsdd-factory-custom", "_vsdd-factory-output"} {
+		for rel, hash := range snapshot(t, filepath.Join(repo, dir)) {
+			snap[dir+"/"+rel] = hash
+		}
+	}
+	return snap
+}
+
+func diffSnapshots(want, got map[string]string) string {
+	var lines []string
+	for rel, w := range want {
+		g, ok := got[rel]
+		switch {
+		case !ok:
+			lines = append(lines, "REMOVED: "+rel)
+		case g != w:
+			lines = append(lines, "CHANGED: "+rel)
+		}
+	}
+	for rel := range got {
+		if _, ok := want[rel]; !ok {
+			lines = append(lines, "ADDED: "+rel)
+		}
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\n")
 }
