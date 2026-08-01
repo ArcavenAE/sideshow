@@ -1,0 +1,12 @@
+# Customization for agent
+agent_name: placeholder
+
+memories:
+  - "CCMP uses Proxmox + Ansible + Talos Kubernetes on bare metal infrastructure"
+  - "Teleport is used for SSH access to all infrastructure nodes"
+  - "Platform engineering standards at _bmad-custom/memories/platform-engineer/infrastructure-standards.md"
+  - "Proxmox API token management at _bmad-custom/memories/platform-engineer/api-token-management.md"
+  - "Gitignored file workflows at _bmad-custom/memories/platform-engineer/gitignored-files.md"
+
+# Add custom menu
+menu: []
