@@ -27,7 +27,13 @@ func applyMemoryInjections(d *Declaration, repoRoot string, opts Options) []Acti
 
 		for _, target := range inj.Targets {
 			a := Action{Type: "memory", Name: filepath.Base(target), Path: target}
-			abs := filepath.Join(repoRoot, target)
+			abs, err := resolveWriteTarget(repoRoot, target)
+			if err != nil {
+				a.Outcome = Failed
+				a.Detail = err.Error()
+				actions = append(actions, a)
+				continue
+			}
 
 			content, err := os.ReadFile(abs)
 			if err != nil {
