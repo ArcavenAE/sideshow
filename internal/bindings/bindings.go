@@ -246,10 +246,12 @@ func discoverCustomBindings(packs []pack.InstalledPack, packSkillOwners map[stri
 // flip no longer leaves the old version's extra skills behind).
 func runSync(all []Binding) (synced, removed int, err error) {
 	var current []ManifestEntry
+	failed := 0
 
 	for _, b := range all {
 		n, syncErr := b.Sync()
 		if syncErr != nil {
+			failed++
 			fmt.Fprintf(os.Stderr, "warning: sync %s/%s: %v\n", b.PackName(), b.Kind(), syncErr)
 			continue
 		}
@@ -257,6 +259,7 @@ func runSync(all []Binding) (synced, removed int, err error) {
 
 		arts, artErr := b.Artifacts()
 		if artErr != nil {
+			failed++
 			fmt.Fprintf(os.Stderr, "warning: enumerate %s/%s artifacts: %v\n", b.PackName(), b.Kind(), artErr)
 			continue
 		}
@@ -268,6 +271,14 @@ func runSync(all []Binding) (synced, removed int, err error) {
 				Path:    a,
 			})
 		}
+	}
+
+	if failed > 0 {
+		// A failed binding's artifacts are missing from the current
+		// set, so reconcile would remove content that binding still
+		// owns; keep serving what is on disk and fail loudly instead.
+		// A sync that writes 0 of N must not exit 0 (sideshow#108).
+		return synced, 0, fmt.Errorf("%d binding(s) failed to sync; stale reconcile skipped so a failed binding's artifacts are not removed", failed)
 	}
 
 	removed, err = reconcile(current)
