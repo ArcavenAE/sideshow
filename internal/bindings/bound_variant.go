@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/ArcavenAE/sideshow/internal/pack"
@@ -114,11 +115,80 @@ func RenderBoundVariant(storeRoot string, inv *PluginInventory, packName, prefix
 		out.AgentFiles = append(out.AgentFiles, dstRel)
 	}
 
+	// Replace-disposition skills: the upstream activate/deactivate
+	// pair writes into the frozen store (render hooks.json in, rm -f
+	// it out) and is excluded from materialization; sideshow-authored
+	// replacements ship in their place so an in-session /<prefix>-
+	// activate resolves to something correct (aae-orc-d3nq.60).
+	for _, ex := range inv.ExcludedSkills {
+		name := filepath.Base(ex)
+		content, ok := replacementSkill(packName, prefix, name)
+		if !ok {
+			continue
+		}
+		dstRel := filepath.Join("skills", prefix+"-"+name)
+		dst := filepath.Join(destDir, dstRel, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return nil, fmt.Errorf("create replacement skill dir: %w", err)
+		}
+		if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
+			return nil, fmt.Errorf("write replacement skill %s: %w", name, err)
+		}
+		out.SkillDirs = append(out.SkillDirs, filepath.ToSlash(dstRel))
+	}
+	sort.Strings(out.SkillDirs)
+
 	if err := translateExecManifest(storeRoot, destDir, inv, prefix); err != nil {
 		return nil, err
 	}
 
 	return out, nil
+}
+
+// replacementSkill returns the sideshow-authored SKILL.md for a
+// replace-disposition upstream skill. Nothing in these skills may
+// write into the store; every operation routes through sideshow
+// verbs, which are consent-gated and ledger-recorded.
+func replacementSkill(packName, prefix, name string) (string, bool) {
+	switch name {
+	case "activate":
+		return `---
+name: ` + prefix + `-activate
+description: Opt in to the ` + packName + ` persona for this repo. On the sideshow channel this flips the default agent to the bound orchestrator; hooks and platform binding were already handled by sideshow enable. Reversible via /` + prefix + `-deactivate.
+---
+
+# Activate (sideshow channel)
+
+This repo receives ` + packName + ` through sideshow repo bindings, so
+this skill replaces the upstream activate flow. Enabling the pack made
+its agents, skills, and hooks available and wired the hook chain; what
+remains is the explicit, consented persona flip.
+
+1. Confirm the pack is enabled here: run ` + "`sideshow coexist-check " + packName + "`" + ` via Bash and check the report.
+2. Ask the operator to confirm they want the default agent flipped to ` + "`" + prefix + `-orchestrator` + "`" + ` for THIS repo only.
+3. On consent, run ` + "`sideshow activate " + packName + "`" + ` via Bash. It refuses to overwrite a persona it does not own and warns on platform drift.
+4. Report the outcome: the new default agent, that the change is repo-local, and that ` + "`sideshow deactivate " + packName + "`" + ` reverses it.
+
+Never edit settings files or the pack store directly; the sideshow
+verbs are the recorded, reversible path.
+`, true
+	case "deactivate":
+		return `---
+name: ` + prefix + `-deactivate
+description: Reverse /` + prefix + `-activate. Removes the default-agent persona flip only; bindings and hooks stay enabled (sideshow disable removes those). Refuses to touch a persona this pack did not set.
+---
+
+# Deactivate (sideshow channel)
+
+This repo receives ` + packName + ` through sideshow repo bindings, so
+this skill replaces the upstream deactivate flow. Nothing here touches
+the shared store or other repos.
+
+1. Run ` + "`sideshow deactivate " + packName + "`" + ` via Bash. It removes the default-agent key only when it points at a ` + "`" + prefix + `-` + "`" + ` agent; anything else is refused, not cleaned.
+2. Report the outcome. If the operator wants the pack's bindings and hooks gone too, that is ` + "`sideshow disable " + packName + "`" + ` (exact, ledger-recorded removal).
+`, true
+	}
+	return "", false
 }
 
 // namespaceRewriter builds the `<pack>:<name>` → `<prefix>-<name>`

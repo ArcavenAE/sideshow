@@ -274,3 +274,42 @@ func TestRewriteFrontmatterName_Idempotent(t *testing.T) {
 		t.Errorf("content without frontmatter modified: %q", got)
 	}
 }
+
+// .60: excluded activate/deactivate get sideshow-authored
+// replacements that route through verbs and never write into the
+// store.
+func TestRenderBoundVariant_ReplacementSkills(t *testing.T) {
+	t.Parallel()
+	store := writeBoundFixtureStore(t)
+	dest := filepath.Join(t.TempDir(), "bound")
+	inv := boundFixtureInventory()
+	inv.ExcludedSkills = []string{"skills/activate", "skills/deactivate"}
+
+	out, err := RenderBoundVariant(store, inv, "vsdd-factory", "vsdd", dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for _, s := range out.SkillDirs {
+		found[s] = true
+	}
+	if !found["skills/vsdd-activate"] || !found["skills/vsdd-deactivate"] {
+		t.Fatalf("replacement skills missing from inventory: %v", out.SkillDirs)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "skills", "vsdd-activate", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "name: vsdd-activate") {
+		t.Error("replacement frontmatter name missing or unprefixed")
+	}
+	if !strings.Contains(s, "sideshow activate vsdd-factory") {
+		t.Error("replacement does not route through the sideshow verb")
+	}
+	for _, forbidden := range []string{"rm -f", "cp ", "hooks.json"} {
+		if strings.Contains(s, forbidden) {
+			t.Errorf("replacement skill carries store-write instruction %q", forbidden)
+		}
+	}
+}
