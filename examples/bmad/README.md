@@ -10,6 +10,10 @@ Releases are published by
 [sideshow-packs](https://github.com/ArcavenAE/sideshow-packs) — built
 in CI from pinned upstream sources, cosign-signed, Sigstore-attested.
 
+Prerequisites: `gh`, `cosign`, and `python3` (macOS:
+`brew install gh cosign`). Every verification step below fails
+without them.
+
 ```bash
 mkdir -p /tmp/bmad-install && cd /tmp/bmad-install
 gh release download bmad-v6.10.0 -R ArcavenAE/sideshow-packs \

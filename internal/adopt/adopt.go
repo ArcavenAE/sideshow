@@ -164,17 +164,31 @@ func Adopt(opts Options) (*Outcome, error) {
 	agentBefore := readAgentKey(opts.RepoDir)
 
 	if opts.DryRun {
+		// The dry run's job is to predict the real run, so it runs the
+		// same preflight enable will (D1, report on the .23 pilot).
+		// The one finding filtered out is same-repo-dual-enable for the
+		// identity being adopted: step 1's suppression silences it
+		// before enable's own preflight sees the repo.
+		refused, err := dryRunPreflight(opts, identity)
+		if err != nil {
+			return nil, err
+		}
 		fmt.Printf("adopt plan for %s in %s (dry run, nothing written):\n", opts.Pack, opts.RepoDir)
 		fmt.Printf("  1. suppress foreign identity %s in this repo only (settings.local.json override; the install is untouched)\n", identity)
 		fmt.Printf("  2. sideshow enable %s@%s --scope %s\n", opts.Pack, adoptVersion, opts.Scope)
-		if agentBefore != "" && strings.HasPrefix(agentBefore, opts.Pack+":") {
-			if opts.RewriteAgent {
-				fmt.Printf("  3. rewrite default agent %q to the bound orchestrator (consented via --rewrite-agent)\n", agentBefore)
-			} else {
-				fmt.Printf("  3. default agent %q is the foreign form; it will KEEP pointing at the suppressed channel — pass --rewrite-agent to flip it, or run 'sideshow activate' after\n", agentBefore)
-			}
+		switch {
+		case strings.HasPrefix(agentBefore, opts.Pack+":") && opts.RewriteAgent:
+			fmt.Printf("  3. rewrite default agent %q to the bound orchestrator (consented via --rewrite-agent)\n", agentBefore)
+		case strings.HasPrefix(agentBefore, opts.Pack+":"):
+			fmt.Printf("  3. default agent %q is the foreign form; it will KEEP pointing at the suppressed channel — pass --rewrite-agent to flip it, or run 'sideshow activate' after\n", agentBefore)
+		default:
+			fmt.Println("  3. no foreign-form default agent to rewrite (nothing to do at this step)")
 		}
 		fmt.Printf("  4. prove equivalence against the foreign tree at %s\n", install.InstallPath)
+		if refused {
+			return &Outcome{Identity: identity, Version: adoptVersion}, fmt.Errorf("the real run would REFUSE: the preflight reported the errors above; resolve them before adopting")
+		}
+		fmt.Println("preflight clean: the real run would proceed")
 		return &Outcome{Identity: identity, Version: adoptVersion}, nil
 	}
 
@@ -288,6 +302,35 @@ func Finish(opts Options) error {
 	fmt.Println("  marketplace removal: only after confirming it serves no other plugin — claude plugin marketplace remove <name>")
 	fmt.Println("Re-run this command after acting; it reports until the census is clean.")
 	return nil
+}
+
+// dryRunPreflight runs the same coexistence preflight enable will,
+// printing every finding except same-repo-dual-enable for the
+// adoption identity (which step 1's suppression resolves before
+// enable runs). Reports whether the real run would refuse.
+func dryRunPreflight(opts Options, identity string) (refused bool, err error) {
+	rep, err := coexistcheck.Run(coexistcheck.Options{
+		RepoDir:         opts.RepoDir,
+		Pack:            opts.Pack,
+		Prefix:          opts.Prefix,
+		ConfigDir:       opts.ConfigDir,
+		LedgerPath:      opts.LedgerPath,
+		PerRepoRequired: true,
+		Now:             opts.Now,
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, r := range rep.Results {
+		if r.Name == "same-repo-dual-enable" && strings.Contains(r.Detail, identity) {
+			continue
+		}
+		fmt.Printf("  %s [%d %s]: %s\n", r.Severity, r.Check, r.Name, r.Detail)
+		if r.Severity == foreign.Error {
+			refused = true
+		}
+	}
+	return refused, nil
 }
 
 func findInstall(c *foreign.Census, identity string) *foreign.Install {

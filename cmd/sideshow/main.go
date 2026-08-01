@@ -42,7 +42,7 @@ Usage:
   sideshow status                         Show installation status
   sideshow coexist <pack> [--repo <path>]  Read-only foreign-install census and coexistence findings
   sideshow enable <pack>[@<ver>] [--repo <path>] [--scope local|project]  Activate a pack in one repo (repo-bindings)
-  sideshow disable <pack> [--repo <path>]  Reverse an enable exactly (ledger replay)
+  sideshow disable <pack> [--repo <path>] [--override-stale-lock]  Reverse an enable exactly (ledger replay)
   sideshow activate <pack> [--repo <path>] [--agent <name>]  Consented persona flip (repo default agent)
   sideshow deactivate <pack> [--repo <path>]  Remove the persona flip only (prefix-guarded)
   sideshow coexist-check <pack> [--repo <path>]  Read-only enable/adopt preflight (ten checks)
