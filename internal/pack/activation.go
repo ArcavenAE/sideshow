@@ -17,6 +17,14 @@ type Activation struct {
 	Mechanism             string `yaml:"mechanism"`
 	Runbook               string `yaml:"runbook"`
 	ValidatedHarnessFloor string `yaml:"validated_harness_floor"`
+	// BindingPrefix names the prefix bound artifacts carry in a repo
+	// (aae-orc-d3nq.51): skill dirs, agent entries, and every internal
+	// reference are renamed <prefix>-<name> at bind time. Empty means
+	// the pack name. The prefix is correctness-load-bearing, not
+	// hygiene: a user-scope skill shadows a same-name repo skill
+	// (finding-091 addendum 3, T16 corrected), so unprefixed generic
+	// names would be silently hijacked on consumer machines.
+	BindingPrefix string `yaml:"binding_prefix"`
 }
 
 // knownMechanisms are the activation mechanisms this sideshow version
@@ -24,6 +32,19 @@ type Activation struct {
 // the calmer install notice over the unrecognized-mechanism warning.
 var knownMechanisms = map[string]bool{
 	"claude-plugin": true,
+	// repo-bindings is the unshaping delivery mechanism (decision D4,
+	// finding-094): per-repo materialization from the store with no
+	// harness plugin state.
+	"repo-bindings": true,
+}
+
+// Prefix returns the binding prefix bound artifacts carry, defaulting
+// to the pack name when the pack declares none.
+func (a *Activation) Prefix(packName string) string {
+	if a != nil && a.BindingPrefix != "" {
+		return a.BindingPrefix
+	}
+	return packName
 }
 
 // PluginClass reports whether the pack activates through a mechanism

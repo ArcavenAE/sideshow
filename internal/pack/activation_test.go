@@ -175,3 +175,17 @@ func TestInstallFromLocal_UnknownMechanismWarns(t *testing.T) {
 		t.Errorf("unknown mechanism must warn by name:\n%s", out)
 	}
 }
+
+func TestActivationPrefix(t *testing.T) {
+	t.Parallel()
+	if got := (&Activation{BindingPrefix: "vsdd"}).Prefix("vsdd-factory"); got != "vsdd" {
+		t.Errorf("declared prefix = %q, want vsdd", got)
+	}
+	if got := (&Activation{}).Prefix("mypack"); got != "mypack" {
+		t.Errorf("default prefix = %q, want pack name", got)
+	}
+	var nilAct *Activation
+	if got := nilAct.Prefix("mypack"); got != "mypack" {
+		t.Errorf("nil activation prefix = %q, want pack name", got)
+	}
+}
