@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -501,18 +502,8 @@ func runInstall(args []string) error {
 	packPath := pack.PacksDir()
 	settingsFile := permissions.SettingsPath(scope, ".")
 
-	if !autoYes {
-		fmt.Printf("\nConfigure Claude Code to read from %s?\n", packPath)
-		fmt.Printf("  This adds Read(%s/) to %s\n", packPath, settingsFile)
-		fmt.Printf("  [Y/n]: ")
-
-		reader := bufio.NewReader(os.Stdin)
-		answer, _ := reader.ReadString('\n')
-		answer = strings.TrimSpace(strings.ToLower(answer))
-		if answer == "n" || answer == "no" {
-			fmt.Println("Skipped. You may be prompted by Claude Code when accessing pack files.")
-			return nil
-		}
+	if !autoYes && !consentToPermissions(os.Stdin, os.Stdout, stdinIsTerminal(), packPath, settingsFile) {
+		return nil
 	}
 
 	if err := permissions.ConfigureForScope(scope, packPath, "."); err != nil {
@@ -521,6 +512,62 @@ func runInstall(args []string) error {
 	}
 
 	return nil
+}
+
+// stdinIsTerminal reports whether stdin is an interactive terminal.
+// Fails closed: a Stat error means "not a terminal", because the
+// consequence of guessing wrong is writing a permission nobody
+// approved.
+func stdinIsTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// consentToPermissions asks whether to write Claude Code permission
+// entries and reports the answer.
+//
+// It never infers consent from an absent answer (sideshow#94). The
+// prompt documents a [Y/n] default, and the original read treated
+// anything that was not "n"/"no" as yes — including the empty string
+// an EOF returns. A piped or redirected install therefore granted
+// Read permissions with nobody answering. Two cases now mean no: a
+// non-interactive stdin, which cannot answer at all, and an EOF with
+// nothing typed. Same family as the SIDESHOW_HOME contamination fix
+// just above: the install path must not assume an environment it did
+// not check.
+//
+// A bare Enter on a terminal is still yes. The bug is answers that
+// were never given, not answers given tersely. --yes remains the
+// intentional automation path and is handled by the caller.
+// The writer is injected rather than written through fmt.Printf so the
+// tests can run in parallel without swapping os.Stdout. Write errors on
+// the prompt stream are discarded explicitly: a consent decision must
+// not turn on whether the terminal accepted the question.
+func consentToPermissions(in io.Reader, out io.Writer, isTerminal bool, packPath, settingsFile string) bool {
+	if !isTerminal {
+		_, _ = fmt.Fprintf(out, "\nstdin is not a terminal, so the permission prompt cannot be answered.\n")
+		_, _ = fmt.Fprintf(out, "Skipping Claude Code permission configuration; re-run with --yes to configure it without prompting.\n")
+		return false
+	}
+
+	_, _ = fmt.Fprintf(out, "\nConfigure Claude Code to read from %s?\n", packPath)
+	_, _ = fmt.Fprintf(out, "  This adds Read(%s/) to %s\n", packPath, settingsFile)
+	_, _ = fmt.Fprintf(out, "  [Y/n]: ")
+
+	answer, readErr := bufio.NewReader(in).ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if readErr != nil && answer == "" {
+		_, _ = fmt.Fprintf(out, "\nNo answer read (input closed). Skipping; re-run with --yes to configure permissions.\n")
+		return false
+	}
+	if answer == "n" || answer == "no" {
+		_, _ = fmt.Fprintf(out, "Skipped. You may be prompted by Claude Code when accessing pack files.\n")
+		return false
+	}
+	return true
 }
 
 // runUse activates an installed pack version and re-syncs bindings so

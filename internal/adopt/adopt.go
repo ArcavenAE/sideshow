@@ -156,6 +156,24 @@ func Adopt(opts Options) (*Outcome, error) {
 		return nil, fmt.Errorf("foreign tree runs %s but adoption targets %s; equivalence is only provable at version equality — re-run with --allow-version-change to accept the drift", runningVersion, adoptVersion)
 	}
 
+	// Store gate (sideshow#96). Step 2 hands adoptVersion to enable,
+	// which resolves it against the store. When the version was
+	// DEFAULTED from the foreign tree, nothing guarantees the store
+	// holds it — and the equality gate above cannot catch that, because
+	// a defaulted adoptVersion equals runningVersion by construction, so
+	// the gate compares a value against itself and never fires. Without
+	// this check the failure surfaces inside enable, at step 2, after
+	// step 1 has already written.
+	//
+	// Computed here rather than returned, so the dry run can predict it
+	// instead of only the real run hitting it. Skipped when StoreRoot is
+	// injected, mirroring enable's resolveStore, which short-circuits on
+	// the same seam and never consults the registry.
+	var storeErr error
+	if opts.StoreRoot == "" {
+		storeErr = checkStoreHasVersion(opts.Pack, adoptVersion, opts.Version == "")
+	}
+
 	// Pre-state snapshot.
 	footBefore, err := coexistcheck.SnapshotForeignFootprint(opts.ConfigDir)
 	if err != nil {
@@ -176,6 +194,9 @@ func Adopt(opts Options) (*Outcome, error) {
 		fmt.Printf("adopt plan for %s in %s (dry run, nothing written):\n", opts.Pack, opts.RepoDir)
 		fmt.Printf("  1. suppress foreign identity %s in this repo only (settings.local.json override; the install is untouched)\n", identity)
 		fmt.Printf("  2. sideshow enable %s@%s --scope %s\n", opts.Pack, adoptVersion, opts.Scope)
+		if storeErr != nil {
+			fmt.Printf("     WOULD FAIL: %v\n", storeErr)
+		}
 		switch {
 		case strings.HasPrefix(agentBefore, opts.Pack+":") && opts.RewriteAgent:
 			fmt.Printf("  3. rewrite default agent %q to the bound orchestrator (consented via --rewrite-agent)\n", agentBefore)
@@ -185,11 +206,16 @@ func Adopt(opts Options) (*Outcome, error) {
 			fmt.Println("  3. no foreign-form default agent to rewrite (nothing to do at this step)")
 		}
 		fmt.Printf("  4. prove equivalence against the foreign tree at %s\n", install.InstallPath)
-		if refused {
-			return &Outcome{Identity: identity, Version: adoptVersion}, fmt.Errorf("the real run would REFUSE: the preflight reported the errors above; resolve them before adopting")
+		if refused || storeErr != nil {
+			return &Outcome{Identity: identity, Version: adoptVersion}, fmt.Errorf("the real run would REFUSE: the plan above reports the errors; resolve them before adopting")
 		}
-		fmt.Println("preflight clean: the real run would proceed")
+		fmt.Println("preflight clean and every plan step resolves: the real run would proceed")
 		return &Outcome{Identity: identity, Version: adoptVersion}, nil
+	}
+
+	// Refuse before step 1 writes anything.
+	if storeErr != nil {
+		return nil, storeErr
 	}
 
 	// Step 1: repo-side suppression, BEFORE enable (see package doc).
@@ -302,6 +328,39 @@ func Finish(opts Options) error {
 	fmt.Println("  marketplace removal: only after confirming it serves no other plugin — claude plugin marketplace remove <name>")
 	fmt.Println("Re-run this command after acting; it reports until the census is clean.")
 	return nil
+}
+
+// checkStoreHasVersion reports why enable would fail to resolve
+// pack@version against the store, or nil when it would resolve.
+//
+// defaulted says the version came from the foreign tree rather than
+// from the operator, which changes the advice: an operator who typed a
+// version wants that version installed, while a defaulted one is a
+// drift the operator has not seen yet and can accept explicitly.
+func checkStoreHasVersion(packName, version string, defaulted bool) error {
+	packs, err := pack.List()
+	if err != nil {
+		return fmt.Errorf("read the pack registry to confirm %s@%s is installed: %w", packName, version, err)
+	}
+	var installed []string
+	for _, p := range packs {
+		if p.Name != packName {
+			continue
+		}
+		if p.Version == version {
+			return nil
+		}
+		installed = append(installed, p.Version)
+	}
+
+	held := "no versions of it"
+	if len(installed) > 0 {
+		held = strings.Join(installed, ", ")
+	}
+	if defaulted {
+		return fmt.Errorf("adoption targets %s@%s, the version the foreign tree is running, but the store holds %s; install that version, or adopt at an installed one with '%s@<version> --allow-version-change' (equivalence is only provable at version equality, so the drift has to be explicit)", packName, version, held, packName)
+	}
+	return fmt.Errorf("adoption targets %s@%s but the store holds %s; install that version first", packName, version, held)
 }
 
 // dryRunPreflight runs the same coexistence preflight enable will,
