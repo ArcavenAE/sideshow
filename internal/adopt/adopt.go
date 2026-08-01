@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 	"github.com/ArcavenAE/sideshow/internal/foreign"
 	"github.com/ArcavenAE/sideshow/internal/ledger"
 	"github.com/ArcavenAE/sideshow/internal/pack"
+	"github.com/ArcavenAE/sideshow/internal/preserve"
 )
 
 // Options configures an adoption.
@@ -125,13 +127,13 @@ func Adopt(opts Options) (*Outcome, error) {
 
 	// User-scope enable is the containment-mandate defect (Diagnose
 	// grades it ERROR): a machine-wide enable of a per-repo-required
-	// pack. Adopt refuses the direct flip — migrating the machine
-	// posture (removing the user-scope entry, adding per-repo enables
-	// in every repo that still wants the foreign channel) is the
-	// operator's act, because only the operator knows which repos
-	// those are.
+	// pack. Adopt refuses the direct flip, because converting one repo
+	// would leave every other repo on the machine in that posture.
+	// --migrate-user-scope is the consented way out (migrate.go); it
+	// stays a separate, explicitly requested step because the sweep set
+	// is the operator's judgement, not sideshow's.
 	if census.UserEnabled(identity) {
-		return nil, fmt.Errorf("%s is enabled at USER scope (machine-wide); adopt refuses the direct flip — first move the enable per-repo: remove the entry from the user settings, add a project/local-scope enable in each repo that should keep the foreign channel, then re-run adopt here", identity)
+		return nil, fmt.Errorf("%s is enabled at USER scope (machine-wide); adopt refuses the direct flip. Move the enable per-repo first: 'sideshow adopt %s --migrate-user-scope --dry-run' prints the plan (add --also-repo/--sweep-root for repos it cannot find), then re-run adopt here", identity, opts.Pack)
 	}
 
 	install := findInstall(census, identity)
@@ -219,6 +221,19 @@ func Adopt(opts Options) (*Outcome, error) {
 	}
 
 	// Step 1: repo-side suppression, BEFORE enable (see package doc).
+	// The prior entry is read first so rollback can restore it exactly:
+	// a repo already carrying a per-repo enable (a hand-written one, or
+	// one the user-scope migration wrote) has a TRUE in the very key
+	// suppression overwrites, and dropping that key would switch the
+	// foreign channel off in a repo nobody converted.
+	localSettings, err := foreign.SettingsPath(opts.RepoDir, opts.ConfigDir, foreign.ScopeLocal)
+	if err != nil {
+		return nil, err
+	}
+	priorEnable, err := foreign.ReadEnable(localSettings, identity)
+	if err != nil {
+		return nil, err
+	}
 	settingsCreated, err := foreign.SuppressInRepo(opts.RepoDir, identity)
 	if err != nil {
 		return nil, err
@@ -234,7 +249,7 @@ func Adopt(opts Options) (*Outcome, error) {
 		Now: opts.Now,
 	}
 	if err := enable.Enable(eOpts); err != nil {
-		rollbackSuppression(opts.RepoDir, identity, settingsCreated)
+		rollbackSuppression(opts.RepoDir, identity, priorEnable, settingsCreated)
 		return nil, fmt.Errorf("enable failed; suppression rolled back, repo unchanged: %w", err)
 	}
 
@@ -325,9 +340,35 @@ func Finish(opts Options) error {
 		fmt.Printf("  orphaned enable %s scope=%s in %s (no install behind it; the harness is silent about these, trial T14)\n", orphan.Identity, orphan.Scope, orphan.Path)
 		fmt.Printf("    remove the entry from that settings file by hand\n")
 	}
-	fmt.Println("  marketplace removal: only after confirming it serves no other plugin — claude plugin marketplace remove <name>")
+	reportMarketplaces(os.Stdout, census)
 	fmt.Println("Re-run this command after acting; it reports until the census is clean.")
 	return nil
+}
+
+// reportMarketplaces decides the marketplace-removal question instead of
+// deferring it: a marketplace is safe to retire only when it serves no
+// other installed plugin, and the install registry answers that. The
+// verdict is still print-only; sideshow never runs the removal.
+//
+// The writer is injected so the verdict is testable without swapping
+// os.Stdout, which is also what lets those tests run in parallel.
+func reportMarketplaces(w io.Writer, census *foreign.Census) {
+	seen := map[string]bool{}
+	for _, in := range census.Installs {
+		if in.Marketplace == "" || seen[in.Marketplace] {
+			continue
+		}
+		seen[in.Marketplace] = true
+		siblings := census.MarketplaceSiblings(in.Marketplace)
+		if len(siblings) > 0 {
+			_, _ = fmt.Fprintf(w, "  marketplace %s: KEEP (it also serves %s); removing it would break them\n",
+				in.Marketplace, strings.Join(siblings, ", "))
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "  marketplace %s: serves only %s, so removal is safe once the install above is gone\n",
+			in.Marketplace, census.Pack)
+		_, _ = fmt.Fprintf(w, "    retire: claude plugin marketplace remove %s\n", in.Marketplace)
+	}
 }
 
 // checkStoreHasVersion reports why enable would fail to resolve
@@ -408,10 +449,29 @@ func findInstall(c *foreign.Census, identity string) *foreign.Install {
 	return fallback
 }
 
-func rollbackSuppression(repoDir, identity string, settingsCreated bool) {
+// rollbackSuppression puts the repo back exactly as step 1 found it.
+// Three cases, in precedence order: an entry that was already there is
+// restored to its old value; a settings file that existed only to carry
+// the suppression is removed; otherwise the suppression entry alone is
+// dropped from a file that has other reasons to exist.
+func rollbackSuppression(repoDir, identity string, prior foreign.EnableEntry, settingsCreated bool) {
+	if prior.Present {
+		if _, err := foreign.SetEnable(prior.Path, identity, prior.Value); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not restore the prior enable entry for %s: %v\n", identity, err)
+		}
+		return
+	}
 	if settingsCreated {
-		// The suppression was the file's only reason to exist.
-		if err := os.Remove(filepath.Join(repoDir, ".claude", "settings.local.json")); err != nil {
+		// The suppression was the file's only reason to exist. The
+		// preserve floor still gates the removal: a repo path that
+		// resolves under class-1 state is a bug worth refusing over,
+		// not one worth deleting through.
+		path := filepath.Join(repoDir, ".claude", "settings.local.json")
+		if err := preserve.Check(path); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: leaving %s in place: %v\n", path, err)
+			return
+		}
+		if err := os.Remove(path); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not remove the suppression settings file: %v\n", err)
 		}
 		return

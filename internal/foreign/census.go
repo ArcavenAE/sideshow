@@ -3,10 +3,18 @@
 // delivers by repo bindings. It is the conversion-side surface behind
 // the coexistence guard (aae-orc-paqn), coexist-check, and adopt.
 //
-// Everything in this package is READ-ONLY. Sideshow never
-// auto-retires, auto-disables, or auto-uninstalls a foreign install;
-// mutations of foreign state happen only through documented claude
-// verbs with explicit consent, outside this package.
+// The census, resolution, and diagnosis surfaces are READ-ONLY.
+// Sideshow never auto-retires or auto-uninstalls a foreign install:
+// removing a plugin, purging its cache, and retiring its marketplace
+// happen only through documented claude verbs the operator runs.
+//
+// Two consented WRITE surfaces exist, both narrow and both reachable
+// only from a verb that asked first: the repo-side suppression override
+// (suppress.go, adopt step 1) and the scope-general enabledPlugins
+// writers (enables.go) the user-scope migration uses to move a
+// machine-wide enable per repo. Both touch enabledPlugins entries in
+// settings files and nothing else, which is the class-3 allowlist from
+// the preserve taxonomy. Neither touches an install tree.
 //
 // Ground truth for every parsed shape: aae-orc finding-091 addendum 3
 // (executed trials, Claude Code 2.1.220) and
@@ -77,6 +85,11 @@ type Census struct {
 	Installs    []Install
 	userEnables map[string]enableEntry // identity -> user-scope entry
 	installed   map[string]bool        // identity -> has install record
+	// marketplaces maps marketplace name -> every plugin name it serves
+	// on this machine, the census pack included. Retiring a marketplace
+	// turns on what ELSE it serves, so this one field looks past the
+	// pack filter the rest of the census applies.
+	marketplaces map[string][]string
 }
 
 // legacyMarketplaces are marketplace names whose identities predate
@@ -156,10 +169,11 @@ func treeVersion(installPath string) string {
 // detection rule), plus the user-scope enable entries.
 func TakeCensus(configDir, pack string) (*Census, error) {
 	c := &Census{
-		Pack:        pack,
-		ConfigDir:   configDir,
-		userEnables: map[string]enableEntry{},
-		installed:   map[string]bool{},
+		Pack:         pack,
+		ConfigDir:    configDir,
+		userEnables:  map[string]enableEntry{},
+		installed:    map[string]bool{},
+		marketplaces: map[string][]string{},
 	}
 
 	regPath := filepath.Join(configDir, "plugins", "installed_plugins.json")
@@ -176,6 +190,9 @@ func TakeCensus(configDir, pack string) (*Census, error) {
 		}
 		for identity, entries := range reg.Plugins {
 			plugin, mp := splitIdentity(identity)
+			if mp != "" {
+				c.marketplaces[mp] = append(c.marketplaces[mp], plugin)
+			}
 			if plugin != pack {
 				continue
 			}
