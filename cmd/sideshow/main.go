@@ -40,6 +40,8 @@ Usage:
                                           register it as a custom-skills source
   sideshow status                         Show installation status
   sideshow coexist <pack> [--repo <path>]  Read-only foreign-install census and coexistence findings
+  sideshow enable <pack>[@<ver>] [--repo <path>] [--scope local|project]  Activate a pack in one repo (repo-bindings)
+  sideshow disable <pack> [--repo <path>]  Reverse an enable exactly (ledger replay)
   sideshow coexist-check <pack> [--repo <path>]  Read-only enable/adopt preflight (ten checks)
   sideshow version                        Show version
 
@@ -123,6 +125,10 @@ func main() {
 		}
 	case "status":
 		err = runStatus()
+	case "enable":
+		err = runEnable(os.Args[2:])
+	case "disable":
+		err = runDisable(os.Args[2:])
 	case "coexist-check":
 		err = runCoexistCheck(os.Args[2:])
 	case "coexist":
