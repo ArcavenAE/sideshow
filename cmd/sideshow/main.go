@@ -325,7 +325,14 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 		}
 
 		for _, repo := range repos {
-			result := distribute.ToRepo(repo, &p.manifest, opts)
+			// File artifacts have no in-file ownership marker, so the prior
+			// receipt is how distributeFile tells its own unmodified output
+			// from a file the user has since edited. Per repo, per pack.
+			repoOpts := opts
+			repoOpts.PriorChecksums = distribute.PriorChecksums(
+				reg, id.ID, projectRoot, filepath.Base(manifestPath), repo.Name, p.name)
+
+			result := distribute.ToRepo(repo, &p.manifest, repoOpts)
 			allResults = append(allResults, result)
 
 			if result.Skipped {
@@ -635,6 +642,13 @@ func runProjectInitForPack(args []string) error {
 		Present: true,
 	}
 
+	// PriorChecksums is deliberately nil here. This path operates on cwd alone
+	// and has no project installation context (no project id, no repos.yaml), so
+	// there is no receipt to read. The effect on `files:` artifacts is fail-safe
+	// but incomplete: sideshow creates a missing file and then leaves it alone on
+	// every later run, because without a receipt it cannot distinguish its own
+	// output from a user's file. Refreshing a file artifact needs the
+	// `init --scope project` path. Tracked as a follow-on to aae-orc-rx3.
 	result := distribute.ToRepo(repo, &packYAML.Distribute, distribute.Options{
 		DryRun:      dryRun,
 		PackName:    packYAML.Name,
