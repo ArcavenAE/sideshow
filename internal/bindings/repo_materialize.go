@@ -334,17 +334,19 @@ func RemoveRepoArtifacts(t RepoTarget, artifacts []RepoArtifact) (int, error) {
 	root := t.harnessRoot()
 
 	// Containment preflight over the whole set before touching anything.
-	// The binding root itself is a legal artifact only as a parent-dir
-	// (Remove-if-empty is safe there); every other kind must sit
-	// strictly inside it.
+	// Two allowed roots: the harness dir (the binding root itself is a
+	// legal artifact only as a parent-dir, where Remove-if-empty is
+	// safe) and the compat-symlink shapes under plugins/ (D2). Anything
+	// else fails closed.
 	abs := make([]string, len(artifacts))
 	for i, a := range artifacts {
 		p := filepath.Join(repoDir, filepath.FromSlash(a.Path))
 		rel, relErr := filepath.Rel(root, p)
 		rootAsParentDir := rel == "." && a.Kind == ArtifactParentDir
-		if relErr != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(a.Path) ||
-			(rel == "." && !rootAsParentDir) {
-			return 0, fmt.Errorf("refusing removal: artifact %q resolves outside binding root %s", a.Path, root)
+		underHarness := relErr == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(a.Path) &&
+			(rel != "." || rootAsParentDir)
+		if !underHarness && !compatRemovalAllowed(a) {
+			return 0, fmt.Errorf("refusing removal: artifact %q (kind %s) resolves outside the allowed binding roots of %s", a.Path, a.Kind, repoDir)
 		}
 		abs[i] = p
 	}
@@ -364,6 +366,20 @@ func RemoveRepoArtifacts(t RepoTarget, artifacts []RepoArtifact) (int, error) {
 			}
 		case ArtifactSkillDir:
 			if rmErr := os.RemoveAll(p); rmErr != nil {
+				return removed, fmt.Errorf("remove %s: %w", a.Path, rmErr)
+			}
+		case ArtifactCompatSymlink:
+			// Only ever remove a symlink here: a real directory at the
+			// recorded path is the vendored engine (the pack developing
+			// itself), and a corrupt ledger row must not delete it.
+			info, statErr := os.Lstat(p)
+			if statErr != nil {
+				continue
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				return removed, fmt.Errorf("refusing removal: %s is recorded as a compat symlink but is not a symlink on disk", a.Path)
+			}
+			if rmErr := os.Remove(p); rmErr != nil {
 				return removed, fmt.Errorf("remove %s: %w", a.Path, rmErr)
 			}
 		default: // ArtifactAgentFile and future file-shaped kinds
