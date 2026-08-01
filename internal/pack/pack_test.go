@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func TestPacksDir(t *testing.T) {
 }
 
 func TestLoadRegistry_Empty(t *testing.T) {
-	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	freezeSafeHome(t)
 	reg, err := LoadRegistry()
 	if err != nil {
 		t.Fatalf("LoadRegistry() error: %v", err)
@@ -45,7 +46,7 @@ func TestLoadRegistry_Empty(t *testing.T) {
 }
 
 func TestRegistrySaveAndLoad(t *testing.T) {
-	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	freezeSafeHome(t)
 
 	reg := &Registry{
 		Packs: []InstalledPack{
@@ -241,9 +242,20 @@ func TestDetectVersion_MalformedJSON(t *testing.T) {
 	}
 }
 
-func TestInstallFromLocal(t *testing.T) {
+// freezeSafeHome sets SIDESHOW_HOME to a fresh temp dir and registers
+// a cleanup that unfreezes any frozen store trees first, so TempDir's
+// RemoveAll can delete them. Cleanups run LIFO: this one is registered
+// after TempDir's, so it runs before it.
+func freezeSafeHome(t *testing.T) string {
+	t.Helper()
 	home := t.TempDir()
 	t.Setenv("SIDESHOW_HOME", home)
+	t.Cleanup(func() { _ = UnfreezeTree(home) })
+	return home
+}
+
+func TestInstallFromLocal(t *testing.T) {
+	home := freezeSafeHome(t)
 
 	// Create a source pack with a manifest
 	src := t.TempDir()
@@ -374,7 +386,7 @@ func TestValidateShape_RejectsUnknownLayout(t *testing.T) {
 }
 
 func TestInstallFromLocal_RejectsSourceTarballShape(t *testing.T) {
-	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	freezeSafeHome(t)
 
 	source := t.TempDir()
 	if err := os.WriteFile(filepath.Join(source, "package.json"), []byte(`{"version":"6.5.0"}`), 0o644); err != nil {
@@ -456,7 +468,7 @@ func TestHasInstallerSiblingLayout_AlreadyUnified(t *testing.T) {
 }
 
 func TestInstallFromLocal_UnifiesInstallerSiblingLayout(t *testing.T) {
-	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	freezeSafeHome(t)
 
 	source := t.TempDir()
 	// Build a realistic upstream installer output: _bmad/_config/manifest.yaml
@@ -519,7 +531,7 @@ func TestInstallFromLocal_UnifiesInstallerSiblingLayout(t *testing.T) {
 }
 
 func TestInstallFromLocal_AlreadyUnifiedPassesThrough(t *testing.T) {
-	t.Setenv("SIDESHOW_HOME", t.TempDir())
+	freezeSafeHome(t)
 
 	source := t.TempDir()
 	// Pack root with _config/ at top level (no _bmad/ prefix at all).
@@ -570,9 +582,11 @@ func makeModeFixture(t *testing.T) string {
 	return src
 }
 
+// The mode contract after the store freeze (aae-orc-dihj): read and
+// exec bits survive the copy, write bits are stripped. 0755 becomes
+// 0555 and never 0444; 0644 becomes 0444.
 func TestInstallFromLocal_PreservesFileModes(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("SIDESHOW_HOME", home)
+	home := freezeSafeHome(t)
 	src := makeModeFixture(t)
 
 	if err := InstallFromLocal("modes", src, true); err != nil {
@@ -584,8 +598,8 @@ func TestInstallFromLocal_PreservesFileModes(t *testing.T) {
 		rel  string
 		want os.FileMode
 	}{
-		{filepath.Join("bin", "tool.sh"), 0o755},
-		{"doc.md", 0o644},
+		{filepath.Join("bin", "tool.sh"), 0o555},
+		{"doc.md", 0o444},
 	}
 	for _, tt := range tests {
 		info, err := os.Stat(filepath.Join(packRoot, tt.rel))
@@ -599,8 +613,7 @@ func TestInstallFromLocal_PreservesFileModes(t *testing.T) {
 }
 
 func TestInstallFromLocal_ExecManifestVerified(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("SIDESHOW_HOME", home)
+	freezeSafeHome(t)
 	src := makeModeFixture(t)
 	if err := os.WriteFile(filepath.Join(src, "exec-manifest.txt"), []byte("bin/tool.sh\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -612,8 +625,7 @@ func TestInstallFromLocal_ExecManifestVerified(t *testing.T) {
 }
 
 func TestInstallFromLocal_ExecManifestDriftFailsLoudly(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("SIDESHOW_HOME", home)
+	freezeSafeHome(t)
 	src := makeModeFixture(t)
 	// Census references an entry the source does not satisfy: the listed
 	// path exists but is not executable, plus one missing path.
@@ -632,5 +644,175 @@ func TestInstallFromLocal_ExecManifestDriftFailsLoudly(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err.Error(), want)
 		}
+	}
+}
+
+// walkPerms collects perm bits for every non-symlink entry under root.
+func walkPerms(t *testing.T, root string) map[string]os.FileMode {
+	t.Helper()
+	perms := map[string]os.FileMode{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		perms[rel] = info.Mode().Perm()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return perms
+}
+
+// The store freezes WHOLE (finding-094 round 3): every file and every
+// directory in the installed tree, no exemptions.
+func TestInstallFromLocal_FreezesStoreWhole(t *testing.T) {
+	home := freezeSafeHome(t)
+	src := makeModeFixture(t)
+
+	if err := InstallFromLocal("modes", src, true); err != nil {
+		t.Fatalf("InstallFromLocal: %v", err)
+	}
+
+	for rel, perm := range walkPerms(t, filepath.Join(home, "packs", "modes", "1.0.0")) {
+		if perm&0o222 != 0 {
+			t.Errorf("%s carries write bits: %o", rel, perm)
+		}
+	}
+}
+
+// A write into the frozen store fails loudly instead of corrupting the
+// active version silently (the finding-074 class).
+func TestInstallFromLocal_StoreWriteFailsLoudly(t *testing.T) {
+	home := freezeSafeHome(t)
+	src := makeModeFixture(t)
+
+	if err := InstallFromLocal("modes", src, true); err != nil {
+		t.Fatalf("InstallFromLocal: %v", err)
+	}
+
+	packRoot := filepath.Join(home, "packs", "modes", "1.0.0")
+	if err := os.WriteFile(filepath.Join(packRoot, "doc.md"), []byte("mutated"), 0o644); err == nil {
+		t.Error("overwrite of a frozen store file succeeded")
+	}
+	if err := os.WriteFile(filepath.Join(packRoot, "bin", "new.sh"), []byte("#!/bin/sh\n"), 0o755); err == nil {
+		t.Error("creating a file inside a frozen store dir succeeded")
+	}
+	if err := os.Remove(filepath.Join(packRoot, "doc.md")); err == nil {
+		t.Error("deleting a file from a frozen store dir succeeded")
+	}
+}
+
+// Reinstalling over a frozen version is the unlock half of the
+// envelope: before the fix this EACCESed on the first overwrite, which
+// is the state every manually frozen store has been in since the
+// 2026-07-12 chmod (finding-074 interim).
+func TestInstallFromLocal_ReinstallOverFrozenTree(t *testing.T) {
+	home := freezeSafeHome(t)
+	src := makeModeFixture(t)
+
+	if err := InstallFromLocal("modes", src, true); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "doc.md"), []byte("updated"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallFromLocal("modes", src, true); err != nil {
+		t.Fatalf("reinstall over frozen tree: %v", err)
+	}
+
+	packRoot := filepath.Join(home, "packs", "modes", "1.0.0")
+	data, err := os.ReadFile(filepath.Join(packRoot, "doc.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "updated" {
+		t.Errorf("reinstall did not replace content: %q", data)
+	}
+	for rel, perm := range walkPerms(t, packRoot) {
+		if perm&0o222 != 0 {
+			t.Errorf("%s writable after reinstall: %o", rel, perm)
+		}
+	}
+}
+
+// A failed install leaves the tree frozen, not writable: the deferred
+// freeze runs on every exit (fail frozen).
+func TestInstallFromLocal_FreezesEvenOnFailure(t *testing.T) {
+	home := freezeSafeHome(t)
+	src := makeModeFixture(t)
+	// Exec-manifest drift makes the install fail after the copy.
+	if err := os.Chmod(filepath.Join(src, "bin", "tool.sh"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "exec-manifest.txt"), []byte("bin/tool.sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallFromLocal("modes", src, true); err == nil {
+		t.Fatal("install succeeded despite exec-manifest drift")
+	}
+	for rel, perm := range walkPerms(t, filepath.Join(home, "packs", "modes", "1.0.0")) {
+		if perm&0o222 != 0 {
+			t.Errorf("failed install left %s writable: %o", rel, perm)
+		}
+	}
+}
+
+// Chmod follows symlinks; the freeze must not. A bridge link inside
+// the tree may point at user-owned content outside the store.
+func TestFreezeTree_SkipsSymlinks(t *testing.T) {
+	t.Parallel()
+	tree := t.TempDir()
+	t.Cleanup(func() { _ = UnfreezeTree(tree) })
+	outside := filepath.Join(t.TempDir(), "user-owned.md")
+	if err := os.WriteFile(outside, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(tree, "bridge")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := FreezeTree(tree); err != nil {
+		t.Fatalf("FreezeTree: %v", err)
+	}
+	info, err := os.Stat(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("freeze reached through the symlink: outside target mode = %o, want 644", info.Mode().Perm())
+	}
+}
+
+func TestUnfreezeTree_RestoresOwnerWrite(t *testing.T) {
+	t.Parallel()
+	tree := t.TempDir()
+	sub := filepath.Join(tree, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := FreezeTree(tree); err != nil {
+		t.Fatal(err)
+	}
+	if err := UnfreezeTree(tree); err != nil {
+		t.Fatalf("UnfreezeTree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "f.txt"), []byte("y"), 0o644); err != nil {
+		t.Errorf("write after unfreeze failed: %v", err)
 	}
 }

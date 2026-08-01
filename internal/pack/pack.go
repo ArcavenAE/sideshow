@@ -394,7 +394,11 @@ func InstalledVersions(name string) (versions []string, active string, err error
 }
 
 // InstallFromLocal copies a pack from a local path to the sideshow directory.
-func InstallFromLocal(name, sourcePath string, activate bool) error {
+// The installed version tree is frozen read-only (aae-orc-dihj); a
+// reinstall over an existing frozen version unlocks it first, and the
+// tree refreezes on every exit, including failure, so a partial
+// install fails frozen rather than writable.
+func InstallFromLocal(name, sourcePath string, activate bool) (retErr error) {
 	// Expand ~ in source path
 	if strings.HasPrefix(sourcePath, "~/") {
 		home, _ := os.UserHomeDir()
@@ -440,6 +444,19 @@ func InstallFromLocal(name, sourcePath string, activate bool) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("create pack dir: %w", err)
 	}
+
+	// Unlock-write-refreeze envelope (aae-orc-dihj). A reinstall over a
+	// frozen version would otherwise EACCES on the first overwrite; the
+	// deferred freeze runs on every return path so the store is never
+	// left writable, including after a failed install.
+	if err := UnfreezeTree(destDir); err != nil {
+		return fmt.Errorf("unlock existing store version %s: %w", destDir, err)
+	}
+	defer func() {
+		if ferr := FreezeTree(destDir); ferr != nil && retErr == nil {
+			retErr = fmt.Errorf("freeze store %s: %w", destDir, ferr)
+		}
+	}()
 
 	// Copy content
 	count := 0
@@ -488,8 +505,10 @@ func InstallFromLocal(name, sourcePath string, activate bool) error {
 		}
 		// WriteFile applies perm only at create time (and subject to
 		// umask); force the exact source mode so exec bits survive
-		// reinstalls over an existing tree. Read-only store freeze
-		// (aae-orc-dihj) must map 0755 -> 0555 here, never 0444.
+		// reinstalls over an existing tree. The deferred FreezeTree
+		// strips write bits afterward, mapping 0755 -> 0555 and never
+		// 0444, because the freeze is a mask and this chmod is what
+		// preserves the exec bit it masks against.
 		if err := os.Chmod(destPath, perm); err != nil {
 			return fmt.Errorf("chmod %s: %w", destPath, err)
 		}
@@ -614,4 +633,63 @@ func List() ([]InstalledPack, error) {
 		return nil, err
 	}
 	return reg.Packs, nil
+}
+
+// FreezeTree strips every write bit under root: 0755 becomes 0555,
+// 0644 becomes 0444 — never 0444 for executables, because the mask
+// only removes write bits and leaves read and exec intact
+// (aae-orc-dihj). The store freezes WHOLE: no exemption, no
+// derived-layer chain, no integrity special case (finding-094 round
+// 3). The file mode is the only thing preventing an unauthorized
+// pack write today (finding-002 F8: no doctor verb, no content
+// hashing anywhere near pack content), so a write from a runtime
+// skill or a weave op fails loudly here instead of corrupting the
+// active version silently (finding-074).
+//
+// Symlinks are skipped: Chmod follows them, and a bridge link inside
+// the tree may point at user-owned content outside the store that
+// must not be frozen.
+func FreezeTree(root string) error {
+	return chmodTree(root, func(perm os.FileMode) os.FileMode {
+		return perm &^ 0o222
+	})
+}
+
+// UnfreezeTree restores owner write under root so install may replace
+// a frozen version and a future removal path may drop one. Any writer
+// of a declared-mutable store path must use the full
+// unlock-write-refreeze envelope: UnfreezeTree, write, then FreezeTree
+// in a defer so the tree refreezes even when the write fails
+// (aae-orc-dihj; consumers: reinstall here, uninstall aae-orc-d3nq.20,
+// weave runtime_links writes aae-orc-a3v6).
+func UnfreezeTree(root string) error {
+	return chmodTree(root, func(perm os.FileMode) os.FileMode {
+		return perm | 0o200
+	})
+}
+
+func chmodTree(root string, transform func(os.FileMode) os.FileMode) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		// DirEntry.Info does not follow symlinks; skip them so the
+		// chmod (which does follow) cannot reach outside the tree.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		perm := info.Mode().Perm()
+		next := transform(perm)
+		if next == perm {
+			return nil
+		}
+		if err := os.Chmod(path, next); err != nil {
+			return fmt.Errorf("chmod %s: %w", path, err)
+		}
+		return nil
+	})
 }
