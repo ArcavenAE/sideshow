@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ArcavenAE/sideshow/internal/bindings"
@@ -56,7 +57,12 @@ func runCoexistCheck(args []string) error {
 				opts.PerRepoRequired = act.PerRepoRequired
 			}
 		}
+		// Resolve through the `current` symlink so check 6 compares
+		// version dirs, not the symlink's basename.
 		opts.StoreRoot = p.Path
+		if resolved, rErr := filepath.EvalSymlinks(p.Path); rErr == nil {
+			opts.StoreRoot = resolved
+		}
 		if inv, invErr := bindings.DiscoverPluginLayout(*p); invErr == nil {
 			opts.Inventory = inv
 		}

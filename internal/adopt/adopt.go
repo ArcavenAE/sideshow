@@ -32,6 +32,7 @@ import (
 	"github.com/ArcavenAE/sideshow/internal/enable"
 	"github.com/ArcavenAE/sideshow/internal/foreign"
 	"github.com/ArcavenAE/sideshow/internal/ledger"
+	"github.com/ArcavenAE/sideshow/internal/pack"
 )
 
 // Options configures an adoption.
@@ -211,7 +212,12 @@ func Adopt(opts Options) (*Outcome, error) {
 	}
 	prefix := opts.Prefix
 	if prefix == "" {
+		// Resolve the binding prefix the way enable did: from the
+		// store's activation record (falling back to the pack name).
 		prefix = opts.Pack
+		if act, actErr := pack.LoadActivation(row.StorePath); actErr == nil {
+			prefix = act.Prefix(opts.Pack)
+		}
 	}
 	if opts.RewriteAgent && strings.HasPrefix(agentBefore, opts.Pack+":") {
 		bound := prefix + "-orchestrator"

@@ -167,7 +167,10 @@ func Run(opts Options) (*Report, error) {
 
 	// (9) pre-existing content collision: everything materialization
 	// would write that already exists. Refuse rather than clobber.
-	if opts.Inventory != nil {
+	// Skipped for a bound repo: the existing artifacts there are the
+	// ledger's own writes, not collisions (a bound repo's integrity is
+	// check 4's job; re-enable goes through disable+enable per check 6).
+	if opts.Inventory != nil && row == nil {
 		for _, rel := range plannedPaths(opts) {
 			if _, err := os.Lstat(filepath.Join(opts.RepoDir, filepath.FromSlash(rel))); err == nil {
 				rep.add(9, "content-collision", foreign.Error,
@@ -217,7 +220,7 @@ func checkPlatformBind(rep *Report, opts Options, row *ledger.Row) {
 	if err := bindings.VerifyEnvShim(settingsPath, "CLAUDE_PLUGIN_ROOT", row.StorePath); err != nil {
 		rep.add(4, "platform-bind", foreign.Error, err.Error())
 	}
-	dispatcher := findDispatcher(row.StorePath)
+	dispatcher := findDispatcher(row.StorePath, row.Platform)
 	if dispatcher == "" {
 		rep.add(4, "platform-bind", foreign.Warn,
 			"no dispatcher binary found under the bound store path; hook commands referencing it will fail")
@@ -230,8 +233,19 @@ func checkPlatformBind(rep *Report, opts Options, row *ledger.Row) {
 }
 
 // findDispatcher locates the platform dispatcher under the store
-// tree (hooks/dispatcher/<binary> per the upstream layout).
-func findDispatcher(storeRoot string) string {
+// tree (hooks/dispatcher/bin/<platform>/factory-dispatcher per the
+// upstream layout; enable.verifyDispatcher checks the same path).
+// Falls back to a flat hooks/dispatcher/<binary> entry for packs
+// without per-platform bins.
+func findDispatcher(storeRoot, platform string) string {
+	name := "factory-dispatcher"
+	if strings.HasPrefix(platform, "windows") {
+		name += ".exe"
+	}
+	p := filepath.Join(storeRoot, "hooks", "dispatcher", "bin", platform, name)
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
 	dir := filepath.Join(storeRoot, "hooks", "dispatcher")
 	entries, err := os.ReadDir(dir)
 	if err != nil {

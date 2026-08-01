@@ -196,6 +196,40 @@ Full walkthrough with signed-release verification and a roster test:
 [`examples/bmad/`](examples/bmad/README.md). How pack content finds its
 paths (rewriting vs shim vs fallback): [`docs/path-resolution.md`](docs/path-resolution.md).
 
+## Plugin-shaped packs (repo bindings)
+
+Packs that upstream ships as a claude plugin (vsdd-factory) install
+into the same store but activate per repo, never machine-wide:
+
+```bash
+# Activate in one repo: skills/agents materialize prefixed under
+# .claude/, hook chain and env shim register in the settings chain,
+# a ledger row records everything written
+cd ~/work/myrepo && sideshow enable vsdd-factory@1.0.0-rc.23
+
+# Read-only preflight / posture checks
+sideshow coexist-check vsdd-factory     # ten-check enable/adopt preflight
+sideshow coexist vsdd-factory           # foreign-install census + findings
+
+# Consented persona flip (enable never touches your default agent)
+sideshow activate vsdd-factory          # default agent -> vsdd-orchestrator
+sideshow deactivate vsdd-factory        # remove the flip only
+
+# Exact reversal: replays the enable record in reverse, byte-exact
+sideshow disable vsdd-factory
+
+# Convert a repo already on the claude plugin channel (reversible,
+# dry-runnable; the plugin install itself is never touched)
+sideshow adopt vsdd-factory --dry-run
+sideshow adopt vsdd-factory
+sideshow adopt vsdd-factory --finish    # print-only residue report
+```
+
+Runbook: [`docs/repo-bindings-enablement.md`](docs/repo-bindings-enablement.md).
+Why this channel exists and what it deliberately does differently:
+[`docs/unshaping-spec.md`](docs/unshaping-spec.md),
+[`docs/divergence-register.md`](docs/divergence-register.md).
+
 ## Project status
 
 ### Done
@@ -208,6 +242,10 @@ paths (rewriting vs shim vs fallback): [`docs/path-resolution.md`](docs/path-res
 - Command/skill sync with path rewriting + read-only fallback footer
 - Claude Code permission management
 - Init command — config shim satisfies BMAD's init gate
+- Repo-bindings channel for plugin-shaped packs — per-repo
+  enable/disable (exact ledger replay), coexistence census + ten-check
+  preflight, consented persona flip, adopt from the claude-mp channel
+  with equivalence reporting
 
 ### To do
 

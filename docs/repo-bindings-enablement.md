@@ -31,11 +31,32 @@ before your first enable.
 
 ## 1. Obtain and verify
 
-Install the pack into the store from a signed release (unchanged from
-the standard sideshow flow):
+Signed releases are published by
+[sideshow-packs](https://github.com/ArcavenAE/sideshow-packs) — built
+in CI from the pinned upstream source, cosign-signed,
+Sigstore-attested. Direct fetch-and-verify by `sideshow install` is
+not yet shipped (aae-orc-wk92); until then, download and verify by
+hand, then install from the extracted tree:
 
 ```sh
-sideshow install vsdd-factory --from <path-or-release>
+mkdir -p /tmp/vsdd-install && cd /tmp/vsdd-install
+gh release download vsdd-factory-v1.0.0-rc.23 -R ArcavenAE/sideshow-packs \
+  -p 'vsdd-factory-1.0.0-rc.23-arcaven.tar.gz*' -p 'install.meta.json'
+
+# Integrity: tarball sha256 must match the provenance manifest
+shasum -a 256 -c <(python3 -c \
+  "import json; m=json.load(open('install.meta.json')); \
+   print(m['artifact']['tarball_sha256'], ' vsdd-factory-1.0.0-rc.23-arcaven.tar.gz')")
+
+# Authenticity: cosign keyless verification against the CI identity
+cosign verify-blob \
+  --bundle vsdd-factory-1.0.0-rc.23-arcaven.tar.gz.bundle \
+  --certificate-identity-regexp 'github.com/ArcavenAE/sideshow-packs' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  vsdd-factory-1.0.0-rc.23-arcaven.tar.gz     # expect: Verified OK
+
+tar -xzf vsdd-factory-1.0.0-rc.23-arcaven.tar.gz
+sideshow install vsdd-factory --from /tmp/vsdd-install/vsdd-factory-1.0.0-rc.23
 ```
 
 Install verifies the file manifest and the executable census
@@ -144,6 +165,66 @@ enable is refused):
    exactly (the preflight records a retreat anchor — the
    `factory-artifacts` tip and `.factory` status — so you can prove
    the trial changed nothing it should not have).
+
+## 7. Activate and deactivate (the persona flip)
+
+Enable never touches your default agent (no-hijack-on-enable, kept
+from upstream). Making the pack's orchestrator drive plain sessions
+is a separate, explicit act:
+
+```sh
+sideshow activate vsdd-factory                # default agent -> vsdd-orchestrator
+sideshow activate vsdd-factory --agent vsdd-<name>   # a different bound agent
+sideshow deactivate vsdd-factory              # remove the flip only
+```
+
+Activate requires an enabled repo and refuses to overwrite an agent
+key it does not own; deactivate removes the key only when it carries
+the pack's `vsdd-` prefix and refuses a foreign persona. Bindings are
+unaffected either way — `sideshow disable` is the verb that removes
+those.
+
+## 8. Adopting a repo from the claude-mp channel
+
+If a repo already runs vsdd-factory through the claude plugin
+channel, `adopt` converts it in one reversible step:
+
+```sh
+cd /path/to/adopting/repo
+sideshow adopt vsdd-factory --dry-run    # print the plan, write nothing
+sideshow adopt vsdd-factory              # convert
+```
+
+What it does, in order: refuses on hazards (nothing dispatching,
+double-dispatch, orphaned enables, user-scope enables, version
+drift); suppresses the foreign identity in THIS repo only (one
+settings override — the plugin install itself is never touched);
+enables the sideshow channel at the version the foreign tree is
+actually running; then prints an equivalence report (content parity,
+counts, dispatcher byte identity) against the foreign tree, plus a
+proof that no machine-level harness state changed.
+
+Flags: `--rewrite-agent` consents to flipping a foreign-form default
+agent (`vsdd-factory:...`) to the bound orchestrator;
+`--allow-version-change` accepts adopting at a version other than the
+running one (equivalence is only provable at version equality);
+`--repo`, `--scope`, `--override-stale-lock` as on enable.
+
+Retreat: `sideshow disable vsdd-factory` removes the bindings, and
+deleting the suppression override from `.claude/settings.local.json`
+restores the foreign channel exactly as found.
+
+**Machine-level retirement is not automated.** After adopting the
+repos you care about:
+
+```sh
+sideshow adopt vsdd-factory --finish
+```
+
+prints every remaining foreign trace (installs per scope, orphaned
+enables, the cache tree, the marketplace) with the operator command
+that retires each one. Sideshow executes none of them — uninstalling
+the plugin channel is your act, run only what you consent to.
 
 ## Divergence notice
 
