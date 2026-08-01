@@ -1,0 +1,86 @@
+id: elem-repo-bindings-channel
+type: element
+confidence: bedrock
+title: "Repo-bindings channel: per-repo enable/disable for plugin-shaped packs, consumer-validated"
+tags:
+  - sideshow
+  - bindings
+  - repo-bindings
+  - unshaping
+content: |
+  Plugin-shaped packs (upstream ships a claude plugin; vsdd-factory is
+  the first) install into the same store as any pack but activate PER
+  REPO, never machine-wide. There is no user-scope enable on this
+  channel by design. The verbs: `enable`/`disable` (exact ledger
+  replay), `activate`/`deactivate` (consented persona flip, orthogonal
+  to bindings), `coexist` (foreign census), `coexist-check` (ten-check
+  preflight), `adopt` (convert a repo from the claude-mp channel).
+
+  Producer-side implementation: orc finding-096 + sideshow
+  finding-001 (bound-variant architecture). This node records what a
+  CONSUMER-SIDE pilot on a non-producer machine established
+  (finding-002, aae-orc#128, session 064).
+
+  What is now empirically established, not just designed:
+
+  - **Headless hooks fire.** Repo-scoped skills, agents, and settings
+    hooks register and execute in a headless forestage NDJSON session,
+    including a blocking `PreToolUse` that was honored. Six distinct
+    events dispatched (PreToolUse, PostToolUse, SubagentStop, Stop,
+    SessionStart, SessionEnd). This was the open question that could
+    have forced a redesign; it did not.
+  - **Both scopes work.** local = symlinks + `settings.local.json`;
+    project = full copies (zero symlinks) + committed `settings.json`.
+    Exec bits survive the copy (0 mismatches vs store across 20
+    sampled scripts). Disable reverses both exactly, including
+    removing a `settings.json` it created.
+  - **The refusal architecture is sound.** content-collision (user
+    content preserved byte-for-byte), unexpired factory_lock (refuses
+    even with `--override-stale-lock`), stale lock (overridable),
+    remote-safety (unconditional), same-repo-dual-enable. All refuse
+    BEFORE writing; all exit 1.
+  - **Adopt round-trips.** foreign -> adopt -> sideshow -> retreat ->
+    foreign, with the machine-level plugin channel byte-identical
+    throughout. The equivalence report's FAILs were verified real, not
+    false positives.
+  - **The store stays frozen.** The synthesized `vsdd-activate` /
+    `vsdd-deactivate` skills route to sideshow verbs; store hash over
+    1191 files unchanged across invocations. Upstream's
+    write-into-store problem does not reproduce here.
+  - **Prefixing is cheaper than namespace-qualification.** Identical
+    artifact counts, but the plugin channel's `system/init` frame is
+    2,641 bytes larger (~15%); the entire delta is naming form. The
+    divergence register's prefixing decision has a measured upside.
+
+  Known limits at promotion time (finding-002 "does not prove"):
+  project scope is NOT machine-portable — `plugins/<pack>` remains an
+  absolute store symlink and the hook command an absolute store path,
+  so a committed project-scope enable dangles on another machine (N2,
+  untested cross-machine). `sideshow remove` does not exist, so a
+  malformed store row is permanent. Open defect N1: `adopt`'s default
+  path cannot reach its own version-equality refusal and the dry-run
+  mispredicts "would proceed".
+
+  Standing operational cost: the running-factory guard's window is
+  `LockTTL` = 2700s, and the pack's own dispatcher writes
+  `.factory/logs/` on every hook — so a trial's own traffic blocks
+  enable and disable for 45 minutes. `--override-stale-lock` is the
+  documented escape hatch on both verbs.
+edges:
+  - target: question-unified-binding-abstraction
+    type: instantiates
+  - target: elem-sync-ownership-ledger
+    type: derives
+  - target: elem-pack-content-gitignored
+    type: derives
+  - target: question-five-layer-doctor
+    type: supports
+provenance:
+  created_by: claude
+  session: session-064
+  created_at: "2026-08-01"
+  evidence:
+    - _kos/findings/finding-002-consumer-side-repo-bindings-pilot.md
+    - _kos/findings/finding-001-bound-variant-architecture.md
+    - aae-orc:_kos/findings/finding-096-repo-bindings-spine-implementation.md
+    - aae-orc:_kos/findings/finding-094-unshaping-over-plugin-delivery.md
