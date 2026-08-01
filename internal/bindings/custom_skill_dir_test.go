@@ -114,7 +114,6 @@ func TestDiscoverCustomBindings_CollisionsAndPrune(t *testing.T) {
 	projectB := t.TempDir()
 	writeFile(t, filepath.Join(projectA, "_bmad-custom", "skills", "eos-coach", "SKILL.md"), "# a\n")
 	writeFile(t, filepath.Join(projectA, "_bmad-custom", "skills", "bmad-agent-dev", "SKILL.md"), "# collides with pack\n")
-	writeFile(t, filepath.Join(projectB, "_bmad-custom", "skills", "eos-coach", "SKILL.md"), "# b duplicate\n")
 	writeFile(t, filepath.Join(projectB, "_bmad-custom", "skills", "b-only", "SKILL.md"), "# b\n")
 
 	for _, p := range []string{projectA, projectB, filepath.Join(dataDir, "gone-project")} {
@@ -148,7 +147,7 @@ func TestDiscoverCustomBindings_CollisionsAndPrune(t *testing.T) {
 		t.Errorf("project A skills = %v, want [eos-coach] (pack collision must be skipped)", a.skills)
 	}
 	if !reflect.DeepEqual(b.skills, []string{"b-only"}) {
-		t.Errorf("project B skills = %v, want [b-only] (cross-source duplicate must be skipped)", b.skills)
+		t.Errorf("project B skills = %v, want [b-only]", b.skills)
 	}
 
 	// The missing project must have been pruned from the registry.
@@ -162,6 +161,33 @@ func TestDiscoverCustomBindings_CollisionsAndPrune(t *testing.T) {
 	for _, s := range sources {
 		if strings.Contains(s.Project, "gone-project") {
 			t.Error("missing project not pruned from registry")
+		}
+	}
+}
+
+func TestDiscoverCustomBindings_CrossSourceCollisionRefuses(t *testing.T) {
+	// Ruled 2026-08-01 (sideshow#110): two registered repos declaring
+	// the same skill name is a sync error naming both repos, never a
+	// silent registry-order winner.
+	t.Setenv("SIDESHOW_HOME", t.TempDir())
+
+	projectA := t.TempDir()
+	projectB := t.TempDir()
+	writeFile(t, filepath.Join(projectA, "_bmad-custom", "skills", "shared-name", "SKILL.md"), "# a\n")
+	writeFile(t, filepath.Join(projectB, "_bmad-custom", "skills", "shared-name", "SKILL.md"), "# b\n")
+	for _, p := range []string{projectA, projectB} {
+		if _, err := RegisterCustomSource(p, "bmad"); err != nil {
+			t.Fatalf("register %s: %v", p, err)
+		}
+	}
+
+	_, err := discoverCustomBindings([]pack.InstalledPack{{Name: "bmad", Version: "6.10.0"}}, nil)
+	if err == nil {
+		t.Fatal("cross-source collision must refuse, not pick a winner")
+	}
+	for _, want := range []string{"shared-name", projectA, projectB, "rename"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error must carry %q: %v", want, err)
 		}
 	}
 }
