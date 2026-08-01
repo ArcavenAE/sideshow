@@ -139,8 +139,8 @@ func TestInstallFromLocal_PluginClassNoticeReplacesSyncHint(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"activates via \"claude-plugin\"",
-		"nothing is enabled",
+		"activates per repo via \"claude-plugin\"; install does not enable",
+		"run 'sideshow enable' in each repo",
 		"per-repo only",
 		"https://example.com/runbook",
 	} {

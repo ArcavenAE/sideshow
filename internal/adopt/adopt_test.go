@@ -237,6 +237,23 @@ func TestAdopt_DryRunWritesNothing(t *testing.T) {
 	}
 }
 
+func TestAdopt_DryRunPredictsPreflightRefusal(t *testing.T) {
+	opts, repo, _ := fixture(t, "project")
+	opts.DryRun = true
+	// An unexpired factory lock is a hazard the real run refuses on;
+	// the dry run must predict it (D1 from the .23 pilot report).
+	lock := "---\nfactory_lock:\n  holder: dev@example.com\n  locked_at: " +
+		opts.Now.Add(-10*time.Minute).Format(time.RFC3339) +
+		"\n  expires_at: " + opts.Now.Add(30*time.Minute).Format(time.RFC3339) +
+		"\n---\n\n# Factory State\n"
+	mustWrite(t, repo, ".factory/STATE.md", lock, 0o644)
+
+	_, err := Adopt(opts)
+	if err == nil || !strings.Contains(err.Error(), "the real run would REFUSE") {
+		t.Fatalf("Adopt dry run = %v, want predicted refusal", err)
+	}
+}
+
 func TestAdopt_RollsBackSuppressionOnEnableFailure(t *testing.T) {
 	opts, repo, _ := fixture(t, "project")
 	// Break the store so enable fails after suppression is written.

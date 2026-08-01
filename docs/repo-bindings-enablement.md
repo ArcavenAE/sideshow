@@ -36,7 +36,11 @@ Signed releases are published by
 in CI from the pinned upstream source, cosign-signed,
 Sigstore-attested. Direct fetch-and-verify by `sideshow install` is
 not yet shipped (aae-orc-wk92); until then, download and verify by
-hand, then install from the extracted tree:
+hand, then install from the extracted tree.
+
+Prerequisites for this section: `gh` (release download), `cosign`
+(signature verification), `python3` (checksum extraction from the
+provenance manifest). On macOS: `brew install gh cosign`.
 
 ```sh
 mkdir -p /tmp/vsdd-install && cd /tmp/vsdd-install
@@ -136,6 +140,20 @@ deleted. Your own settings entries, hooks, and skills are untouched
 (removal never guesses; it only removes what enable recorded).
 Re-enable is a fresh `sideshow enable`.
 
+Disable runs the same running-factory guard as enable, and the
+pack's own hook activity trips it: any dispatcher log write inside
+the last 45 minutes is a soft in-flight signal, so disabling right
+after using the pack refuses with `[recent-burst-log]`. That refusal
+protects a genuinely mid-flight factory run; if the activity was
+yours and is done, pass the same escape hatch enable uses:
+
+```sh
+sideshow disable vsdd-factory --override-stale-lock
+```
+
+An unexpired factory lock still refuses either way (never
+overridable).
+
 ## 5. Per-repo version toggle
 
 ```sh
@@ -164,7 +182,12 @@ enable is refused):
 4. Exit paths: `sideshow disable vsdd-factory` restores the repo
    exactly (the preflight records a retreat anchor — the
    `factory-artifacts` tip and `.factory` status — so you can prove
-   the trial changed nothing it should not have).
+   the trial changed nothing it should not have). If the trial's own
+   hook activity is under 45 minutes old, add `--override-stale-lock`
+   (see section 4). Note the dispatcher writes working state under
+   `.factory/` during the trial; that is the pack's class-1 state and
+   disable deliberately leaves it (gitignore it or remove it yourself
+   after retreat).
 
 ## 7. Activate and deactivate (the persona flip)
 

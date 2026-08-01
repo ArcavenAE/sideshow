@@ -81,8 +81,8 @@ func (a *Activation) PrintInstallNotice() {
 	if !a.PluginClass() {
 		return
 	}
-	fmt.Printf("NOTE: this pack activates via %q, which sideshow does not activate yet.\n", a.Mechanism)
-	fmt.Println("The store copy is producer-validated content; nothing is enabled and 'commands sync' does not apply.")
+	fmt.Printf("NOTE: this pack activates per repo via %q; install does not enable it anywhere.\n", a.Mechanism)
+	fmt.Println("The store copy is producer-validated content; run 'sideshow enable' in each repo that should get it ('commands sync' does not apply).")
 	if a.PerRepoRequired {
 		fmt.Println("Activation is per-repo only; never enable this pack at user scope.")
 	}

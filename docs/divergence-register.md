@@ -99,6 +99,13 @@ executed for a claude-mp consumer. Their first observed outcome is a
 trial before it is a claim; record the outcome here, and verify the
 :1311 blocker does not break tool use.
 
+**Outcome recorded (2026-08-01, .23 pilot, aae-orc#128):** live on a
+consumer machine. `protect-secrets` blocked a real `.env` Read in a
+headless session; the block reached the model as a `tool_result`
+error and was logged by the pack's own audit trail, and tool use
+otherwise continued. Verified-firing set grows to SessionStart,
+SessionEnd, PreToolUse (blocking), PostToolUse, Stop, SubagentStop.
+
 ## 10. Standing per-release census-diff cost
 
 Every upstream release must be census-diffed against the unshape
@@ -106,3 +113,16 @@ declaration (deny-by-default: a new top-level unit fails the build
 until dispositioned) before a pack is cut (aae-orc-d3nq.59). This is
 recurring maintainer work the plugin channel does not have, priced
 here so release planning counts it.
+
+## 11. Headless NDJSON surfaces hook lifecycle frames for SessionStart only
+
+Observed on the .23 pilot (aae-orc#128): in headless forestage
+NDJSON sessions, `hook_started`/`hook_response` frames appear only
+for SessionStart. The other events execute (dispatcher logs and an
+honored blocking PreToolUse prove it) but emit no lifecycle frames; a
+block is visible only as a `tool_result` error. This looks like
+harness stream behavior rather than a sideshow defect (investigation
+filed on forestage), but it is priced here because anything that
+plans to OBSERVE hook activity on this channel by parsing NDJSON will
+under-report. Use the dispatcher's own logs under `.factory/logs/`
+for ground truth.
