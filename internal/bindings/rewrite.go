@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ArcavenAE/sideshow/internal/distribute"
 )
@@ -50,8 +51,13 @@ type packRefRules struct {
 	// declares as per-repo territory (e.g. "custom" from custom_bridge).
 	perRepo map[string]struct{}
 
-	// exists caches store lookups. Safe because the store is frozen for
-	// the duration of a sync and bindings sync sequentially.
+	// exists caches store lookups. The store is frozen for the duration
+	// of a sync, so a cached answer cannot go stale. The mutex is not for
+	// staleness but for callers: bindings sync sequentially today, and
+	// guarding the map means that invariant is not load-bearing. An
+	// earlier revision asserted it in a comment instead, and the race
+	// detector found the assertion through a parallel test.
+	mu     sync.Mutex
 	exists map[string]bool
 }
 
@@ -126,12 +132,19 @@ func (r *packRefRules) isPackContent(ref string) bool {
 
 // storeHas reports whether a shim-relative path exists in the store.
 func (r *packRefRules) storeHas(rel string) bool {
-	if hit, ok := r.exists[rel]; ok {
+	r.mu.Lock()
+	hit, ok := r.exists[rel]
+	r.mu.Unlock()
+	if ok {
 		return hit
 	}
+
 	_, err := os.Lstat(filepath.Join(r.packPath, filepath.FromSlash(rel)))
-	hit := err == nil
+	hit = err == nil
+
+	r.mu.Lock()
 	r.exists[rel] = hit
+	r.mu.Unlock()
 	return hit
 }
 
