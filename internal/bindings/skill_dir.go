@@ -20,6 +20,7 @@ type SkillDirBinding struct {
 	name     string
 	version  string
 	packPath string
+	rules    *packRefRules
 }
 
 // NewSkillDirBinding constructs a binding for a pack that ships per-skill
@@ -29,6 +30,7 @@ func NewSkillDirBinding(name, version, packPath string) *SkillDirBinding {
 		name:     name,
 		version:  version,
 		packPath: packPath,
+		rules:    newPackRefRules(packPath, defaultShimPrefix),
 	}
 }
 
@@ -43,9 +45,10 @@ func (b *SkillDirBinding) PackVersion() string { return b.version }
 
 // Sync materializes skill directories into ~/.claude/skills/<name>/.
 // Each skill directory under the pack's .claude/skills/ is copied intact.
-// Text files (.md, .yaml, .yml, .csv) are passed through rewritePaths.
-// SKILL.md receives the fallback-resolution footer (it is the LLM entry
-// point). Returns the number of skills synced.
+// Text files (.md, .yaml, .yml, .csv) have their pack-content references
+// rewritten to the absolute store path; project-state references are left
+// literal. SKILL.md receives the fallback-resolution footer (it is the LLM
+// entry point). Returns the number of skills synced.
 func (b *SkillDirBinding) Sync() (int, error) {
 	skillsSrc := filepath.Join(b.packPath, ".claude", "skills")
 	skillsDst := claudeSkillsDir()
@@ -105,10 +108,12 @@ func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
 		}
 
 		if shouldRewrite(path) {
-			content := string(data)
-			content = rewritePaths(content, b.packPath)
+			content := b.rules.rewrite(string(data))
 			if filepath.Base(path) == "SKILL.md" {
 				content = appendFallbackFooter(content, b.packPath)
+			}
+			if err := b.rules.verify(content); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
 			}
 			data = []byte(content)
 		}
@@ -120,8 +125,8 @@ func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
 	})
 }
 
-// shouldRewrite reports whether a file's content should pass through
-// rewritePaths before being written to the target. Binary-like files are
+// shouldRewrite reports whether a file's content should pass through path
+// classification before being written to the target. Binary-like files are
 // passed through unchanged; text formats get the rewrite.
 func shouldRewrite(path string) bool {
 	switch filepath.Ext(path) {

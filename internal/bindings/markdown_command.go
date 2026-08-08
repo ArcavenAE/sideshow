@@ -17,6 +17,7 @@ type MarkdownCommandBinding struct {
 	name     string
 	version  string
 	packPath string
+	rules    *packRefRules
 }
 
 // NewMarkdownCommandBinding constructs a binding for a pack that ships
@@ -26,6 +27,7 @@ func NewMarkdownCommandBinding(name, version, packPath string) *MarkdownCommandB
 		name:     name,
 		version:  version,
 		packPath: packPath,
+		rules:    newPackRefRules(packPath, defaultShimPrefix),
 	}
 }
 
@@ -64,9 +66,11 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 				return fmt.Errorf("read command %s: %w", path, err)
 			}
 
-			content := string(data)
-			content = rewritePaths(content, b.packPath)
+			content := b.rules.rewrite(string(data))
 			content = appendFallbackFooter(content, b.packPath)
+			if err := b.rules.verify(content); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
 
 			destPath := filepath.Join(claudeDir, filepath.Base(path))
 			if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
@@ -103,9 +107,14 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 			return nil // skip on read error
 		}
 
-		content := string(data)
-		content = rewritePaths(content, b.packPath)
+		content := b.rules.rewrite(string(data))
 		content = appendFallbackFooter(content, b.packPath)
+		// Unlike the read/write faults below, a dangling store reference
+		// is a defect in what we would publish, not a transient local
+		// fault — it fails the sync rather than being skipped.
+		if err := b.rules.verify(content); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
 
 		destPath := filepath.Join(claudeDir, name)
 		if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {

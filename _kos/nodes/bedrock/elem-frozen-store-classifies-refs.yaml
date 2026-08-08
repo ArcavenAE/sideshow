@@ -1,0 +1,47 @@
+id: elem-frozen-store-classifies-refs
+type: element
+confidence: bedrock
+title: "the frozen store classifies a pack-content reference from project state"
+content: |
+  A `{project-root}/<prefix>/X` reference in synced content is rewritten to
+  the absolute user-install path only when `<store>/X` exists in the store.
+  Otherwise it stays literal, and the fallback-resolution footer resolves it
+  cwd-relative, which is correct for project state.
+
+  The store is installed read-only (`pack.FreezeTree`, 0555/0444), so a path
+  absent from it can never come into being there. That collapses the
+  read-versus-write question into an existence test: no write-verb, flag-name,
+  or shell-redirect heuristics, which a synced-surface audit measured as
+  unreliable in both directions.
+
+  One case existence cannot decide. A path that exists in the store but is
+  declared per-repo territory by `pack.yaml custom_bridge` (`_bmad/custom`)
+  must stay literal too. That is settled by reading the declaration, not by
+  guessing. The two rules are complementary: existence covers what the store
+  lacks, declaration covers what the store has but does not own.
+
+  The post-condition is enforced, not merely intended: after rewrite, no path
+  resolving inside the store may be absent from it. The check runs
+  independently of the rewrite, so a reference that arrived absolute in the
+  pack source is caught too. It is structural, so it gates
+  (`.claude/rules/diagnostic-not-gate.md`); a violation fails the binding and
+  skips stale reconcile.
+
+  Measured on bmad 6.10.0: 14 broken references across 32 files before, zero
+  after, with the 16 legitimate reads still resolving to the store.
+
+  Tracked work shipped: `aae-orc-c8v8`. Depends on `aae-orc-dihj` (the
+  freeze) and `aae-orc-mkpo` (the custom bridge).
+edges:
+  - target: elem-command-sync
+    type: supports
+  - target: elem-custom-bridge
+    type: derives
+  - target: elem-user-install-shape
+    type: derives
+provenance:
+  created_by: claude
+  session: session-2026-08-07
+  created_at: "2026-08-07"
+  evidence:
+    - _kos/findings/finding-003-frozen-store-classifies-pack-content.md
