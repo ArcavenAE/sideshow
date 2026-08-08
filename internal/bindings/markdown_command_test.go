@@ -19,6 +19,11 @@ func TestMarkdownCommandBinding_Sync_RewritesAndFooter(t *testing.T) {
 	destRoot := t.TempDir()
 	t.Setenv("HOME", destRoot)
 
+	// Pack content the references below resolve to — a reference is
+	// rewritten only when it exists in the store.
+	writeFile(t, filepath.Join(packPath, "core", "workflow.md"), "workflow\n")
+	writeFile(t, filepath.Join(packPath, "help", "index.md"), "index\n")
+
 	// commands/ subdir layout.
 	writeFile(t, filepath.Join(packPath, "commands", "bmad-party-mode.md"),
 		"LOAD {project-root}/_bmad/core/workflow.md\n")

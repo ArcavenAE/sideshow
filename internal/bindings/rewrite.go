@@ -1,51 +1,225 @@
 package bindings
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/ArcavenAE/sideshow/internal/distribute"
 )
 
-// rewritePaths replaces pack content references with the absolute pack
-// installation path while preserving per-repo paths that must stay
-// relative to the invoking project.
+// ErrDanglingPackRefs reports that synced content carries a path inside the
+// frozen pack store that does not exist there. The store is installed
+// read-only (pack.FreezeTree), so such a path can never come into being:
+// a read through it fails, a write through it fails with EACCES.
+var ErrDanglingPackRefs = errors.New("dangling pack references")
+
+// defaultShimPrefix is the project-root shim dir assumed for packs that
+// do not declare another. Packs with a different prefix (e.g. "_vsdd")
+// construct their rules with it explicitly.
+const defaultShimPrefix = "_bmad"
+
+// packRefRules classifies {project-root}/<prefix>/ references for one
+// installed pack: which name pack content (rewritable to the absolute
+// store path) and which name project state (left literal).
 //
-// Rewrites (pack content — read-only, user-install):
+// The classifier is the frozen store itself. Pack content is exactly what
+// exists under packPath; everything else under the shim dir is the
+// project's own state, whether the reference reads it or writes it. That
+// collapses the read-vs-write question into an existence test with no
+// lexical guessing about write verbs, flag names, or shell redirects —
+// the heuristics a synced-surface audit measured as unreliable
+// (aae-orc-c8v8).
 //
-//	{project-root}/_<pack>/module/path → /absolute/packs/<pack>/<v>/module/path
+// Two reference classes are therefore left literal, for the reading LLM
+// to resolve cwd-relative via the fallback footer:
 //
-// Preserves (per-repo — stays relative to cwd):
-//
-//	{project-root}/_<pack>-custom/ → unchanged (per-repo customization)
-//	{project-root}/_<pack>-output/ → unchanged (per-repo output)
-//	{project-root}/              → unchanged (any other project-relative path)
-//
-// The implementation uses nul-byte sentinels to protect the per-repo
-// prefixes from being caught by the pack-content rewrite.
-//
-// rewritePaths keeps the historical bmad default; every binding that
-// syncs a differently prefixed pack calls rewritePathsForPrefix with
-// that pack's prefix (aae-orc-d3nq.50).
-func rewritePaths(content, packPath string) string {
-	return rewritePathsForPrefix(content, packPath, "_bmad")
+//   - a path absent from the store (project state: config.yaml,
+//     planning/prd.md, the agent-builder's memory/ sanctum)
+//   - a path under a declared per-repo surface, even though it exists in
+//     the store (pack.yaml custom_bridge — _bmad/custom is symlinked to
+//     the checked-in _bmad-custom, so it must stay project-relative)
+type packRefRules struct {
+	packPath string
+	prefix   string
+
+	// perRepo holds first path segments under the shim dir that the pack
+	// declares as per-repo territory (e.g. "custom" from custom_bridge).
+	perRepo map[string]struct{}
+
+	// exists caches store lookups. Safe because the store is frozen for
+	// the duration of a sync and bindings sync sequentially.
+	exists map[string]bool
 }
 
-// rewritePathsForPrefix is rewritePaths parameterized on the pack's
-// project-root prefix (e.g. "_bmad", "_gds"): {project-root}/<prefix>/
-// references become absolute store paths while the sibling per-repo
-// dirs (<prefix>-custom/, <prefix>-output/) stay project-relative.
-func rewritePathsForPrefix(content, packPath, prefix string) string {
-	const customSentinel = "\x00PACK_CUSTOM\x00"
-	const outputSentinel = "\x00PACK_OUTPUT\x00"
+// newPackRefRules builds the classifier for a pack rooted at packPath
+// whose project-root shim dir is prefix (e.g. "_bmad").
+func newPackRefRules(packPath, prefix string) *packRefRules {
+	return &packRefRules{
+		packPath: packPath,
+		prefix:   prefix,
+		perRepo:  declaredPerRepoDirs(packPath, prefix),
+		exists:   make(map[string]bool),
+	}
+}
 
-	root := "{project-root}/" + prefix
-	content = strings.ReplaceAll(content, root+"-custom/", customSentinel)
-	content = strings.ReplaceAll(content, root+"-output/", outputSentinel)
+// declaredPerRepoDirs reads the pack's custom_bridge declaration and
+// returns the shim-relative directories it makes per-repo territory. A
+// pack with no pack.yaml, or none declaring a bridge, yields an empty
+// set — no reference is preserved on this ground.
+func declaredPerRepoDirs(packPath, prefix string) map[string]struct{} {
+	out := make(map[string]struct{})
 
-	content = strings.ReplaceAll(content, root+"/", packPath+"/")
+	p, err := distribute.LoadPackYAML(packPath)
+	if err != nil || p == nil || p.Distribute.CustomBridge == nil {
+		return out
+	}
 
-	content = strings.ReplaceAll(content, customSentinel, root+"-custom/")
-	content = strings.ReplaceAll(content, outputSentinel, root+"-output/")
+	// upstream_path is repo-relative and starts with the shim dir
+	// (e.g. _bmad/custom). The segment after it is what a
+	// {project-root}/<prefix>/ reference would name.
+	rel := filepath.ToSlash(filepath.Clean(p.Distribute.CustomBridge.UpstreamPath))
+	rel = strings.TrimPrefix(rel, prefix+"/")
+	if seg := firstSegment(rel); seg != "" {
+		out[seg] = struct{}{}
+	}
+	return out
+}
 
-	return content
+// rewrite replaces pack-content references with the absolute store path
+// while leaving project-state references literal.
+func (r *packRefRules) rewrite(content string) string {
+	token := "{project-root}/" + r.prefix + "/"
+
+	var b strings.Builder
+	rest := content
+	for {
+		i := strings.Index(rest, token)
+		if i < 0 {
+			b.WriteString(rest)
+			return b.String()
+		}
+
+		b.WriteString(rest[:i])
+		tail := rest[i+len(token):]
+
+		if r.isPackContent(refCandidate(tail)) {
+			b.WriteString(r.packPath + "/")
+		} else {
+			b.WriteString(token)
+		}
+		rest = tail
+	}
+}
+
+// isPackContent reports whether a shim-relative reference names content
+// that lives in the frozen store and is not declared per-repo territory.
+func (r *packRefRules) isPackContent(ref string) bool {
+	if _, ok := r.perRepo[firstSegment(ref)]; ok {
+		return false
+	}
+	return r.storeHas(literalPrefix(ref))
+}
+
+// storeHas reports whether a shim-relative path exists in the store.
+func (r *packRefRules) storeHas(rel string) bool {
+	if hit, ok := r.exists[rel]; ok {
+		return hit
+	}
+	_, err := os.Lstat(filepath.Join(r.packPath, filepath.FromSlash(rel)))
+	hit := err == nil
+	r.exists[rel] = hit
+	return hit
+}
+
+// verify is the sync-time post-condition: no path resolving inside the
+// frozen store may be absent from it. Structural — an existence test over
+// declared content, not a health metric — so it may gate
+// (.claude/rules/diagnostic-not-gate.md).
+//
+// It runs independently of rewrite rather than trusting it, so a
+// reference that arrived absolute in the pack source is caught too.
+func (r *packRefRules) verify(content string) error {
+	token := r.packPath + "/"
+	dangling := make(map[string]struct{})
+
+	rest := content
+	for {
+		i := strings.Index(rest, token)
+		if i < 0 {
+			break
+		}
+		rest = rest[i+len(token):]
+
+		rel := literalPrefix(refCandidate(rest))
+		if rel != "" && !r.storeHas(rel) {
+			dangling[rel] = struct{}{}
+		}
+	}
+
+	if len(dangling) == 0 {
+		return nil
+	}
+
+	refs := make([]string, 0, len(dangling))
+	for rel := range dangling {
+		refs = append(refs, rel)
+	}
+	sort.Strings(refs)
+
+	return fmt.Errorf("%w: %s resolves %s inside the read-only pack store, which does not exist there",
+		ErrDanglingPackRefs, r.packPath, strings.Join(refs, ", "))
+}
+
+// refCandidate extracts the path that follows a reference token, ending
+// at the first character that cannot continue a path in prose, code
+// fences, or shell arguments. Placeholder braces are kept — literalPrefix
+// trims them.
+func refCandidate(s string) string {
+	end := strings.IndexFunc(s, func(rn rune) bool {
+		switch rn {
+		case ' ', '\t', '\n', '\r', '`', '"', '\'', ')', ']', '>', '<', '|', ',', ';', ':', '=':
+			return true
+		}
+		return false
+	})
+	if end >= 0 {
+		s = s[:end]
+	}
+	return strings.TrimRight(s, ".")
+}
+
+// literalPrefix reduces a reference to the longest leading portion that
+// contains no template placeholder, backing up to the last path
+// separator so a partially-templated segment is not tested as a literal.
+//
+//	bmm/agents/pm.md      → bmm/agents/pm.md
+//	memory/{skillName}/   → memory/
+//	bmm/agent-{code}.md   → bmm/
+//	{skill-name}.toml     → ""   (checks the pack root)
+func literalPrefix(ref string) string {
+	i := strings.IndexByte(ref, '{')
+	if i < 0 {
+		return ref
+	}
+	ref = ref[:i]
+	j := strings.LastIndexByte(ref, '/')
+	if j < 0 {
+		return ""
+	}
+	return ref[:j+1]
+}
+
+// firstSegment returns the first path segment of a relative reference.
+func firstSegment(ref string) string {
+	ref = strings.TrimPrefix(ref, "/")
+	if i := strings.IndexByte(ref, '/'); i >= 0 {
+		return ref[:i]
+	}
+	return ref
 }
 
 // appendFallbackFooter adds LLM-executable guidance so that pack-internal
@@ -54,12 +228,14 @@ func rewritePathsForPrefix(content, packPath, prefix string) string {
 // directory.
 //
 // The top-level entry file (slash command or skill SKILL.md) gets its
-// {project-root}/_bmad/ references rewritten by rewritePaths. Files the
+// pack-content references rewritten by packRefRules.rewrite. Files the
 // entry file loads are not rewritten — they live inside the installed
-// pack and stay literal. The footer tells the reading LLM to resolve
-// such references via a two-step fallback chain:
+// pack and stay literal. So do project-state references anywhere, which
+// the classifier deliberately leaves alone. The footer tells the reading
+// LLM to resolve such references via a two-step fallback chain:
 //
-//  1. Try cwd-relative first (works for per-project installs).
+//  1. Try cwd-relative first (works for per-project installs, and is the
+//     correct resolution for project state).
 //  2. Substitute with the pack user-install path (works at orc roots).
 //
 // Wrapped in sentinel markers for idempotency — re-syncing doesn't

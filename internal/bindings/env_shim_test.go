@@ -199,23 +199,26 @@ func TestInlineEnvBelt_QuotesSafely(t *testing.T) {
 	}
 }
 
-// Regression coverage for the rewritePaths parameterization: the bmad
-// default is unchanged and a second prefix routes correctly.
-func TestRewritePathsForPrefix(t *testing.T) {
+// Regression coverage for the shim-prefix parameterization: a non-bmad
+// prefix routes correctly, and the sibling per-repo dirs stay literal.
+func TestRewriteForPrefix(t *testing.T) {
 	t.Parallel()
+
+	store := newFixtureStore(t, "", "templates/a.md")
+	rules := newPackRefRules(store, "_vsdd")
+
 	in := "read {project-root}/_vsdd/templates/a.md, write {project-root}/_vsdd-custom/x " +
 		"and {project-root}/_vsdd-output/y, leave {project-root}/README.md"
-	got := rewritePathsForPrefix(in, "/store/vsdd/1.0.0", "_vsdd")
-	want := "read /store/vsdd/1.0.0/templates/a.md, write {project-root}/_vsdd-custom/x " +
+	want := "read " + store + "/templates/a.md, write {project-root}/_vsdd-custom/x " +
 		"and {project-root}/_vsdd-output/y, leave {project-root}/README.md"
-	if got != want {
-		t.Errorf("rewritePathsForPrefix:\n got %q\nwant %q", got, want)
+
+	if got := rules.rewrite(in); got != want {
+		t.Errorf("rewrite:\n got %q\nwant %q", got, want)
 	}
 
-	// The bmad wrapper still behaves exactly as before.
-	bmadIn := "{project-root}/_bmad/core/a.md {project-root}/_bmad-custom/b"
-	bmadWant := "/packs/bmad/6.3.0/core/a.md {project-root}/_bmad-custom/b"
-	if got := rewritePaths(bmadIn, "/packs/bmad/6.3.0"); got != bmadWant {
-		t.Errorf("rewritePaths (bmad default):\n got %q\nwant %q", got, bmadWant)
+	// A _bmad reference is not this pack's prefix and stays untouched.
+	other := "{project-root}/_bmad/core/a.md"
+	if got := rules.rewrite(other); got != other {
+		t.Errorf("rewrite touched another pack's prefix:\n got %q\nwant %q", got, other)
 	}
 }

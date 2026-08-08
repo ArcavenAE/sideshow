@@ -33,10 +33,17 @@ func TestSkillDirBinding_Sync_CopiesTreeAndRewrites(t *testing.T) {
 	// Force HOME so claudeSkillsDir() lands under destRoot.
 	t.Setenv("HOME", destRoot)
 
+	// Pack content the references below resolve to. Existence in the
+	// store is what makes a reference pack content rather than project
+	// state, so a fixture without these would (correctly) not rewrite.
+	writeFile(t, filepath.Join(packPath, "core", "workflow.md"), "workflow\n")
+	writeFile(t, filepath.Join(packPath, "helpers", "util.md"), "util\n")
+
 	// Build a fake pack with a skill dir containing a SKILL.md + a manifest + a nested file.
 	skillBase := filepath.Join(packPath, ".claude", "skills", "bmad-agent-test")
 	writeFile(t, filepath.Join(skillBase, "SKILL.md"),
-		"# Test skill\nLoad {project-root}/_bmad/config.yaml\n")
+		"# Test skill\nLoad {project-root}/_bmad/core/workflow.md\n"+
+			"Write {project-root}/_bmad/config.yaml\n")
 	writeFile(t, filepath.Join(skillBase, "bmad-skill-manifest.yaml"),
 		"schema_version: 1.0\nagent: test\n")
 	writeFile(t, filepath.Join(skillBase, "nested", "helper.md"),
@@ -59,8 +66,13 @@ func TestSkillDirBinding_Sync_CopiesTreeAndRewrites(t *testing.T) {
 		t.Fatalf("read synced SKILL.md: %v", err)
 	}
 	skillStr := string(skillMD)
-	if !strings.Contains(skillStr, packPath+"/config.yaml") {
+	if !strings.Contains(skillStr, packPath+"/core/workflow.md") {
 		t.Errorf("SKILL.md rewrite did not substitute pack path:\n%s", skillStr)
+	}
+	// Project state is absent from the store and must stay literal, so
+	// the instruction keeps pointing at the invoking project.
+	if !strings.Contains(skillStr, "{project-root}/_bmad/config.yaml") {
+		t.Errorf("SKILL.md redirected project state into the pack store:\n%s", skillStr)
 	}
 	if !strings.Contains(skillStr, "<!-- sideshow:fallback-resolution:begin -->") {
 		t.Errorf("SKILL.md missing fallback footer:\n%s", skillStr)
