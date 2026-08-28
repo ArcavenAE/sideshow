@@ -50,7 +50,8 @@ Facts that shape the census:
 
 - **The marketplace version field lies by omission.** claude-mp pins
   `git-subdir` sources to `ref: main`, so the content is whatever
-  `main` held at install time regardless of the declared version.
+  `main` held at install time regardless of the declared version
+  (upstream: `drbothen/claude-mp#20`).
   Version authority for a foreign install is the installed tree's
   `.claude-plugin/plugin.json` plus the recorded `gitCommitSha`.
 - **Two identities exist in the wild**: `vsdd-factory@claude-mp`
@@ -72,6 +73,15 @@ Facts that shape the census:
 - **Orphaned enables are silent.** An `enabledPlugins` entry with no
   install behind it draws no CLI mention and no session warning;
   only a census finds it.
+- **An activated install can present as never-activated.** Upstream
+  renders `hooks.json` into the version-scoped cache dir, so a
+  `claude plugin update` leaves the render behind in the old version
+  dir; `activated_plugin_version` in the repo's `settings.local.json`
+  is written at activate and read nowhere, so it drifts silently past
+  the upgrade (upstream: `drbothen/vsdd-factory#788`). A census that
+  reads enablement and hook presence without comparing that field
+  against the installed `plugin.json` version will misreport an
+  upgraded repo as one that was never armed.
 
 ## Per-repo suppression (the keep-your-plugin branch)
 
@@ -128,10 +138,18 @@ Verified residue after uninstall and marketplace removal:
 - **"failed to load ... cache-miss" naming the marketplace**: the
   marketplace clone under `~/.claude/plugins/marketplaces/` is
   missing or broken; re-add the marketplace or remove the identity.
-- **Hooks (0) in `plugin details`**: the install was never activated
-  (no rendered hooks.json). For a foreign install being converted,
-  this means the factory's guard surface was never live in the first
-  place.
+- **Hooks (0) in `plugin details`**: no rendered hooks.json. Two
+  causes, and they support opposite conclusions. Either the install
+  was never activated — the factory's guard surface was never live —
+  or it was activated and later upgraded, because upstream renders
+  hooks.json into the version-scoped cache dir and `claude plugin
+  update` installs into a new one (upstream:
+  `drbothen/vsdd-factory#788`). Distinguish by reading the repo's
+  `.claude/settings.local.json`: a `vsdd-factory.activated_plugin_version`
+  trailing the installed version means the repo WAS armed and was
+  silently disarmed by the upgrade. Upstream's own recovery is
+  `"${CLAUDE_PLUGIN_ROOT}/skills/activate/apply-platform.sh" <platform>`;
+  on this channel the equivalent is a fresh `sideshow enable`.
 - **Version reported does not match tree behavior**: the marketplace
   serves `ref: main`; fingerprint the installed tree (plugin.json +
   gitCommitSha) rather than trusting any version label.

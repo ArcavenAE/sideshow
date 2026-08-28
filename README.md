@@ -236,6 +236,8 @@ Runbook: [`docs/repo-bindings-enablement.md`](docs/repo-bindings-enablement.md).
 Why this channel exists and what it deliberately does differently:
 [`docs/unshaping-spec.md`](docs/unshaping-spec.md),
 [`docs/divergence-register.md`](docs/divergence-register.md).
+Upstream state that constrains this channel, per release:
+[`docs/upstream-notes-vsdd-factory.md`](docs/upstream-notes-vsdd-factory.md).
 
 ## Project status
 
