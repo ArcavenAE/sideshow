@@ -107,7 +107,7 @@ unshape:
 4. Enable refuses success if the post-write settings hook-entry count
    is short of the declared event set (aae-orc-d3nq.7).
 
-## Worked inventory: vsdd-factory v1.0.0-rc.23
+## Worked inventory: vsdd-factory v1.0.0-rc.23 (drift to rc.25 below)
 
 Counts verified against the tagged tree, 2026-07-31. Live-reference
 counts are files under `skills/`, `agents/`, `bin/`, and the two
@@ -133,6 +133,49 @@ registries that mention the unit.
 | `tests/` (564 files, 247 .bats) | 4M | exclude | Decision D3. Cost priced in the divergence register: installs lose the in-repo self-test surface; doctor may run the suite from the store copy; 151 of the .bats reconstruct plugin root via a fixed four-level parent walk, so the shipped suite could not validate an unshaped install anyway. Upstream locator-rewrite offer is aae-orc-d3nq.31. |
 | `hooks-registry.toml`, `resolvers-registry.toml` | | store-reference | The dispatcher reads them beside itself; three live `read_file` capability grants in hooks-registry.toml stay byte-identical behind the compat symlink. |
 | `.claude-plugin/plugin.json` | | exclude | Contract item 2: no harness plugin state on this channel. Retained in the store as upstream provenance only. |
+
+### Drift since rc.23 (measured at rc.25, 2026-09-08)
+
+The table above stays as written: it is the verified record at
+`v1.0.0-rc.23`, and overwriting it would lose that. What follows is the
+same tree measured at `v1.0.0-rc.25`
+(`51023185658350afaacaa931a175103d915d14ba`). Dispositions are
+unchanged; only magnitudes moved.
+
+| Unit | rc.23 | rc.25 |
+|---|---|---|
+| `skills/` | 126 dirs, 274 files, 1.9M | 127 dirs, 275 files, 1.3M |
+| `agents/` | 34 flat + 10 nested, 584K | 34 flat + 10 nested, 0.5M |
+| `hooks/` top level | 50 .sh, 6 `hooks.json.*` | 50 .sh, 6 `hooks.json.*` |
+| `hooks/dispatcher/` | 5 binaries, 77M | 5 binaries, 78.7M |
+| `hook-plugins/` | 34 wasm, 13M | 40 wasm, 14.3M |
+| `bin/` | 21 | 21 |
+| `rules/` | 10 | 10 |
+| `templates/` | 136 | 136 |
+| `workflows/` | 17 | 17 |
+| `tools/` | 15 | 15 |
+| `docs/` | 6 | 6 |
+| `tests/` | 564 files, 247 .bats, 4M | 646 files, 258 .bats, 3.5M |
+
+Two rows need a word. `hook-plugins/` grew by six, two of which are the
+orphans recorded as `wasm-orphans-ship-undetected` in the pack register
+and fixed upstream on `develop` but not yet on a release tag. And
+`skills/` gained a directory while shrinking on disk, so the count and
+the size move in opposite directions; both were read from the same tree
+object.
+
+The reference counts are stated with their command rather than carried
+forward, because the rc.23 figures ("176 slash-form namespace
+references", "23 `subagent_type` call sites") do not record whether they
+counted lines or occurrences, and the two differ here:
+
+```sh
+UP=51023185658350afaacaa931a175103d915d14ba
+P=plugins/vsdd-factory
+git grep -o -I -- 'vsdd-factory:' "$UP" -- "$P/skills/" | wc -l   # 115
+git grep -o -I -- 'vsdd-factory:' "$UP" -- "$P/agents/" | wc -l   # 56
+git grep -o -I -- 'subagent_type' "$UP" -- "$P/agents/" | wc -l   # 28
+```
 
 ### Repo artifacts for this pack
 
