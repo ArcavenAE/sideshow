@@ -183,6 +183,30 @@ Problems 1 and 3 have an upstream half worth offering; 4, 7, and 8 are
 mechanical and belong in `verify-artifact.sh`, the register schema, and
 `coexist-check`; 5, 6, 9, 10 are accepted divergences whose price moved.
 
+## Follow-on, 2026-09-08
+
+Problem 3's upstream half was checked before it was offered, and the premise
+did not hold: upstream PR #813 (2026-09-04) already removes both orphaned
+wasms, excludes each from the release build, and adds a skip guard behind
+that. The commit is on `develop` and is not an ancestor of the commit rc.25
+was cut from, which is why the shipped artifact still carries them. Confirmed
+by running upstream's own standing gate against a clean worktree at the
+release commit: `test_S_19_04_ac006_T009_hermetic_tracked_bundle_zero_orphans`
+fails and names exactly the two files. No issue was filed; it would have
+restated a fix shipped four days earlier. Recorded as `upstream_status` on the
+`wasm-orphans-ship-undetected` wrinkle.
+
+Problems 4, 7, and 8 are now tracked work rather than named shapes:
+
+- `aae-orc-yq2az` (P2) exec-manifest set diff in `verify-artifact.sh`
+- `aae-orc-l744z` (P2) advisory fields in the register, carried into
+  `install.meta`, read by a doctor layer against the repo-bindings ledger
+- `aae-orc-ax58h` (P3) registry `on_error` variant set recorded and compared
+  by `coexist-check`
+
+`docs/unshaping-spec.md` now carries an rc.25 drift table beside the rc.23
+worked inventory (sideshow#124), so the cross-reference below is answered.
+
 ## The generalizable rule
 
 A packaging pipeline that only ever compares an artifact to its own source can
@@ -194,6 +218,7 @@ three gates added here are one of each.
 ## Cross-references
 
 - `docs/divergence-register.md` (the twelve accepted divergences)
-- `docs/unshaping-spec.md` (dispositions; worked inventory still at rc.23)
+- `docs/unshaping-spec.md` (dispositions; rc.23 worked inventory plus an
+  rc.25 drift table)
 - `sideshow-packs/registry/vsdd-factory-pack-support.yaml`
 - upstream `drbothen/vsdd-factory` #786, release notes for 1.0.0-rc.25
