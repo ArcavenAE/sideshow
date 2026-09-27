@@ -634,6 +634,27 @@ func runList() error {
 				filepath.Join(pack.PacksDir(), p.Name, v))
 		}
 	}
+
+	// Pin disclosure per installed version (aae-orc-soh8q). An unreadable
+	// pack.yaml is reported on its line; it does not fail the listing.
+	fmt.Println()
+	fmt.Println("PINS")
+	for _, p := range packs {
+		versions, _, vErr := pack.InstalledVersions(p.Name)
+		if vErr != nil || len(versions) == 0 {
+			versions = []string{p.Version}
+		}
+		for _, v := range versions {
+			line := ""
+			c, cErr := pack.LoadComposition(filepath.Join(pack.PacksDir(), p.Name, v))
+			if cErr != nil {
+				line = "pin data unreadable: " + cErr.Error()
+			} else {
+				line = c.Summary()
+			}
+			fmt.Printf("%s %s: %s\n", p.Name, v, line)
+		}
+	}
 	return nil
 }
 
