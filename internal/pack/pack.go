@@ -205,6 +205,44 @@ func ValidateShape(sourcePath string) error {
 	)
 }
 
+// ValidateName checks the caller-supplied pack name against the name
+// the pack declares for itself in pack.yaml, at the source root or
+// under _bmad/ (the installer sibling layout). A declared name is
+// authoritative: a mismatch is an error, never a rename, so the store
+// cannot hold one pack's content under another pack's name
+// (aae-orc-cv1b6). A pack.yaml that exists but will not parse is also
+// an error, since it cannot vouch for any name.
+//
+// Sources that declare no name (installer output without pack.yaml, or
+// a pack.yaml with no name field) keep the caller-supplied name, so
+// this check is not a gate on packs built before pack.yaml carried one.
+func ValidateName(name, sourcePath string) error {
+	for _, rel := range []string{"pack.yaml", filepath.Join("_bmad", "pack.yaml")} {
+		data, err := os.ReadFile(filepath.Join(sourcePath, rel))
+		if err != nil {
+			continue
+		}
+		var m struct {
+			Name string `yaml:"name"`
+		}
+		if err := yaml.Unmarshal(data, &m); err != nil {
+			return fmt.Errorf("cannot read the pack's identity from %s: %w", filepath.Join(sourcePath, rel), err)
+		}
+		if m.Name == "" {
+			continue
+		}
+		if m.Name != name {
+			return fmt.Errorf(
+				"pack name mismatch: asked to install %q, but %s declares name %q; "+
+					"install it as %q (sideshow install %s --from %s)",
+				name, filepath.Join(sourcePath, rel), m.Name, m.Name, m.Name, sourcePath,
+			)
+		}
+		return nil
+	}
+	return nil
+}
+
 func hasFile(root string, parts ...string) bool {
 	info, err := os.Stat(filepath.Join(append([]string{root}, parts...)...))
 	if err != nil {
@@ -420,6 +458,11 @@ func InstallFromLocal(name, sourcePath string, activate bool) (retErr error) {
 	// An npm source tarball (package.json + src/ + tools/) is NOT a pack
 	// — the upstream installer must run first to produce installable output.
 	if err := ValidateShape(sourcePath); err != nil {
+		return err
+	}
+
+	// The pack names itself; the caller's label must agree (aae-orc-oihza).
+	if err := ValidateName(name, sourcePath); err != nil {
 		return err
 	}
 
