@@ -58,6 +58,17 @@ content: |
   validation in flight). Promotion to bedrock pending a second pack
   going end-to-end through the same pipeline.
 
+  **Artifact-correctness gates (findings 004 and 005, 2026-09):** two
+  defect classes shipped past every transport-fidelity gate, because each
+  gate compared the captured tree against the tag it came from.
+  finding-004 measured ten divergences between packaged vsdd-factory and
+  the plugin install; finding-005 found the pipeline's own build identity
+  (user_name arcaven-ci, project_name install) baked into every bmad pack,
+  fixed in sideshow-packs#34 with a fail-closed neutralize step. The shared
+  rule: the check that decides whether a defect shipped reads the shipped
+  artifact, not the build log. finding-005's ratification candidate is
+  filed as question-pack-asserts-consumer-facts.
+
   Open sub-questions:
   - Per-pack pipeline customization — how much variance is too much?
   - When does the pipeline need to fan out (per-arch / per-OS builds)?
@@ -70,6 +81,8 @@ edges:
   - target: question-source-material-provenance
     type: implements
   - target: question-immutable-base-overlays
+    type: supports
+  - target: question-pack-asserts-consumer-facts
     type: supports
 provenance:
   created_by: human

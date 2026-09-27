@@ -1,0 +1,48 @@
+id: question-pack-asserts-consumer-facts
+type: question
+confidence: frontier
+title: "Should sideshow hold as bedrock that a pack asserts facts about the consumer's world, or none, and never about the machine that built it?"
+tags:
+  - sideshow
+  - publishing
+  - provenance
+content: |
+  The candidate rule comes from finding-005, which filed it for
+  ratification rather than creating it: a frozen-composition pack should
+  assert facts about the consumer's world, or none, never facts about the
+  machine that assembled it.
+
+  Evidence behind it:
+  - finding-005: the bmad pipeline answered the installer's prompts from
+    the CI runner, so user_name arcaven-ci and project_name install shipped
+    in every pack and were served by the pack's own resolver inside real
+    consumer repos. Transport-fidelity gates could not see it, because the
+    leaked values were captured faithfully. Fixed for new builds by the
+    fail-closed neutralize step (sideshow-packs#34); published packs carry it
+    until re-issued (-rN).
+  - finding-004: the same class from the transport side. Every gate compared
+    the captured tree with the tag it came from, which proves capture and
+    says nothing about the tree.
+
+  What is open:
+  - Is this a bedrock element (a standing constraint on every pack), or a
+    pipeline rule scoped to packs built by answering an installer?
+  - Which other installer answers are build-environment state? finding-005
+    left communication_language under watch as a neutral default, not
+    identity.
+  - Does the rule extend to time? A pin as of the release date is a fact
+    about the build moment that the consumer needs to know (aae-orc-soh8q).
+    That one is disclosed rather than removed, which suggests the rule is
+    "never assert builder facts as consumer facts", not "never record them".
+
+  Ratification is the operator's call; this node exists so the candidate
+  is findable instead of living only at the end of a finding.
+edges:
+  - target: question-frozen-composition-pipeline
+    type: derives
+  - target: question-source-material-provenance
+    type: supports
+provenance:
+  created_by: agent
+  session: 2026-09-27-arcaven-sideshow-builder-kos-harvest
+  created_at: "2026-09-27"
