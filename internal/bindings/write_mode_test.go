@@ -130,8 +130,8 @@ func TestRunSync_FailureSkipsReconcileAndErrors(t *testing.T) {
 	if !strings.Contains(err.Error(), "1 binding(s) failed") {
 		t.Errorf("error must count failures: %v", err)
 	}
-	if removed != 0 {
-		t.Errorf("reconcile must be skipped on failure, removed = %d", removed)
+	if len(removed) != 0 {
+		t.Errorf("reconcile must be skipped on failure, removed = %d", len(removed))
 	}
 	if synced != 1 {
 		t.Errorf("healthy bindings still sync, got %d", synced)

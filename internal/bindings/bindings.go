@@ -154,8 +154,11 @@ func Sync() error {
 	}
 
 	fmt.Printf("Synced %d artifacts across all bindings\n", totalSynced)
-	if removed > 0 {
-		fmt.Printf("Removed %d stale artifact(s) from a previously active version\n", removed)
+	if len(removed) > 0 {
+		fmt.Printf("Removed %d stale artifact(s) from a previously active version; these no longer resolve:\n", len(removed))
+		for _, line := range FormatRemoved(removed) {
+			fmt.Println(line)
+		}
 	}
 	return nil
 }
@@ -268,7 +271,7 @@ func discoverCustomBindings(packs []pack.InstalledPack, packSkillOwners map[stri
 // artifacts recorded by the previous sync but owned by no current
 // binding are removed (the stale-binding chimera fix — an activation
 // flip no longer leaves the old version's extra skills behind).
-func runSync(all []Binding) (synced, removed int, err error) {
+func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 	var current []ManifestEntry
 	failed := 0
 
@@ -302,7 +305,7 @@ func runSync(all []Binding) (synced, removed int, err error) {
 		// set, so reconcile would remove content that binding still
 		// owns; keep serving what is on disk and fail loudly instead.
 		// A sync that writes 0 of N must not exit 0 (sideshow#108).
-		return synced, 0, fmt.Errorf("%d binding(s) failed to sync; stale reconcile skipped so a failed binding's artifacts are not removed", failed)
+		return synced, nil, fmt.Errorf("%d binding(s) failed to sync; stale reconcile skipped so a failed binding's artifacts are not removed", failed)
 	}
 
 	removed, err = reconcile(current)

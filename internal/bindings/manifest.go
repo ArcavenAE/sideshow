@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -87,11 +88,12 @@ func saveManifest(entries []ManifestEntry) error {
 // paths inside the binding target dirs (~/.claude/commands, ~/.claude/
 // skills) are ever removed — the manifest is the record that sideshow
 // wrote them, and the containment check is the belt to that suspender.
-// Returns the number of stale artifacts removed.
-func reconcile(current []ManifestEntry) (int, error) {
+// Returns the manifest entries it removed, so the caller can name what
+// stopped resolving (aae-orc-86yp6).
+func reconcile(current []ManifestEntry) ([]ManifestEntry, error) {
 	prev, err := loadManifest()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	currentPaths := make(map[string]struct{}, len(current))
@@ -99,7 +101,7 @@ func reconcile(current []ManifestEntry) (int, error) {
 		currentPaths[e.Path] = struct{}{}
 	}
 
-	removed := 0
+	var removed []ManifestEntry
 	for _, e := range prev.Entries {
 		if _, ok := currentPaths[e.Path]; ok {
 			continue
@@ -114,7 +116,7 @@ func reconcile(current []ManifestEntry) (int, error) {
 			fmt.Fprintf(os.Stderr, "warning: remove stale %s: %v\n", e.Path, rmErr)
 			continue
 		}
-		removed++
+		removed = append(removed, e)
 	}
 
 	if err := saveManifest(current); err != nil {
@@ -136,4 +138,19 @@ func withinBindingTargets(path string) bool {
 		}
 	}
 	return false
+}
+
+// FormatRemoved renders removed manifest entries as one line per
+// artifact, sorted by invocation name: the skill directory name, or the
+// command file name without .md. Each line names the pack and version
+// the artifact came from, so an operator learns at flip time which names
+// stopped resolving (aae-orc-86yp6).
+func FormatRemoved(entries []ManifestEntry) []string {
+	lines := make([]string, 0, len(entries))
+	for _, e := range entries {
+		name := strings.TrimSuffix(filepath.Base(e.Path), ".md")
+		lines = append(lines, fmt.Sprintf("  %s (%s, from %s %s)", name, e.Kind, e.Pack, e.Version))
+	}
+	sort.Strings(lines)
+	return lines
 }
