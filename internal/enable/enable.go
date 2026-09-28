@@ -302,36 +302,50 @@ func resolveStore(opts *Options) (storeRoot, prefix string, perRepoRequired bool
 		}
 		return opts.StoreRoot, prefix, true, nil
 	}
+	// An explicit @version selects any installed version from the store,
+	// the same source `sideshow list` reads. The registry holds one row
+	// per pack (the active version), so resolving a pin through it made
+	// every other installed version unreachable (aae-orc-15rhc).
+	if opts.Version != "" {
+		versions, _, vErr := pack.InstalledVersions(opts.Pack)
+		for _, v := range versions {
+			if v == opts.Version {
+				return storeVersion(opts, filepath.Join(pack.PacksDir(), opts.Pack, v), v)
+			}
+		}
+		installed := "none"
+		if vErr == nil && len(versions) > 0 {
+			installed = strings.Join(versions, ", ")
+		}
+		return "", "", false, fmt.Errorf("pack %s@%s is not installed (installed versions: %s)", opts.Pack, opts.Version, installed)
+	}
+
+	// No version: the registry-active version, as before.
 	packs, err := pack.List()
 	if err != nil {
 		return "", "", false, err
 	}
 	for _, p := range packs {
-		if p.Name != opts.Pack {
-			continue
+		if p.Name == opts.Pack {
+			return storeVersion(opts, p.Path, p.Version)
 		}
-		if opts.Version != "" && p.Version != opts.Version {
-			continue
-		}
-		resolved, err := filepath.EvalSymlinks(p.Path)
-		if err != nil {
-			return "", "", false, fmt.Errorf("resolve store path: %w", err)
-		}
-		act, actErr := pack.LoadActivation(resolved)
-		if actErr != nil {
-			return "", "", false, fmt.Errorf("activation unreadable for %s: %w", opts.Pack, actErr)
-		}
-		opts.Version = p.Version
-		return resolved, act.Prefix(opts.Pack), act != nil && act.PerRepoRequired, nil
 	}
-	return "", "", false, fmt.Errorf("pack %s%s is not installed", opts.Pack, versionSuffix(opts.Version))
+	return "", "", false, fmt.Errorf("pack %s is not installed", opts.Pack)
 }
 
-func versionSuffix(v string) string {
-	if v == "" {
-		return ""
+// storeVersion resolves one installed version's store root and reads its
+// activation contract from that version's own pack.yaml.
+func storeVersion(opts *Options, path, version string) (storeRoot, prefix string, perRepoRequired bool, err error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", "", false, fmt.Errorf("resolve store path: %w", err)
 	}
-	return "@" + v
+	act, actErr := pack.LoadActivation(resolved)
+	if actErr != nil {
+		return "", "", false, fmt.Errorf("activation unreadable for %s@%s: %w", opts.Pack, version, actErr)
+	}
+	opts.Version = version
+	return resolved, act.Prefix(opts.Pack), act != nil && act.PerRepoRequired, nil
 }
 
 // detectPlatform mirrors upstream's detect-platform contract: five
