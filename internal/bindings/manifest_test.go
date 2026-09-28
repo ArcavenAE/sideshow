@@ -41,8 +41,8 @@ func TestRunSync_ReconcilesStaleSkillsOnVersionFlip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
-	if synced != 2 || removed != 0 {
-		t.Fatalf("first sync = %d synced, %d removed; want 2, 0", synced, removed)
+	if synced != 2 || len(removed) != 0 {
+		t.Fatalf("first sync = %d synced, %d removed; want 2, 0", synced, len(removed))
 	}
 	if !skillExists(t, home, "bmad-alpha") || !skillExists(t, home, "bmad-beta") {
 		t.Fatal("v1 skills not synced")
@@ -57,8 +57,8 @@ func TestRunSync_ReconcilesStaleSkillsOnVersionFlip(t *testing.T) {
 	if synced != 2 {
 		t.Errorf("second sync synced = %d, want 2", synced)
 	}
-	if removed != 1 {
-		t.Errorf("second sync removed = %d, want 1 (the stale bmad-alpha)", removed)
+	if len(removed) != 1 {
+		t.Errorf("second sync removed = %d, want 1 (the stale bmad-alpha)", len(removed))
 	}
 	if skillExists(t, home, "bmad-alpha") {
 		t.Error("stale bmad-alpha survived the flip — chimera not reconciled")

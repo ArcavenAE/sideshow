@@ -271,8 +271,8 @@ func TestRunSync_RemovesCustomSkillWhenSourceGone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second runSync: %v", err)
 	}
-	if removed != 1 {
-		t.Errorf("removed = %d, want 1", removed)
+	if len(removed) != 1 {
+		t.Errorf("removed = %d, want 1", len(removed))
 	}
 	if _, err := os.Stat(synced); !os.IsNotExist(err) {
 		t.Errorf("stale custom skill still present: %v", err)
