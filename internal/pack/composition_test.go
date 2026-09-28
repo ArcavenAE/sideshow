@@ -32,6 +32,28 @@ func TestLoadComposition_Summaries(t *testing.T) {
 			want: "external modules not pinned (unpinned-floating)",
 		},
 		{
+			// skippy G382 on #128: explicit pins carry no as-of date and
+			// must not read as "not pinned".
+			name: "explicit",
+			body: "name: bmad\nschema_version: 0.2.0\ncomposition:\n  pin_policy: explicit\n  as_of_date: null\n  external_modules:\n    - name: tea\n      version: v1.24.0\n",
+			want: "external modules pinned explicitly (tea v1.24.0)",
+		},
+		{
+			name: "no pin mechanism",
+			body: "name: bmad\nschema_version: 0.2.0\ncomposition:\n  pin_policy: unpinned-no-mechanism-at-this-version\n  as_of_date: null\n  external_modules:\n    - name: tea\n      version: v1.9.0\n",
+			want: "external modules not pinned (unpinned-no-mechanism-at-this-version)",
+		},
+		{
+			name: "as-of without a date",
+			body: "name: bmad\nschema_version: 0.2.0\ncomposition:\n  pin_policy: as-of-release-date\n  as_of_date: null\n  external_modules:\n    - name: tea\n      version: v1.24.0\n",
+			want: "external modules under pin policy as-of-release-date, date not recorded (tea v1.24.0)",
+		},
+		{
+			name: "unknown policy",
+			body: "name: bmad\nschema_version: 0.2.0\ncomposition:\n  pin_policy: lockfile\n  external_modules:\n    - name: tea\n      version: v1.24.0\n",
+			want: "external modules under pin policy lockfile (tea v1.24.0)",
+		},
+		{
 			name: "no externals",
 			body: "name: x\nschema_version: 0.2.0\ncomposition:\n  pin_policy: as-of-release-date\n  as_of_date: \"2026-09-04T00:00:00Z\"\n  external_modules: []\n",
 			want: "no external modules",

@@ -56,16 +56,29 @@ func (c *Composition) Summary() string {
 	if len(c.ExternalModules) == 0 {
 		return "no external modules"
 	}
-	if c.AsOfDate == "" {
-		return fmt.Sprintf("external modules not pinned (%s)", c.PinPolicy)
-	}
 	mods := make([]string, 0, len(c.ExternalModules))
 	for _, m := range c.ExternalModules {
 		mods = append(mods, m.Name+" "+m.Version)
 	}
-	date := c.AsOfDate
-	if len(date) >= 10 {
-		date = date[:10]
+	list := strings.Join(mods, ", ")
+
+	// Pinned-ness comes from the policy, never from whether a date is
+	// present: an explicit pin has no as-of date and is still a pin.
+	// A policy this build does not know is named, not interpreted.
+	switch {
+	case strings.HasPrefix(c.PinPolicy, "unpinned"):
+		return fmt.Sprintf("external modules not pinned (%s)", c.PinPolicy)
+	case c.PinPolicy == "explicit":
+		return fmt.Sprintf("external modules pinned explicitly (%s)", list)
+	case c.PinPolicy == "as-of-release-date" && c.AsOfDate != "":
+		date := c.AsOfDate
+		if len(date) >= 10 {
+			date = date[:10]
+		}
+		return fmt.Sprintf("external modules pinned as of %s (%s)", date, list)
+	case c.PinPolicy == "as-of-release-date":
+		return fmt.Sprintf("external modules under pin policy %s, date not recorded (%s)", c.PinPolicy, list)
+	default:
+		return fmt.Sprintf("external modules under pin policy %s (%s)", c.PinPolicy, list)
 	}
-	return fmt.Sprintf("external modules pinned as of %s (%s)", date, strings.Join(mods, ", "))
 }
