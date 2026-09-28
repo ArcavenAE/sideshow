@@ -120,3 +120,47 @@ func TestConsentToPermissions_NonInteractiveDoesNotPrompt(t *testing.T) {
 		t.Errorf("prompted a non-interactive stdin: %q", out.String())
 	}
 }
+
+// aae-orc-soh8q: list names each installed version's pin composition,
+// and says "pin data not recorded" for packs built before pack.yaml
+// carried it.
+func TestRunList_ReportsPinComposition(t *testing.T) {
+	home := t.TempDir()
+	store := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SIDESHOW_HOME", store)
+
+	versions := map[string]string{
+		"6.12.0": "name: bmad\nversion: 6.12.0\nschema_version: 0.2.0\ncomposition:\n  pin_policy: as-of-release-date\n  as_of_date: \"2026-09-04T02:31:21.267Z\"\n  external_modules:\n    - name: tea\n      version: v1.24.0\n",
+		"6.10.0": "name: bmad\nversion: 6.10.0\nschema_version: 0.1.0\n",
+	}
+	for v, body := range versions {
+		dir := filepath.Join(store, "packs", "bmad", v)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "pack.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("6.12.0", filepath.Join(store, "packs", "bmad", "current")); err != nil {
+		t.Fatal(err)
+	}
+	reg := fmt.Sprintf("packs:\n  - name: bmad\n    version: 6.12.0\n    path: %s\n", filepath.Join(store, "packs", "bmad", "6.12.0"))
+	if err := os.WriteFile(filepath.Join(store, "registry.yaml"), []byte(reg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureStdout(t, runList)
+	if err != nil {
+		t.Fatalf("runList() error: %v", err)
+	}
+	for _, want := range []string{
+		"bmad 6.12.0: external modules pinned as of 2026-09-04 (tea v1.24.0)",
+		"bmad 6.10.0: pin data not recorded",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list output missing %q, got:\n%s", want, out)
+		}
+	}
+}

@@ -69,6 +69,16 @@ version = "6.3.0"
 # ...
 ```
 
+## pack.yaml versions
+
+| version | change |
+|---|---|
+| 0.1.0 | `name`, `version`, `distribute`, optional `activation` |
+| 0.2.0 | adds an optional `composition` block: `pin_policy`, `as_of_date`, `external_modules` (name, version). Written by sideshow-packs build-bmad.sh; `sideshow list` prints it, and prints "pin data not recorded" for packs without it (aae-orc-soh8q). Additive: a 0.1.0 reader ignores it. |
+
+sideshow does not yet refuse unknown `pack.yaml` versions; `weave.yaml` and
+the ledger are the contracts that check today.
+
 ## Migration handling
 
 When a major version bumps, sideshow ships a migration helper:
