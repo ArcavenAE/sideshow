@@ -103,3 +103,18 @@ func TestStoreFileManifest(t *testing.T) {
 		}
 	}
 }
+
+func TestStoreFileManifestUnparsable(t *testing.T) {
+	home := fakeHome(t)
+	dir := installVersion(t, home, "alpha", "1.0.0", true)
+	registryYAML(t, home, `packs:
+  - name: alpha
+    version: 1.0.0
+    path: `+filepath.Join(home, "packs", "alpha", "current")+`
+`)
+	write(t, filepath.Join(dir, "file-manifest.csv"), "not-a-manifest-line\n")
+	f := storeFileManifestFinding(t)
+	if f.Status != Fail || !strings.Contains(f.Detail, "does not parse") || f.Next == "" {
+		t.Fatalf("unparsable manifest must fail with a next step: %+v", f)
+	}
+}
