@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ArcavenAE/sideshow/internal/foreign"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 )
 
@@ -361,14 +362,15 @@ func SyncedCount(_, packPath string) (int, error) {
 	return total, nil
 }
 
-// claudeCommandsDir returns the Claude Code commands directory under $HOME.
+// claudeCommandsDir returns the Claude Code commands directory under
+// the harness config dir (CLAUDE_CONFIG_DIR when set, else ~/.claude),
+// the same dir the read path resolves through foreign.ConfigDir.
 func claudeCommandsDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".claude", "commands")
+	return filepath.Join(foreign.ConfigDir(), "commands")
 }
 
-// claudeSkillsDir returns the Claude Code skills directory under $HOME.
+// claudeSkillsDir returns the Claude Code skills directory under the
+// harness config dir, as claudeCommandsDir does.
 func claudeSkillsDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".claude", "skills")
+	return filepath.Join(foreign.ConfigDir(), "skills")
 }

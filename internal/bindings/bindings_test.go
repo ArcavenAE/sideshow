@@ -118,3 +118,34 @@ func TestSync_PositiveControl_PlainPackSyncs(t *testing.T) {
 		t.Errorf("expected synced skill at user scope, stat: %v", err)
 	}
 }
+
+// Bindings write where Claude Code reads: CLAUDE_CONFIG_DIR when set,
+// matching foreign.ConfigDir on the read path, and nothing under
+// $HOME/.claude. sideshow#136.
+func TestSync_HonorsClaudeConfigDir(t *testing.T) {
+	home := t.TempDir()
+	cfg := t.TempDir()
+	store := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SIDESHOW_HOME", store)
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+
+	packPath := filepath.Join(store, "packs", "vsdd-factory", "1.0.0-rc.23")
+	writeFile(t, filepath.Join(packPath, ".claude", "skills", "vsdd-probe", "SKILL.md"), "# probe\n")
+	writeFile(t, filepath.Join(packPath, "commands", "vsdd-cmd.md"), "# cmd\n")
+	registerTestPack(t, store, "vsdd-factory", "1.0.0-rc.23", packPath)
+
+	if _, _, err := captureOutput(t, Sync); err != nil {
+		t.Fatalf("Sync() error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(cfg, "skills", "vsdd-probe", "SKILL.md")); err != nil {
+		t.Errorf("expected skill under CLAUDE_CONFIG_DIR, stat: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "commands", "vsdd-cmd.md")); err != nil {
+		t.Errorf("expected command under CLAUDE_CONFIG_DIR, stat: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude")); !os.IsNotExist(err) {
+		t.Errorf("$HOME/.claude exists: bindings ignored CLAUDE_CONFIG_DIR")
+	}
+}
