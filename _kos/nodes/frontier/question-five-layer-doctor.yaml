@@ -31,6 +31,13 @@ content: |
   `aae-orc-e1jj` (the known-defects feed format) + `aae-orc-ztg5`
   (the registry itself).
 
+  Layer 1 progress (2026-10-02): finding-006 found the content census
+  trusted bmad's own manifest, which an overwrite replaces; #139 added
+  store-file-manifest against the pipeline manifest, and anchoring it to
+  the signed release waits on aae-orc-wk92 (operator ruling). finding-007:
+  install never deletes, so a store version holds the union of every
+  source installed at that version.
+
   Open sub-questions:
   - Layer 2 spec separately or fold into the weaving engine?
   - When should layer 3 escalate from warn to error?
