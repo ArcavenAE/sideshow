@@ -2,6 +2,8 @@
 
 <!-- Describe your project here -->
 
+PR and issue bodies open with why: the first one or two sentences say why to read it and why merging is worth the risk. See aae-orc `.claude/rules/lead-with-why.md`.
+
 ## How to Work Here (kos Process)
 
 ### Re-introduction
