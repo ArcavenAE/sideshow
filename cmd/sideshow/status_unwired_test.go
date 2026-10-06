@@ -111,3 +111,29 @@ func TestRunStatus_UnwiredCountsTheUnsyncedRemainder(t *testing.T) {
 		t.Errorf("status does not report 1 of 3 unwired:\n%s", out)
 	}
 }
+
+// A count that does not read cleanly is reported as an error, and the
+// UNWIRED line must not appear beside it: synced would be a made-up zero.
+func TestRunStatus_NoUnwiredLineWhenSyncedCountDoesNotRead(t *testing.T) {
+	unwiredFixture(t, "alpha", "beta")
+
+	skills := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "skills")
+	if err := os.MkdirAll(skills, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(skills, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(skills, 0o755) })
+
+	out, err := captureStdout(t, runStatus)
+	if err != nil {
+		t.Fatalf("runStatus: %v", err)
+	}
+	if !strings.Contains(out, "synced:    error:") {
+		t.Fatalf("probe did not make the synced count fail; output:\n%s", out)
+	}
+	if strings.Contains(out, "UNWIRED") {
+		t.Errorf("UNWIRED printed beside an unreadable synced count:\n%s", out)
+	}
+}
