@@ -2,6 +2,7 @@ package pack
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -431,12 +432,53 @@ func InstalledVersions(name string) (versions []string, active string, err error
 	return versions, active, nil
 }
 
-// InstallFromLocal copies a pack from a local path to the sideshow directory.
-// The installed version tree is frozen read-only (aae-orc-dihj); a
-// reinstall over an existing frozen version unlocks it first, and the
-// tree refreezes on every exit, including failure, so a partial
-// install fails frozen rather than writable.
-func InstallFromLocal(name, sourcePath string, activate bool) (retErr error) {
+// ErrVersionInstalled reports an install that would write over a version
+// already in the store.
+var ErrVersionInstalled = errors.New("version already installed")
+
+// InstallOptions are the knobs of Install. The zero value does not
+// activate and does not replace an installed version.
+type InstallOptions struct {
+	// Activate flips the current symlink to the installed version. A
+	// first install of a pack always activates.
+	Activate bool
+	// Force allows the install to write over a version already in the
+	// store (aae-orc-mobz8).
+	Force bool
+}
+
+// InstallFromLocal installs a pack from a local path and refuses to
+// replace an installed version. See Install.
+func InstallFromLocal(name, sourcePath string, activate bool) error {
+	return Install(name, sourcePath, InstallOptions{Activate: activate})
+}
+
+// versionInstalled reports whether destDir already holds store content.
+// A directory that exists but is empty is not an install.
+func versionInstalled(destDir string) (bool, error) {
+	entries, err := os.ReadDir(destDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return len(entries) > 0, nil
+}
+
+// Install copies a pack from a local path to the sideshow directory.
+// The installed version tree is frozen read-only (aae-orc-dihj).
+//
+// An install at a version the store already holds is refused unless
+// opts.Force is set (aae-orc-mobz8): the store copy may have come from a
+// cosign-verified artifact, and a local path under the same version
+// label would otherwise replace it with nothing downstream noticing.
+// With Force the copy unlocks the frozen version first, writes over it
+// without deleting anything (finding-007), and the tree refreezes on
+// every exit, including failure, so a partial install fails frozen
+// rather than writable.
+func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
+	activate := opts.Activate
 	// Expand ~ in source path
 	if strings.HasPrefix(sourcePath, "~/") {
 		home, _ := os.UserHomeDir()
@@ -484,6 +526,21 @@ func InstallFromLocal(name, sourcePath string, activate bool) (retErr error) {
 
 	// Create destination
 	destDir := filepath.Join(PacksDir(), name, version)
+	if !opts.Force {
+		installed, err := versionInstalled(destDir)
+		if err != nil {
+			return fmt.Errorf("read store version %s %s: %w", name, version, err)
+		}
+		if installed {
+			return fmt.Errorf(
+				"%w: %s %s is already in the store and frozen. "+
+					"If an earlier install of this version failed, or you mean to replace it, re-run with --force "+
+					"(the copy never deletes, so files only the old source had will remain). "+
+					"Only if that install completed, 'sideshow use %s %s' activates it",
+				ErrVersionInstalled, name, version, name, version,
+			)
+		}
+	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("create pack dir: %w", err)
 	}
