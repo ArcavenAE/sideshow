@@ -87,9 +87,14 @@ func TestConfigureForScope_LeavesAnAlreadyAnchoredRuleAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A read-only file turns any attempted write into an error, so a
+	// rewrite of identical bytes cannot pass unnoticed.
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := ConfigureForScope(ScopeProject, "/store/packs", root); err != nil {
-		t.Fatal(err)
+		t.Fatalf("ConfigureForScope wrote to an unchanged settings file: %v", err)
 	}
 	after, err := os.ReadFile(path)
 	if err != nil {
@@ -113,5 +118,22 @@ func TestConfigureForScope_UserScopeAnchorsToo(t *testing.T) {
 	}
 	if got := s.GetAllowList(); !slices.Contains(got, "Read(//store/packs/)") {
 		t.Errorf("allow = %v, want Read(//store/packs/)", got)
+	}
+}
+
+func TestAnchorAbsolute(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ in, want string }{
+		{"/store/packs/", "//store/packs/"},
+		{"//store/packs/", "//store/packs/"},
+		{"~/store/packs/", "~/store/packs/"},
+		{"packs/", "packs/"},
+		{"./packs/", "./packs/"},
+		{"/", "//"},
+		{"", ""},
+	} {
+		if got := anchorAbsolute(tc.in); got != tc.want {
+			t.Errorf("anchorAbsolute(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

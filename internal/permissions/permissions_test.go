@@ -158,7 +158,7 @@ func TestConfigureForScope_ProjectWritesProjectFile(t *testing.T) {
 		t.Fatalf("LoadSettings: %v", err)
 	}
 	allow := loaded.GetAllowList()
-	if len(allow) != 1 || allow[0] != "Read(/tmp/packs/)" {
+	if len(allow) != 1 || allow[0] != "Read(//tmp/packs/)" {
 		t.Fatalf("allow list = %v", allow)
 	}
 }
