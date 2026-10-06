@@ -1,0 +1,75 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/ArcavenAE/sideshow/internal/pack"
+)
+
+// unwiredFixture installs a native pack with the given skill names into
+// an isolated store and config directory, and returns nothing: the
+// caller reads status through runStatus.
+func unwiredFixture(t *testing.T, skills ...string) {
+	t.Helper()
+	store := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SIDESHOW_HOME", store)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Cleanup(func() { _ = pack.UnfreezeTree(store) })
+
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "pack.yaml"), []byte("name: demo\nversion: 1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range skills {
+		dir := filepath.Join(src, ".claude", "skills", s)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + s + "\ndescription: " + s + "\n---\nx\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := pack.InstallFromLocal("demo", src, true); err != nil {
+		t.Fatalf("install fixture: %v", err)
+	}
+}
+
+// aae-orc-zfkxy: after install and before sync, status printed
+// available: N, synced: 0 and nothing else, so an installed pack that
+// does nothing looked healthy. A line naming the sync command appears
+// while synced is below available, and goes away once the sync runs.
+func TestRunStatus_WarnsWhenPackIsAvailableButUnsynced(t *testing.T) {
+	unwiredFixture(t, "alpha", "beta")
+
+	out, err := captureStdout(t, runStatus)
+	if err != nil {
+		t.Fatalf("runStatus: %v", err)
+	}
+	if !strings.Contains(out, "available: 2") || !strings.Contains(out, "synced:    0") {
+		t.Fatalf("fixture did not reach the available 2, synced 0 state:\n%s", out)
+	}
+	if !strings.Contains(out, "UNWIRED") {
+		t.Errorf("status has no UNWIRED line while synced < available:\n%s", out)
+	}
+	if !strings.Contains(out, "sideshow commands sync") {
+		t.Errorf("UNWIRED line does not name the sync command:\n%s", out)
+	}
+}
+
+// The control: a pack with nothing to bind has nothing to wire.
+func TestRunStatus_NoWarningWhenNothingIsAvailable(t *testing.T) {
+	unwiredFixture(t)
+
+	out, err := captureStdout(t, runStatus)
+	if err != nil {
+		t.Fatalf("runStatus: %v", err)
+	}
+	if strings.Contains(out, "UNWIRED") {
+		t.Errorf("status warns for a pack with no bindable content:\n%s", out)
+	}
+}
