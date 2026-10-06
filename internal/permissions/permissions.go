@@ -6,13 +6,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ArcavenAE/sideshow/internal/foreign"
 )
 
 // Scope determines where permissions are configured.
 type Scope int
 
 const (
-	// ScopeUser configures ~/.claude/settings.json (global for the user).
+	// ScopeUser configures settings.json in the harness config directory:
+	// CLAUDE_CONFIG_DIR when set, else ~/.claude (global for the user).
 	ScopeUser Scope = iota
 	// ScopeProject configures {project-root}/.claude/settings.local.json.
 	ScopeProject
@@ -30,8 +33,7 @@ func SettingsPath(scope Scope, projectRoot string) string {
 	case ScopeProject:
 		return filepath.Join(projectRoot, ".claude", "settings.local.json")
 	default:
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".claude", "settings.json")
+		return filepath.Join(foreign.ConfigDir(), "settings.json")
 	}
 }
 

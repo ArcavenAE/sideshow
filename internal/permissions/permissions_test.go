@@ -17,7 +17,9 @@ func TestSettingsPath_ProjectScope(t *testing.T) {
 }
 
 func TestSettingsPath_UserScopeUsesHome(t *testing.T) {
-	t.Parallel()
+	// An empty CLAUDE_CONFIG_DIR is unset, so the default applies whatever
+	// the caller's environment carries.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("UserHomeDir: %v", err)
