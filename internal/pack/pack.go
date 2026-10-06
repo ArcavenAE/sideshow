@@ -533,9 +533,10 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 		}
 		if installed {
 			return fmt.Errorf(
-				"%w: %s %s is already in the store and frozen; "+
-					"'sideshow use %s %s' activates it, or re-run with --force to write over it "+
-					"(the copy never deletes, so files only the old source had will remain)",
+				"%w: %s %s is already in the store and frozen. "+
+					"If an earlier install of this version failed, or you mean to replace it, re-run with --force "+
+					"(the copy never deletes, so files only the old source had will remain). "+
+					"Only if that install completed, 'sideshow use %s %s' activates it",
 				ErrVersionInstalled, name, version, name, version,
 			)
 		}

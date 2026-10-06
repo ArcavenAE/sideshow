@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,5 +110,65 @@ func TestInstallFromLocal_EmptyVersionDirIsNotInstalled(t *testing.T) {
 	}
 	if got := readStoreSkill(t, "1.0.0"); got != "fresh" {
 		t.Errorf("store content = %q, want fresh", got)
+	}
+}
+
+// The refusal cannot tell a completed install from one that failed after
+// the copy, so it must lead with --force and put `use` last: following
+// `use` on a half-failed tree would activate content the install
+// rejected. Pins the message against dropping --force or reordering.
+func TestInstall_RefusalMessageLeadsWithForce(t *testing.T) {
+	freezeSafeHome(t)
+
+	if err := InstallFromLocal("testpack", writeVersionedPack(t, "1.0.0", "original"), true); err != nil {
+		t.Fatal(err)
+	}
+	err := InstallFromLocal("testpack", writeVersionedPack(t, "1.0.0", "again"), true)
+	if err == nil {
+		t.Fatal("reinstall succeeded; want a refusal")
+	}
+	msg := err.Error()
+	force := strings.Index(msg, "--force")
+	use := strings.Index(msg, "sideshow use")
+	if force < 0 {
+		t.Fatalf("refusal does not name --force: %q", msg)
+	}
+	if use >= 0 && use < force {
+		t.Errorf("refusal names `sideshow use` before --force: %q", msg)
+	}
+	if !strings.Contains(msg, "earlier install of this version failed") {
+		t.Errorf("refusal does not mention a failed earlier install: %q", msg)
+	}
+}
+
+// An install that fails after the copy (exec-manifest drift) leaves a
+// frozen, non-empty version directory. A retry without Force is refused,
+// a forced retry still runs the exec-manifest check, and a forced retry
+// from a corrected source recovers.
+func TestInstall_HalfFailedInstallNeedsForceAndStillVerifies(t *testing.T) {
+	freezeSafeHome(t)
+	src := makeModeFixture(t)
+	if err := os.Chmod(filepath.Join(src, "bin", "tool.sh"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "exec-manifest.txt"), []byte("bin/tool.sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallFromLocal("modes", src, true); err == nil {
+		t.Fatal("install succeeded despite exec-manifest drift")
+	}
+	if err := InstallFromLocal("modes", src, true); !errors.Is(err, ErrVersionInstalled) {
+		t.Fatalf("retry without Force: err = %v, want ErrVersionInstalled", err)
+	}
+	if err := Install("modes", src, InstallOptions{Activate: true, Force: true}); err == nil {
+		t.Fatal("forced install skipped the exec-manifest check; want the drift error")
+	}
+
+	if err := os.Chmod(filepath.Join(src, "bin", "tool.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install("modes", src, InstallOptions{Activate: true, Force: true}); err != nil {
+		t.Fatalf("forced install from a corrected source: %v", err)
 	}
 }
