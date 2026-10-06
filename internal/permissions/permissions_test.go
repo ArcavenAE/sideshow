@@ -17,7 +17,9 @@ func TestSettingsPath_ProjectScope(t *testing.T) {
 }
 
 func TestSettingsPath_UserScopeUsesHome(t *testing.T) {
-	t.Parallel()
+	// An empty CLAUDE_CONFIG_DIR is unset, so the default applies whatever
+	// the caller's environment carries.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("UserHomeDir: %v", err)
@@ -158,5 +160,49 @@ func TestConfigureForScope_ProjectWritesProjectFile(t *testing.T) {
 	allow := loaded.GetAllowList()
 	if len(allow) != 1 || allow[0] != "Read(/tmp/packs/)" {
 		t.Fatalf("allow list = %v", allow)
+	}
+}
+
+// aae-orc-89cxz: with CLAUDE_CONFIG_DIR set, the harness reads its
+// settings from that directory, so the user-scope Read rule must land
+// there and not under ~/.claude, where the session never looks.
+func TestSettingsPath_UserScopeHonorsClaudeConfigDir(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	t.Setenv("HOME", t.TempDir())
+
+	got := SettingsPath(ScopeUser, "/ignored")
+	want := filepath.Join(cfg, "settings.json")
+	if got != want {
+		t.Fatalf("SettingsPath(user)=%q want %q", got, want)
+	}
+}
+
+func TestConfigureForScope_UserWritesUnderClaudeConfigDir(t *testing.T) {
+	cfg := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	t.Setenv("HOME", home)
+
+	if err := ConfigureForScope(ScopeUser, "/packs", "."); err != nil {
+		t.Fatalf("ConfigureForScope: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "settings.json")); err != nil {
+		t.Errorf("no settings.json under CLAUDE_CONFIG_DIR: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude")); err == nil {
+		t.Error("a user-scope write landed under HOME/.claude although CLAUDE_CONFIG_DIR is set")
+	}
+}
+
+// The project-scope file belongs to the repo, not to the harness config
+// directory, so CLAUDE_CONFIG_DIR must not move it.
+func TestSettingsPath_ProjectScopeIgnoresClaudeConfigDir(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+
+	got := SettingsPath(ScopeProject, "/tmp/example")
+	want := "/tmp/example/.claude/settings.local.json"
+	if got != want {
+		t.Fatalf("SettingsPath(project)=%q want %q", got, want)
 	}
 }
