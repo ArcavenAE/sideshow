@@ -73,3 +73,41 @@ func TestRunStatus_NoWarningWhenNothingIsAvailable(t *testing.T) {
 		t.Errorf("status warns for a pack with no bindable content:\n%s", out)
 	}
 }
+
+func TestRunStatus_UnwiredLineGoesAwayAfterSync(t *testing.T) {
+	unwiredFixture(t, "alpha", "beta")
+
+	if err := runCommandsSync(); err != nil {
+		t.Fatalf("runCommandsSync: %v", err)
+	}
+	out, err := captureStdout(t, runStatus)
+	if err != nil {
+		t.Fatalf("runStatus: %v", err)
+	}
+	if !strings.Contains(out, "synced:    2") {
+		t.Fatalf("sync did not reach synced 2:\n%s", out)
+	}
+	if strings.Contains(out, "UNWIRED") {
+		t.Errorf("UNWIRED still printed after a full sync:\n%s", out)
+	}
+}
+
+// Partly synced is still unwired, and the count says how many.
+func TestRunStatus_UnwiredCountsTheUnsyncedRemainder(t *testing.T) {
+	unwiredFixture(t, "alpha", "beta", "gamma")
+
+	if err := runCommandsSync(); err != nil {
+		t.Fatalf("runCommandsSync: %v", err)
+	}
+	cfg := os.Getenv("CLAUDE_CONFIG_DIR")
+	if err := os.RemoveAll(filepath.Join(cfg, "skills", "gamma")); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdout(t, runStatus)
+	if err != nil {
+		t.Fatalf("runStatus: %v", err)
+	}
+	if !strings.Contains(out, "UNWIRED:   1 of 3 artifacts are not synced") {
+		t.Errorf("status does not report 1 of 3 unwired:\n%s", out)
+	}
+}
