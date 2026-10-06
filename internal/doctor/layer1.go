@@ -103,7 +103,7 @@ func checkStoreShape(ctx *Context) []Finding {
 				out = append(out, Finding{
 					Layer: 1, ID: "store-shape", Pack: p.Name, Subject: version, Status: Warn, Class: Structural,
 					Detail: fmt.Sprintf("installed tree does not look like installer output: %v", err),
-					Next:   fmt.Sprintf("reinstall %s %s from a release artifact (sideshow install %s --from <path>)", p.Name, version, p.Name),
+					Next:   fmt.Sprintf("reinstall %s %s from a release artifact (sideshow install %s --from <path> --force)", p.Name, version, p.Name),
 				})
 			}
 		}
@@ -144,7 +144,7 @@ func checkStoreFreeze(ctx *Context) []Finding {
 				out = append(out, Finding{
 					Layer: 1, ID: "store-freeze", Pack: p.Name, Subject: version, Status: Warn, Class: Advisory,
 					Detail: fmt.Sprintf("%d writable entries under the version dir; freeze invariant broken; cause not recorded (installed before the store freeze, or an unlock-write-refreeze was interrupted)", writable),
-					Next:   fmt.Sprintf("reinstall to refreeze: sideshow install %s --from <artifact>", p.Name),
+					Next:   fmt.Sprintf("reinstall to refreeze: sideshow install %s --from <artifact> --force", p.Name),
 				})
 			}
 		}
@@ -183,7 +183,7 @@ func checkContentCensus(ctx *Context) []Finding {
 				out = append(out, Finding{
 					Layer: 1, ID: "store-content-census", Pack: p.Name, Subject: version, Status: Fail, Class: Structural,
 					Detail: fmt.Sprintf("%d of %d census entries differ from the store tree (first: %s); %d entries name paths not present in this layout", mismatched, verified+mismatched, strings.Join(samples, ", "), unresolved),
-					Next:   fmt.Sprintf("reinstall %s %s from its release artifact and re-run doctor", p.Name, version),
+					Next:   fmt.Sprintf("reinstall %s %s from its release artifact with --force and re-run doctor", p.Name, version),
 				})
 			} else {
 				out = append(out, Finding{

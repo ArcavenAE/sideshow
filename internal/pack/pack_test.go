@@ -717,7 +717,8 @@ func TestInstallFromLocal_StoreWriteFailsLoudly(t *testing.T) {
 // Reinstalling over a frozen version is the unlock half of the
 // envelope: before the fix this EACCESed on the first overwrite, which
 // is the state every manually frozen store has been in since the
-// 2026-07-12 chmod (finding-074 interim).
+// 2026-07-12 chmod (finding-074 interim). Since aae-orc-mobz8 the
+// reinstall needs Force; without it the install is refused.
 func TestInstallFromLocal_ReinstallOverFrozenTree(t *testing.T) {
 	home := freezeSafeHome(t)
 	src := makeModeFixture(t)
@@ -728,7 +729,7 @@ func TestInstallFromLocal_ReinstallOverFrozenTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "doc.md"), []byte("updated"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallFromLocal("modes", src, true); err != nil {
+	if err := Install("modes", src, InstallOptions{Activate: true, Force: true}); err != nil {
 		t.Fatalf("reinstall over frozen tree: %v", err)
 	}
 

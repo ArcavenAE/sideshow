@@ -45,13 +45,13 @@ func verifyStoreVersion(name, version, dir string) Finding {
 	if os.IsNotExist(err) {
 		f.Status = Unavailable
 		f.Detail = "this version ships no " + fileManifestName + " (packs built before sideshow-packs#40); its store content cannot be re-verified"
-		f.Next = fmt.Sprintf("reinstall %s from a release built after sideshow-packs#40", name)
+		f.Next = fmt.Sprintf("reinstall %s from a release built after sideshow-packs#40, with --force", name)
 		return f
 	}
 	if err != nil {
 		f.Status = Fail
 		f.Detail = fmt.Sprintf("%s does not parse: %v", fileManifestName, err)
-		f.Next = fmt.Sprintf("reinstall %s %s from its release artifact and re-run doctor", name, version)
+		f.Next = fmt.Sprintf("reinstall %s %s from its release artifact with --force and re-run doctor", name, version)
 		return f
 	}
 
@@ -124,7 +124,7 @@ func verifyStoreVersion(name, version, dir string) Finding {
 	}
 	f.Status = Fail
 	f.Detail = fmt.Sprintf("store differs from %s over %d listed files: %s", fileManifestName, len(want), strings.Join(parts, "; "))
-	f.Next = fmt.Sprintf("reinstall %s %s from its release artifact and re-run doctor", name, version)
+	f.Next = fmt.Sprintf("reinstall %s %s from its release artifact with --force and re-run doctor", name, version)
 	return f
 }
 

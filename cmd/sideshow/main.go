@@ -65,6 +65,7 @@ Install options:
   --yes, -y              Skip confirmation prompts
   --no-activate          Install without flipping the active version
                          (first install of a pack always activates)
+  --force                Write over a version already in the store (default: refuse)
   --no-permissions       Don't configure Claude Code read permissions
   --scope user|project   Where to add permissions (default: user)
 
@@ -456,7 +457,7 @@ func statusIcon(status string) string {
 
 func runInstall(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--yes] [--no-permissions] [--scope user|project]")
+		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--yes] [--force] [--no-permissions] [--scope user|project]")
 	}
 
 	name := args[0]
@@ -464,6 +465,7 @@ func runInstall(args []string) error {
 	autoYes := false
 	noPerms := false
 	noActivate := false
+	force := false
 	scope := permissions.ScopeUser
 	scopeExplicit := false
 
@@ -478,6 +480,8 @@ func runInstall(args []string) error {
 			autoYes = true
 		case "--no-activate":
 			noActivate = true
+		case "--force":
+			force = true
 		case "--no-permissions":
 			noPerms = true
 		case "--scope":
@@ -500,7 +504,7 @@ func runInstall(args []string) error {
 		return fmt.Errorf("--from <path> is required (git install not yet implemented)")
 	}
 
-	if err := pack.InstallFromLocal(name, fromPath, !noActivate); err != nil {
+	if err := pack.Install(name, fromPath, pack.InstallOptions{Activate: !noActivate, Force: force}); err != nil {
 		return err
 	}
 

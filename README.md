@@ -176,6 +176,10 @@ go install github.com/ArcavenAE/sideshow/cmd/sideshow@latest
 # Install a pack version into the user store (does not change what's active)
 sideshow install bmad --from ~/Downloads/bmad-6.10.0 --no-activate
 
+# Installing a version the store already holds is refused; --force writes over it
+# (it never deletes, so files only the old source had will remain)
+sideshow install bmad --from ~/Downloads/bmad-6.10.0 --no-activate --force
+
 # See every installed version; * marks the active one
 sideshow list
 

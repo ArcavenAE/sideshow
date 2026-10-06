@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,5 +60,54 @@ func TestInstallFromLocal_NewVersionIsNotAnOverwrite(t *testing.T) {
 	}
 	if got := readStoreSkill(t, "1.0.0"); got != "one" {
 		t.Errorf("1.0.0 content = %q, want one", got)
+	}
+}
+
+func TestInstall_ForceReplacesInstalledVersion(t *testing.T) {
+	freezeSafeHome(t)
+
+	if err := InstallFromLocal("testpack", writeVersionedPack(t, "1.0.0", "original"), true); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install("testpack", writeVersionedPack(t, "1.0.0", "replaced"), InstallOptions{Activate: true, Force: true}); err != nil {
+		t.Fatalf("forced reinstall: %v", err)
+	}
+	if got := readStoreSkill(t, "1.0.0"); got != "replaced" {
+		t.Errorf("store content = %q after a forced install, want replaced", got)
+	}
+	// The envelope still refreezes after a forced write.
+	if err := os.WriteFile(filepath.Join(PacksDir(), "testpack", "1.0.0", "skill.md"), []byte("x"), 0o644); err == nil {
+		t.Error("store version is writable after a forced install; want frozen")
+	}
+}
+
+func TestInstall_RefusalIsTheSentinelAndStaysFrozen(t *testing.T) {
+	freezeSafeHome(t)
+
+	if err := InstallFromLocal("testpack", writeVersionedPack(t, "1.0.0", "original"), true); err != nil {
+		t.Fatal(err)
+	}
+	err := InstallFromLocal("testpack", writeVersionedPack(t, "1.0.0", "TAMPERED"), true)
+	if !errors.Is(err, ErrVersionInstalled) {
+		t.Fatalf("err = %v, want ErrVersionInstalled", err)
+	}
+	if err := os.WriteFile(filepath.Join(PacksDir(), "testpack", "1.0.0", "skill.md"), []byte("x"), 0o644); err == nil {
+		t.Error("store version is writable after a refused install; want frozen")
+	}
+}
+
+// A version directory that exists but holds nothing is not an install:
+// the first real install into it must proceed.
+func TestInstallFromLocal_EmptyVersionDirIsNotInstalled(t *testing.T) {
+	freezeSafeHome(t)
+
+	if err := os.MkdirAll(filepath.Join(PacksDir(), "testpack", "1.0.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallFromLocal("testpack", writeVersionedPack(t, "1.0.0", "fresh"), true); err != nil {
+		t.Fatalf("install into an empty version dir: %v", err)
+	}
+	if got := readStoreSkill(t, "1.0.0"); got != "fresh" {
+		t.Errorf("store content = %q, want fresh", got)
 	}
 }
