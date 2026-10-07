@@ -176,10 +176,14 @@ func TestProjectInit_OtherPackGetsNoIdentityFile(t *testing.T) {
 
 func TestProjectInit_DryRunWritesNoIdentity(t *testing.T) {
 	repo := identityFixture(t, "bmad", "widget")
-	if _, err := captureStdout(t, func() error {
+	out, err := captureStdout(t, func() error {
 		return runProjectInitForPack([]string{"bmad", "--user-name", "Ada", "--dry-run"})
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("project init: %v", err)
+	}
+	if !strings.Contains(out, "would seed user_name and project_name") {
+		t.Errorf("dry run did not say what it would seed:\n%s", out)
 	}
 	if got := userLayer(repo, "bmad"); got != "" {
 		t.Errorf("dry run wrote the identity layer:\n%s", got)
