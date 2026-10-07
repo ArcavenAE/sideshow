@@ -348,10 +348,10 @@ func TestProjectInit_NoNotSetLineWhenTheFileHasAName(t *testing.T) {
 // such a file alone and says why. Nothing is added to it.
 func TestProjectInit_DottedOrQuotedCoreIsLeftAlone(t *testing.T) {
 	for name, existing := range map[string]string{
-		"dotted user_name":        "core.user_name = \"Mine\"\n",
-		"dotted other key":        "core.communication_language = \"English\"\n",
-		"quoted header":           "[\"core\"]\nlanguage = \"en\"\n",
-		"single-quoted header":    "['core']\nlanguage = 'en'\n",
+		"dotted user_name":     "core.user_name = \"Mine\"\n",
+		"dotted other key":     "core.communication_language = \"English\"\n",
+		"quoted header":        "[\"core\"]\nlanguage = \"en\"\n",
+		"single-quoted header": "['core']\nlanguage = 'en'\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			repo := identityFixture(t, "bmad", "widget")

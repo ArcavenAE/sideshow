@@ -62,6 +62,12 @@ func seedIdentity(repoDir, customDir, flagName string, dryRun bool) error {
 		}
 	}
 	updated, added := addCoreKeys(string(data), want)
+	if len(added) > 0 {
+		if why := cannotAppendCore(string(data)); why != "" {
+			fmt.Printf("  identity: skipped, %s uses %s, so a [core] table cannot be added; add user_name and project_name under core by hand\n", rel, why)
+			return nil
+		}
+	}
 	if len(added) == 0 {
 		fmt.Printf("  identity: %s already has %s\n", rel, strings.Join(keyNames(want), " and "))
 		return nil
@@ -106,6 +112,8 @@ var (
 	tableHeader = regexp.MustCompile(`^\s*\[([^\[\]]+)\]\s*(#.*)?$`)
 	arrayHeader = regexp.MustCompile(`^\s*\[\[`)
 	inlineCore  = regexp.MustCompile(`(?m)^\s*core\s*=`)
+	quotedCore  = regexp.MustCompile(`^\s*\[\s*["']core["']\s*\]`)
+	dottedCore  = regexp.MustCompile(`^\s*core\.`)
 )
 
 // addCoreKeys returns content with each wanted key set under [core]
@@ -170,6 +178,29 @@ func addCoreKeys(content string, want []identityKey) (string, []string) {
 	out = append(out, "[core]")
 	out = append(out, add...)
 	return strings.Join(out, "\n") + "\n", added
+}
+
+// cannotAppendCore names why a [core] table cannot be added to content
+// without defining core twice, or "" when it can. A top-level dotted key
+// (core.x = ...) or a quoted header (["core"]) already defines core, and
+// a strict TOML parser rejects a second [core] header after either. A
+// dotted key under another table belongs to that table, so it does not
+// count.
+func cannotAppendCore(content string) string {
+	topLevel := true
+	for _, l := range strings.Split(content, "\n") {
+		if quotedCore.MatchString(l) {
+			return "a quoted core header"
+		}
+		if arrayHeader.MatchString(l) || tableHeader.MatchString(l) {
+			topLevel = false
+			continue
+		}
+		if topLevel && dottedCore.MatchString(l) {
+			return "dotted core keys"
+		}
+	}
+	return ""
 }
 
 // tomlString quotes s as a TOML basic string. JSON string escapes are a
