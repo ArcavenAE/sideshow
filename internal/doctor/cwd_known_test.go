@@ -158,3 +158,55 @@ func TestCwdKnown_NamesAnUnreadableCustomSourceRegistry(t *testing.T) {
 		t.Errorf("detail hides the unreadable registry: %q", f.Detail)
 	}
 }
+
+// With no pack in scope there is nothing to name, so the generic hint
+// that was always there stays word for word.
+func TestCwdKnown_NoPackKeepsTheGenericHint(t *testing.T) {
+	cwdFixture(t, map[string]string{})
+
+	f := cwdKnown(t, t.TempDir())
+	want := "sideshow enable <pack> --repo . (plugin-class) or sideshow init (project distribution)"
+	if f.Next != want {
+		t.Errorf("hint = %q, want %q", f.Next, want)
+	}
+}
+
+// A pack whose activation contract cannot be read is not recommended for
+// `enable`: the doctor cannot tell it is plugin-class.
+func TestCwdKnown_UnreadableActivationIsNotRecommendedForEnable(t *testing.T) {
+	cwdFixture(t, map[string]string{"broken": "name: broken\nversion: \"1.0.0\"\nactivation: [unclosed\n"})
+
+	f := cwdKnown(t, t.TempDir())
+	if strings.Contains(f.Next, "enable") {
+		t.Errorf("enable recommended for a pack with an unreadable activation contract: %q", f.Next)
+	}
+	if !strings.Contains(f.Next, "sideshow project init broken") {
+		t.Errorf("no project init hint for the broken pack: %q", f.Next)
+	}
+}
+
+// `doctor --repo .` hands the subject over as ".", and the registries
+// hold absolute roots, so a relative subject must be resolved before it
+// is compared; otherwise no registration can ever match it.
+func TestCwdKnown_ResolvesARelativeSubject(t *testing.T) {
+	cwdFixture(t, map[string]string{"demo": plainPack})
+	repo := t.TempDir()
+	if _, err := bindings.RegisterCustomSource(repo, "demo"); err != nil {
+		t.Fatal(err)
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+	// A shell keeps $PWD in step with the directory it entered; os.Chdir
+	// does not, and the temp dir sits behind a symlink on macOS.
+	t.Setenv("PWD", repo)
+
+	if f := cwdKnown(t, "."); f.Status != OK {
+		t.Errorf("cwd-known for %q inside a registered repo = %v (%s), want ok", ".", f.Status, f.Detail)
+	}
+}
