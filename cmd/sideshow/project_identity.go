@@ -55,6 +55,12 @@ func seedIdentity(repoDir, customDir, flagName string, dryRun bool) error {
 		fmt.Printf("  identity: skipped, %s defines core as an inline table; add user_name and project_name to it by hand\n", rel)
 		return nil
 	}
+	// One line, once, when no name resolves and the file has none.
+	if userName == "" {
+		if _, wouldAdd := addCoreKeys(string(data), []identityKey{{"user_name", ""}}); len(wouldAdd) > 0 {
+			defer fmt.Println("user_name not set: pass --user-name or set git user.name")
+		}
+	}
 	updated, added := addCoreKeys(string(data), want)
 	if len(added) == 0 {
 		fmt.Printf("  identity: %s already has %s\n", rel, strings.Join(keyNames(want), " and "))
@@ -68,9 +74,6 @@ func seedIdentity(repoDir, customDir, flagName string, dryRun bool) error {
 		return fmt.Errorf("write %s: %w", rel, err)
 	}
 	fmt.Printf("  identity: seeded %s in %s\n", strings.Join(added, " and "), rel)
-	if userName == "" {
-		fmt.Println("  identity: no user_name found; pass --user-name or set git config user.name")
-	}
 	return nil
 }
 
