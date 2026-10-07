@@ -71,7 +71,10 @@ type Options struct {
 	ConfigDir       string // harness config dir (foreign.ConfigDir())
 	LedgerPath      string // "" means ledger.Path()
 	PerRepoRequired bool
-	Now             time.Time
+	// BoundSkills names the skills the pack has bound at user scope;
+	// check 11 compares them with the repo's own .claude/skills.
+	BoundSkills []string
+	Now         time.Time
 }
 
 // Run executes the preflight.
