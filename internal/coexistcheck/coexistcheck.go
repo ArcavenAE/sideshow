@@ -61,6 +61,17 @@ func (r *Report) Refuse() bool {
 	return false
 }
 
+// Count reports how many results carry the given severity.
+func (r *Report) Count(sev foreign.Severity) int {
+	n := 0
+	for _, res := range r.Results {
+		if res.Severity == sev {
+			n++
+		}
+	}
+	return n
+}
+
 // Options configures a run.
 type Options struct {
 	RepoDir         string
@@ -71,7 +82,11 @@ type Options struct {
 	ConfigDir       string // harness config dir (foreign.ConfigDir())
 	LedgerPath      string // "" means ledger.Path()
 	PerRepoRequired bool
-	Now             time.Time
+	// BoundSkills maps each skill the pack has bound at user scope to
+	// the path sideshow wrote it at; check 11 compares the names with
+	// the repo's own .claude/skills.
+	BoundSkills map[string]string
+	Now         time.Time
 }
 
 // Run executes the preflight.
@@ -161,6 +176,12 @@ func Run(opts Options) (*Report, error) {
 				fmt.Sprintf("repo is bound to %s %s but %s is being enabled; use the version-toggle path (disable+enable) rather than re-enable", opts.Pack, row.Version, want))
 		}
 	}
+
+	// (11) skill shadow: a skill the repo carries natively that the
+	// pack also binds at user scope. Claude Code loads the personal
+	// copy over the project one, so the repo's own copy is not the
+	// one a session runs (aae-orc-phytt, F-k).
+	checkSkillShadow(rep, opts)
 
 	// (7) retreat anchor.
 	rep.RetreatAnchor = captureAnchor(opts.RepoDir, opts.Now)

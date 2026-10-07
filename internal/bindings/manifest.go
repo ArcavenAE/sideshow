@@ -154,3 +154,22 @@ func FormatRemoved(entries []ManifestEntry) []string {
 	sort.Strings(lines)
 	return lines
 }
+
+// BoundSkillPaths maps each skill-dir artifact the sync manifest
+// records for pack to the user-scope path sideshow wrote it at, keyed
+// by skill name. It is the receipt of what is bound, so a name appears
+// only when a user-scope copy was actually written. A missing manifest
+// is an empty map.
+func BoundSkillPaths(packName string) (map[string]string, error) {
+	m, err := loadManifest()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, e := range m.Entries {
+		if e.Pack == packName && e.Kind == "skill-dir" {
+			out[filepath.Base(e.Path)] = e.Path
+		}
+	}
+	return out, nil
+}
