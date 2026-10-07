@@ -25,6 +25,18 @@ func layer3Checks() []Check {
 }
 
 func checkCwdKnown(ctx *Context) []Finding {
+	out := checkCwdKnownSources(ctx)
+	if ctx.CustomSourcesErr != nil && ctx.RepoDir != "" {
+		out = append(out, Finding{
+			Layer: 3, ID: "cwd-custom-sources", Status: Unavailable, Class: Advisory,
+			Detail: "the custom-source registry (custom-sources.yaml in the sideshow data dir) could not be read: " + ctx.CustomSourcesErr.Error() + "; registrations made by project init cannot be counted",
+			Next:   "inspect custom-sources.yaml by hand; do not delete it, then re-run doctor",
+		})
+	}
+	return out
+}
+
+func checkCwdKnownSources(ctx *Context) []Finding {
 	if ctx.RepoDir == "" {
 		return []Finding{{
 			Layer: 3, ID: "cwd-known", Status: Unavailable, Class: Advisory,
@@ -56,13 +68,14 @@ func checkCwdKnown(ctx *Context) []Finding {
 		}
 	}
 	if len(how) == 0 {
-		detail := "sideshow has no record of this directory; an agent started here finds no sideshow-managed content"
 		if ctx.CustomSourcesErr != nil {
-			detail += "; the custom-source registry could not be read: " + ctx.CustomSourcesErr.Error()
+			// The registry that may hold this directory did not load, so
+			// "no record" would be a guess; cwd-custom-sources says why.
+			return nil
 		}
 		return []Finding{{
 			Layer: 3, ID: "cwd-known", Subject: ctx.RepoDir, Status: Warn, Class: Advisory,
-			Detail: detail,
+			Detail: "sideshow has no record of this directory; an agent started here finds no sideshow-managed content",
 			Next:   cwdKnownHint(ctx.Packs),
 		}}
 	}
