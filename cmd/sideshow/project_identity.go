@@ -108,12 +108,15 @@ func gitIgnores(repoDir, rel string) bool {
 	return exec.Command("git", "-C", repoDir, "check-ignore", "-q", "--", rel).Run() == nil
 }
 
+// coreName matches the three spellings of the bare key core.
+const coreName = `(?:core|"core"|'core')`
+
 var (
 	tableHeader = regexp.MustCompile(`^\s*\[([^\[\]]+)\]\s*(#.*)?$`)
 	arrayHeader = regexp.MustCompile(`^\s*\[\[`)
-	inlineCore  = regexp.MustCompile(`(?m)^\s*core\s*=`)
+	inlineCore  = regexp.MustCompile(`(?m)^\s*` + coreName + `\s*=`)
 	quotedCore  = regexp.MustCompile(`^\s*\[\s*["']core["']\s*\]`)
-	dottedCore  = regexp.MustCompile(`^\s*core\.`)
+	dottedCore  = regexp.MustCompile(`^\s*` + coreName + `\s*\.`)
 )
 
 // addCoreKeys returns content with each wanted key set under [core]
@@ -144,8 +147,9 @@ func addCoreKeys(content string, want []identityKey) (string, []string) {
 			continue
 		}
 		for _, k := range want {
-			plain := regexp.MustCompile(`^\s*` + k.name + `\s*=`)
-			dotted := regexp.MustCompile(`^\s*core\.` + k.name + `\s*=`)
+			key := `(?:` + k.name + `|"` + k.name + `"|'` + k.name + `')`
+			plain := regexp.MustCompile(`^\s*` + key + `\s*=`)
+			dotted := regexp.MustCompile(`^\s*` + coreName + `\s*\.\s*` + key + `\s*=`)
 			if (table == "core" && plain.MatchString(l)) || (table == "" && dotted.MatchString(l)) {
 				defined[k.name] = true
 			}
