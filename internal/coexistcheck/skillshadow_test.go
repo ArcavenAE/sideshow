@@ -1,6 +1,7 @@
 package coexistcheck
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -45,7 +46,10 @@ func shadowFindings(rep *Report) []Result {
 func TestRun_ReportsASkillShadowedByUserScope(t *testing.T) {
 	t.Parallel()
 	opts := baseOptions(t)
-	opts.BoundSkills = []string{"bmad-help", "bmad-party"}
+	opts.BoundSkills = map[string]string{
+		"bmad-help":  "/home/u/.claude/skills/bmad-help",
+		"bmad-party": "/home/u/.claude/skills/bmad-party",
+	}
 	write(t, opts.RepoDir, ".claude/skills/bmad-help/SKILL.md", "x")
 	write(t, opts.RepoDir, ".claude/skills/bmad-party/SKILL.md", "x")
 
@@ -64,6 +68,11 @@ func TestRun_ReportsASkillShadowedByUserScope(t *testing.T) {
 		if !strings.Contains(got[i].Detail, name) || !strings.Contains(got[i].Detail, "user-scope") {
 			t.Errorf("finding %d must name the skill and the loaded copy: %q", i, got[i].Detail)
 		}
+		for _, path := range []string{"/home/u/.claude/skills/" + name, filepath.Join(opts.RepoDir, ".claude", "skills", name)} {
+			if !strings.Contains(got[i].Detail, path) {
+				t.Errorf("finding %d must name both copies, missing %s: %q", i, path, got[i].Detail)
+			}
+		}
 	}
 	if rep.Refuse() {
 		t.Error("a shadow is advisory and must not refuse")
@@ -73,7 +82,7 @@ func TestRun_ReportsASkillShadowedByUserScope(t *testing.T) {
 func TestRun_NoOverlapIsQuiet(t *testing.T) {
 	t.Parallel()
 	opts := baseOptions(t)
-	opts.BoundSkills = []string{"bmad-help"}
+	opts.BoundSkills = map[string]string{"bmad-help": "/home/u/.claude/skills/bmad-help"}
 	write(t, opts.RepoDir, ".claude/skills/own-skill/SKILL.md", "x")
 
 	rep, err := Run(opts)

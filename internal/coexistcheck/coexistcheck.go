@@ -71,9 +71,10 @@ type Options struct {
 	ConfigDir       string // harness config dir (foreign.ConfigDir())
 	LedgerPath      string // "" means ledger.Path()
 	PerRepoRequired bool
-	// BoundSkills names the skills the pack has bound at user scope;
-	// check 11 compares them with the repo's own .claude/skills.
-	BoundSkills []string
+	// BoundSkills maps each skill the pack has bound at user scope to
+	// the path sideshow wrote it at; check 11 compares the names with
+	// the repo's own .claude/skills.
+	BoundSkills map[string]string
 	Now         time.Time
 }
 
