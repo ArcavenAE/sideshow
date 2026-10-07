@@ -210,3 +210,14 @@ func TestCwdKnown_ResolvesARelativeSubject(t *testing.T) {
 		t.Errorf("cwd-known for %q inside a registered repo = %v (%s), want ok", ".", f.Status, f.Detail)
 	}
 }
+
+// An empty subject stays unresolved: it must not turn into the process's
+// working directory.
+func TestCwdKnown_EmptySubjectStaysUnavailable(t *testing.T) {
+	cwdFixture(t, map[string]string{"demo": plainPack})
+
+	f := cwdKnown(t, "")
+	if f.Status != Unavailable {
+		t.Errorf("cwd-known for an empty subject = %v (%s), want unavailable", f.Status, f.Detail)
+	}
+}

@@ -3,6 +3,7 @@ package doctor
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ArcavenAE/sideshow/internal/coexistcheck"
@@ -49,17 +50,50 @@ func checkCwdKnown(ctx *Context) []Finding {
 			}
 		}
 	}
+	for _, src := range ctx.CustomSources {
+		if ctx.RepoDir == src.Project || strings.HasPrefix(ctx.RepoDir, src.Project+string(filepath.Separator)) {
+			how = append(how, "custom-source registration "+src.Project+" (pack "+src.Pack+")")
+		}
+	}
 	if len(how) == 0 {
+		detail := "sideshow has no record of this directory; an agent started here finds no sideshow-managed content"
+		if ctx.CustomSourcesErr != nil {
+			detail += "; the custom-source registry could not be read: " + ctx.CustomSourcesErr.Error()
+		}
 		return []Finding{{
 			Layer: 3, ID: "cwd-known", Subject: ctx.RepoDir, Status: Warn, Class: Advisory,
-			Detail: "sideshow has no record of this directory; an agent started here finds no sideshow-managed content",
-			Next:   "sideshow enable <pack> --repo . (plugin-class) or sideshow init (project distribution)",
+			Detail: detail,
+			Next:   cwdKnownHint(ctx.Packs),
 		}}
 	}
 	return []Finding{{
 		Layer: 3, ID: "cwd-known", Subject: ctx.RepoDir, Status: OK, Class: Advisory,
 		Detail: "known via " + strings.Join(how, "; "),
 	}}
+}
+
+// cwdKnownHint names the command that would make a directory known, per
+// installed pack: `enable` for a plugin-class pack, which activates per
+// repo, and `project init` for any other, since `enable` refuses a pack
+// that is not plugin-class. A pack whose activation contract cannot be
+// read is not recommended for `enable`. With no pack in scope there is
+// nothing to name, so the generic form stays.
+func cwdKnownHint(packs []pack.InstalledPack) string {
+	if len(packs) == 0 {
+		return "sideshow enable <pack> --repo . (plugin-class) or sideshow init (project distribution)"
+	}
+	sorted := append([]pack.InstalledPack(nil), packs...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	var hints []string
+	for _, p := range sorted {
+		act, err := pack.LoadActivation(p.Path)
+		if err == nil && act.PluginClass() {
+			hints = append(hints, "sideshow enable "+p.Name+" --repo .")
+			continue
+		}
+		hints = append(hints, "sideshow project init "+p.Name)
+	}
+	return strings.Join(hints, " or ")
 }
 
 // checkCwdCoexistence runs the read-only coexist-check battery for

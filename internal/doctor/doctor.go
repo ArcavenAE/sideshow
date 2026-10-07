@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -40,6 +41,10 @@ type Context struct {
 	LedgerErr   error
 	Manifest    *bindings.SyncManifest
 	ManifestErr error
+	// CustomSources is the custom-source registry that `project init`
+	// writes: repo roots and the pack each one binds.
+	CustomSources    []bindings.CustomSource
+	CustomSourcesErr error
 	// Packs is the installed set after the Options.Pack filter.
 	Packs []pack.InstalledPack
 	// PackFilter carries Options.Pack for checks that walk inputs
@@ -121,9 +126,18 @@ func Run(opts Options) (Report, []int, error) {
 // per input.
 func loadContext(opts Options, now time.Time) *Context {
 	ctx := &Context{Now: now, PackFilter: opts.Pack, RepoDir: opts.RepoDir}
+	// `doctor --repo .` arrives as ".", and every registry holds absolute
+	// roots, so the subject is resolved before anything is compared to
+	// them. A path that cannot be resolved is left as given.
+	if ctx.RepoDir != "" {
+		if abs, err := filepath.Abs(ctx.RepoDir); err == nil {
+			ctx.RepoDir = abs
+		}
+	}
 	ctx.Registry, ctx.RegistryErr = pack.LoadRegistry()
 	ctx.Ledger, ctx.LedgerErr = ledger.Load(ledger.Path())
 	ctx.Manifest, ctx.ManifestErr = bindings.LoadManifest()
+	ctx.CustomSources, ctx.CustomSourcesErr = bindings.ListCustomSources()
 
 	if ctx.Registry != nil {
 		for _, p := range ctx.Registry.Packs {
