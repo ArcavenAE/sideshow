@@ -52,7 +52,7 @@ func TestRunCoexistCheck_ReportsASkillShadowedByUserScope(t *testing.T) {
 }
 
 // Control: nothing bound yet, so the repo's skill shadows nothing.
-func TestRunCoexistCheck_NothingBoundIsQuiet(t *testing.T) {
+func TestRunCoexistCheck_NothingBoundIsNotAShadow(t *testing.T) {
 	unwiredFixture(t, "alpha")
 	repo := repoWithSkill(t, "alpha")
 
@@ -60,8 +60,11 @@ func TestRunCoexistCheck_NothingBoundIsQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runCoexistCheck: %v\n%s", err, out)
 	}
-	if strings.Contains(out, "skill-shadow") {
+	if strings.Contains(out, "WARN [11") {
 		t.Errorf("no user-scope copy exists, yet a shadow was reported:\n%s", out)
+	}
+	if !strings.Contains(out, "skill-shadow not checked: no sync manifest for demo") {
+		t.Errorf("an empty comparison must say it did not run:\n%s", out)
 	}
 }
 
@@ -77,7 +80,7 @@ func TestRunCoexistCheck_DifferentSkillIsQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runCoexistCheck: %v\n%s", err, out)
 	}
-	if strings.Contains(out, "skill-shadow") {
+	if strings.Contains(out, "WARN [11") {
 		t.Errorf("no overlap, yet a shadow was reported:\n%s", out)
 	}
 }
@@ -95,7 +98,7 @@ func TestRunCoexistCheck_OtherPacksBindingIsQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runCoexistCheck: %v\n%s", err, out)
 	}
-	if strings.Contains(out, "skill-shadow") {
+	if strings.Contains(out, "WARN [11") {
 		t.Errorf("pack other binds nothing, yet a shadow was reported:\n%s", out)
 	}
 }

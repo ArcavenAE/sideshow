@@ -94,7 +94,7 @@ func TestRun_NoOverlapIsQuiet(t *testing.T) {
 	}
 }
 
-func TestRun_RepoSkillTheUserScopeDoesNotBindIsQuiet(t *testing.T) {
+func TestRun_NoManifestEntriesSaysTheCheckDidNotRun(t *testing.T) {
 	t.Parallel()
 	opts := baseOptions(t)
 	opts.BoundSkills = nil
@@ -104,7 +104,28 @@ func TestRun_RepoSkillTheUserScopeDoesNotBindIsQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+	got := shadowFindings(rep)
+	if len(got) != 1 || got[0].Severity != foreign.Info {
+		t.Fatalf("want one INFO finding, got %+v", got)
+	}
+	want := "skill-shadow not checked: no sync manifest for " + opts.Pack
+	if got[0].Detail != want {
+		t.Errorf("detail = %q, want %q", got[0].Detail, want)
+	}
+}
+
+// Control: with no native skills in the repo there is nothing to
+// compare, so nothing needs saying.
+func TestRun_NoManifestAndNoRepoSkillsIsQuiet(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	opts.BoundSkills = nil
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 	if got := shadowFindings(rep); len(got) != 0 {
-		t.Errorf("nothing bound at user scope, got %+v", got)
+		t.Errorf("nothing to compare, got %+v", got)
 	}
 }
