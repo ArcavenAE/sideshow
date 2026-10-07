@@ -15,15 +15,24 @@ import (
 // working directory. It returns the repo path.
 func identityFixture(t *testing.T, packName, repoName string) string {
 	t.Helper()
+	return identityFixtureWith(t, packName, repoName, true)
+}
+
+// identityFixtureWith lets a test leave the pack's gitignore entry for
+// the personal layer out.
+func identityFixtureWith(t *testing.T, packName, repoName string, ignoreLayer bool) string {
+	t.Helper()
 	store := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("SIDESHOW_HOME", store)
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	t.Setenv("USER", "osuser")
 	t.Cleanup(func() { _ = pack.UnfreezeTree(store) })
 
 	src := t.TempDir()
 	yml := "name: " + packName + "\nversion: 1.0.0\ndistribute:\n  custom_bridge:\n    upstream_path: _" + packName + "/custom\n    per_repo_dir: _" + packName + "-custom\n"
+	if ignoreLayer {
+		yml += "  gitignore:\n    - /_" + packName + "-custom/config.user.toml\n"
+	}
 	if err := os.WriteFile(filepath.Join(src, "pack.yaml"), []byte(yml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +81,7 @@ func TestProjectInit_SeedsIdentityFromTheFlag(t *testing.T) {
 	}
 }
 
-func TestProjectInit_FlagBeatsGitNameBeatsOSUser(t *testing.T) {
+func TestProjectInit_FlagBeatsGitName(t *testing.T) {
 	repo := identityFixture(t, "bmad", "widget")
 	gitName(t, repo, "Git Name")
 	if _, err := captureStdout(t, func() error {
@@ -90,15 +99,21 @@ func TestProjectInit_FlagBeatsGitNameBeatsOSUser(t *testing.T) {
 		t.Fatalf("project init: %v", err)
 	}
 	if got := userLayer(repo2, "bmad"); !strings.Contains(got, `user_name = "Git Name"`) {
-		t.Errorf("git name did not beat the OS user:\n%s", got)
+		t.Errorf("git name was not used:\n%s", got)
 	}
 
+	// Never invent a name: with neither source, user_name stays absent
+	// and project_name is still seeded.
 	repo3 := identityFixture(t, "bmad", "third")
 	if _, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) }); err != nil {
 		t.Fatalf("project init: %v", err)
 	}
-	if got := userLayer(repo3, "bmad"); !strings.Contains(got, `user_name = "osuser"`) {
-		t.Errorf("OS user fallback missing:\n%s", got)
+	got := userLayer(repo3, "bmad")
+	if strings.Contains(got, "user_name") {
+		t.Errorf("a name was invented:\n%s", got)
+	}
+	if !strings.Contains(got, `project_name = "third"`) {
+		t.Errorf("project_name was not seeded:\n%s", got)
 	}
 }
 
@@ -168,5 +183,23 @@ func TestProjectInit_DryRunWritesNoIdentity(t *testing.T) {
 	}
 	if got := userLayer(repo, "bmad"); got != "" {
 		t.Errorf("dry run wrote the identity layer:\n%s", got)
+	}
+}
+
+// The layer holds a person's name. If the repo would commit it, init
+// must not write it, and must say why.
+func TestProjectInit_RefusesToWriteANameTheRepoWouldCommit(t *testing.T) {
+	repo := identityFixtureWith(t, "bmad", "widget", false)
+	out, err := captureStdout(t, func() error {
+		return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+	})
+	if err != nil {
+		t.Fatalf("project init: %v", err)
+	}
+	if got := userLayer(repo, "bmad"); got != "" {
+		t.Errorf("identity written to a layer that is not gitignored:\n%s", got)
+	}
+	if !strings.Contains(out, "not gitignored") {
+		t.Errorf("init did not say why it skipped the identity:\n%s", out)
 	}
 }
