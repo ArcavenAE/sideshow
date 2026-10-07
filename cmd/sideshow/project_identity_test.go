@@ -51,6 +51,8 @@ func identityFixtureWith(t *testing.T, packName, repoName string, ignoreLayer bo
 	return repo
 }
 
+const notSetLine = "user_name not set: pass --user-name or set git user.name\n"
+
 func gitName(t *testing.T, repo, name string) {
 	t.Helper()
 	if out, err := exec.Command("git", "-C", repo, "config", "user.name", name).CombinedOutput(); err != nil {
@@ -105,8 +107,12 @@ func TestProjectInit_FlagBeatsGitName(t *testing.T) {
 	// Never invent a name: with neither source, user_name stays absent
 	// and project_name is still seeded.
 	repo3 := identityFixture(t, "bmad", "third")
-	if _, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) }); err != nil {
-		t.Fatalf("project init: %v", err)
+	out3, err3 := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) })
+	if err3 != nil {
+		t.Fatalf("project init: %v", err3)
+	}
+	if n := strings.Count(out3, notSetLine); n != 1 {
+		t.Errorf("want the not-set line exactly once, got %d:\n%s", n, out3)
 	}
 	got := userLayer(repo3, "bmad")
 	if strings.Contains(got, "user_name") {
@@ -231,5 +237,81 @@ func TestProjectInit_InlineCoreTableIsLeftAlone(t *testing.T) {
 	}
 	if !strings.Contains(out, "inline") {
 		t.Errorf("init did not say why it skipped:\n%s", out)
+	}
+}
+
+// The not-set line is printed only when it applies.
+func TestProjectInit_NotSetLineOnlyWhenNoNameResolves(t *testing.T) {
+	repo := identityFixture(t, "bmad", "widget")
+	out, err := captureStdout(t, func() error {
+		return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "user_name not set") {
+		t.Errorf("a name was given, yet init said none was set:\n%s", out)
+	}
+	_ = repo
+
+	identityFixture(t, "bmad", "other")
+	out, err = captureStdout(t, func() error {
+		return runProjectInitForPack([]string{"bmad", "--dry-run"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, notSetLine) != 1 {
+		t.Errorf("dry run must print the not-set line once:\n%s", out)
+	}
+}
+
+// The name is the one git resolves inside the repo: local over global.
+func TestProjectInit_LocalGitNameBeatsGlobal(t *testing.T) {
+	repo := identityFixture(t, "bmad", "widget")
+	global := filepath.Join(os.Getenv("HOME"), ".gitconfig")
+	if err := os.WriteFile(global, []byte("[user]\n\tname = Global Name\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	if _, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) }); err != nil {
+		t.Fatal(err)
+	}
+	if got := userLayer(repo, "bmad"); !strings.Contains(got, `user_name = "Global Name"`) {
+		t.Fatalf("global name not used when no local one is set:\n%s", got)
+	}
+
+	repo2 := identityFixture(t, "bmad", "second")
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	gitName(t, repo2, "Local Name")
+	if _, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) }); err != nil {
+		t.Fatal(err)
+	}
+	if got := userLayer(repo2, "bmad"); !strings.Contains(got, `user_name = "Local Name"`) {
+		t.Errorf("local name did not beat global:\n%s", got)
+	}
+}
+
+// The privacy guarantee rests on this: after init in a freshly bound
+// repo, git ignores the file that now holds a name.
+func TestProjectInit_WrittenLayerIsGitIgnored(t *testing.T) {
+	repo := identityFixture(t, "bmad", "widget")
+	if _, err := captureStdout(t, func() error {
+		return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if userLayer(repo, "bmad") == "" {
+		t.Fatal("nothing was written, so the ignore check proves nothing")
+	}
+	if out, err := exec.Command("git", "-C", repo, "check-ignore", "-q", "_bmad-custom/config.user.toml").CombinedOutput(); err != nil {
+		t.Errorf("the identity layer is not gitignored: %v\n%s", err, out)
+	}
+	out, err := exec.Command("git", "-C", repo, "status", "--porcelain", "--untracked-files=all").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "config.user.toml") {
+		t.Errorf("git would commit the identity layer:\n%s", out)
 	}
 }
