@@ -623,8 +623,12 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	// match it. The build pipeline treats exec bits as a fatal invariant;
 	// the install path must not silently destroy the property at the
 	// last hop.
-	if err := verifyExecManifest(sourcePath, destDir); err != nil {
+	checked, err := verifyExecManifest(sourcePath, destDir)
+	if err != nil {
 		return err
+	}
+	if !checked {
+		fmt.Printf("Exec bits not checked: no exec manifest (%s) in this pack.\n", execManifestName)
 	}
 
 	activation, err := LoadActivation(destDir)
@@ -690,15 +694,16 @@ const execManifestName = "exec-manifest.txt"
 
 // verifyExecManifest checks the installed tree at destDir against the
 // pack's exec-manifest.txt when the source ships one. Absence of the
-// manifest is not an error; any listed path that is missing or
-// non-executable after install is.
-func verifyExecManifest(sourcePath, destDir string) error {
+// manifest is not an error, but it is reported: checked is false, so
+// the caller can say that no exec bits were verified. Any listed path
+// that is missing or non-executable after install is an error.
+func verifyExecManifest(sourcePath, destDir string) (checked bool, err error) {
 	data, err := os.ReadFile(filepath.Join(sourcePath, execManifestName))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("read %s: %w", execManifestName, err)
+		return false, fmt.Errorf("read %s: %w", execManifestName, err)
 	}
 
 	var drift []string
@@ -716,14 +721,14 @@ func verifyExecManifest(sourcePath, destDir string) error {
 		}
 	}
 	if len(drift) > 0 {
-		return fmt.Errorf(
+		return true, fmt.Errorf(
 			"%s verification failed: installed tree at %s does not match "+
 				"the pack's executable census (%d of its entries drifted); "+
 				"the store copy should not be used:\n  %s",
 			execManifestName, destDir, len(drift), strings.Join(drift, "\n  "),
 		)
 	}
-	return nil
+	return true, nil
 }
 
 // List returns all installed packs.
