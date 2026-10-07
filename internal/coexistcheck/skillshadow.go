@@ -31,25 +31,26 @@ func repoSkillNames(repoDir string) []string {
 }
 
 // checkSkillShadow reports each skill present both in the repo's
-// .claude/skills and in the pack's user-scope bound set. Advisory:
-// a shadow does not make enable unsafe, so it is WARN, never a
-// refusal. The loaded copy is the user-scope one on the Claude Code
-// version where this was observed (2.1.x, native 6.2.2 repo loading
-// the user-scope 6.10.0 bmad-help); it is an observation, not a
-// documented contract.
+// .claude/skills and in the pack's user-scope bound set, naming both
+// paths. Advisory: a shadow does not make enable unsafe, so it is
+// WARN, never a refusal.
+//
+// Which copy loads is an observation, not a documented contract: a
+// repo with a native 6.2.2 bmad install loaded the user-scope 6.10.0
+// bmad-help (Claude Code 2.1.x, aae-orc-phytt), which matches the
+// personal-over-project order. The finding says "loads" for that
+// observed copy and nothing wider.
 func checkSkillShadow(rep *Report, opts Options) {
 	if len(opts.BoundSkills) == 0 {
 		return
 	}
-	bound := make(map[string]bool, len(opts.BoundSkills))
-	for _, n := range opts.BoundSkills {
-		bound[n] = true
-	}
 	for _, name := range repoSkillNames(opts.RepoDir) {
-		if !bound[name] {
+		userPath, ok := opts.BoundSkills[name]
+		if !ok {
 			continue
 		}
+		repoPath := filepath.Join(opts.RepoDir, ".claude", "skills", name)
 		rep.add(11, "skill-shadow", foreign.Warn,
-			fmt.Sprintf("%s exists in this repo's .claude/skills and in the user-scope %s binding; the user-scope copy loads, so the repo's copy is shadowed", name, opts.Pack))
+			fmt.Sprintf("%s: the user-scope copy at %s loads and shadows this repo's copy at %s (observed on Claude Code 2.1.x)", name, userPath, repoPath))
 	}
 }
