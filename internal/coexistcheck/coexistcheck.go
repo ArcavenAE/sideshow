@@ -61,6 +61,17 @@ func (r *Report) Refuse() bool {
 	return false
 }
 
+// Count reports how many results carry the given severity.
+func (r *Report) Count(sev foreign.Severity) int {
+	n := 0
+	for _, res := range r.Results {
+		if res.Severity == sev {
+			n++
+		}
+	}
+	return n
+}
+
 // Options configures a run.
 type Options struct {
 	RepoDir         string

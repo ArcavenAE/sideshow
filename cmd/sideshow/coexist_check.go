@@ -68,6 +68,14 @@ func runCoexistCheck(args []string) error {
 		}
 	}
 
+	// The sync manifest is the receipt of user-scope copies sideshow
+	// wrote; check 11 reports a repo skill one of them shadows.
+	bound, bErr := bindings.BoundSkillPaths(packName)
+	if bErr != nil {
+		return fmt.Errorf("read the sync manifest: %w", bErr)
+	}
+	opts.BoundSkills = bound
+
 	rep, err := coexistcheck.Run(opts)
 	if err != nil {
 		return err
@@ -79,6 +87,10 @@ func runCoexistCheck(args []string) error {
 	}
 	for _, r := range rep.Results {
 		fmt.Printf("  %s [%d %s]: %s\n", r.Severity, r.Check, r.Name, r.Detail)
+	}
+	if len(rep.Results) > 0 {
+		fmt.Printf("findings: %d error, %d warn, %d info\n",
+			rep.Count(foreign.Error), rep.Count(foreign.Warn), rep.Count(foreign.Info))
 	}
 	if a := rep.RetreatAnchor; a != nil && a.FactoryArtifactsSHA != "" {
 		fmt.Printf("retreat anchor: factory-artifacts %s, .factory dirty=%v, captured %s\n",
