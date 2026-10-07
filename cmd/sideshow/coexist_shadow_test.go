@@ -63,7 +63,7 @@ func TestRunCoexistCheck_NothingBoundIsNotAShadow(t *testing.T) {
 	if strings.Contains(out, "WARN [11") {
 		t.Errorf("no user-scope copy exists, yet a shadow was reported:\n%s", out)
 	}
-	if !strings.Contains(out, "skill-shadow not checked: no sync manifest for demo") {
+	if !strings.Contains(out, "skill-shadow not checked: no skill-dir entries in the sync manifest for demo") {
 		t.Errorf("an empty comparison must say it did not run:\n%s", out)
 	}
 }

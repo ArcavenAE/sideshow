@@ -97,7 +97,7 @@ func TestRun_NoOverlapIsQuiet(t *testing.T) {
 func TestRun_NoManifestEntriesSaysTheCheckDidNotRun(t *testing.T) {
 	t.Parallel()
 	opts := baseOptions(t)
-	opts.BoundSkills = nil
+	opts.BoundSkills = map[string]string{} // supplied, and empty
 	write(t, opts.RepoDir, ".claude/skills/bmad-help/SKILL.md", "x")
 
 	rep, err := Run(opts)
@@ -108,7 +108,7 @@ func TestRun_NoManifestEntriesSaysTheCheckDidNotRun(t *testing.T) {
 	if len(got) != 1 || got[0].Severity != foreign.Info {
 		t.Fatalf("want one INFO finding, got %+v", got)
 	}
-	want := "skill-shadow not checked: no sync manifest for " + opts.Pack
+	want := "skill-shadow not checked: no skill-dir entries in the sync manifest for " + opts.Pack
 	if got[0].Detail != want {
 		t.Errorf("detail = %q, want %q", got[0].Detail, want)
 	}
@@ -119,7 +119,7 @@ func TestRun_NoManifestEntriesSaysTheCheckDidNotRun(t *testing.T) {
 func TestRun_NoManifestAndNoRepoSkillsIsQuiet(t *testing.T) {
 	t.Parallel()
 	opts := baseOptions(t)
-	opts.BoundSkills = nil
+	opts.BoundSkills = map[string]string{}
 
 	rep, err := Run(opts)
 	if err != nil {
@@ -127,5 +127,24 @@ func TestRun_NoManifestAndNoRepoSkillsIsQuiet(t *testing.T) {
 	}
 	if got := shadowFindings(rep); len(got) != 0 {
 		t.Errorf("nothing to compare, got %+v", got)
+	}
+}
+
+// Callers that never load the sync manifest (the enable preflight, the
+// adopt dry run, doctor layer 3) leave BoundSkills nil. Nothing was
+// supplied, so nothing was compared and nothing is claimed: no WARN, and
+// no INFO that would be untrue whenever the manifest does hold entries.
+func TestRun_BoundSetNotSuppliedSaysNothing(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	opts.BoundSkills = nil
+	write(t, opts.RepoDir, ".claude/skills/bmad-help/SKILL.md", "x")
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := shadowFindings(rep); len(got) != 0 {
+		t.Errorf("no bound set was supplied, yet check 11 reported %+v", got)
 	}
 }
