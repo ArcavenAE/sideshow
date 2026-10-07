@@ -117,3 +117,20 @@ func TestDeclaredRewrites_NeverExemptsAFileFromTheCensus(t *testing.T) {
 		t.Errorf("the info line must stay ok, got %+v", fs)
 	}
 }
+
+func TestDeclaredRewrites_LongListIsCapped(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("\nrewrites:\n  neutralizer_rule_version: 2\n  census_refreshed:\n")
+	for _, n := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		b.WriteString("    - path: " + n + "/config.yaml\n      installer_sha256: x\n")
+	}
+	rewritesFixture(t, b.String())
+	fs := rewriteFindings(t)
+	if len(fs) != 1 {
+		t.Fatalf("want one finding, got %+v", fs)
+	}
+	d := fs[0].Detail
+	if !strings.Contains(d, "7 declared rewrites") || !strings.Contains(d, "rule version 2") || !strings.Contains(d, "and 2 more") || strings.Contains(d, "g/config.yaml") {
+		t.Errorf("detail = %q, want the count, the version, five paths and 'and 2 more'", d)
+	}
+}
