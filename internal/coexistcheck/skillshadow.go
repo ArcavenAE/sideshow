@@ -35,11 +35,11 @@ func repoSkillNames(repoDir string) []string {
 // paths. Advisory: a shadow does not make enable unsafe, so it is
 // WARN, never a refusal.
 //
-// Which copy loads is an observation, not a documented contract: a
-// repo with a native 6.2.2 bmad install loaded the user-scope 6.10.0
-// bmad-help (Claude Code 2.1.x, aae-orc-phytt), which matches the
-// personal-over-project order. The finding says "loads" for that
-// observed copy and nothing wider.
+// Which copy loads comes from the Claude Code skills documentation,
+// section "Resolve skills that share a name": "Enterprise over personal,
+// and personal over project", so a personal (user-scope) copy runs in
+// place of the repo's. It matches the observation in aae-orc-phytt (a
+// native 6.2.2 repo loading the user-scope 6.10.0 bmad-help).
 func checkSkillShadow(rep *Report, opts Options) {
 	repoSkills := repoSkillNames(opts.RepoDir)
 	if len(opts.BoundSkills) == 0 {
@@ -58,6 +58,6 @@ func checkSkillShadow(rep *Report, opts Options) {
 		}
 		repoPath := filepath.Join(opts.RepoDir, ".claude", "skills", name)
 		rep.add(11, "skill-shadow", foreign.Warn,
-			fmt.Sprintf("%s: the user-scope copy at %s loads and shadows this repo's copy at %s (observed on Claude Code 2.1.x)", name, userPath, repoPath))
+			fmt.Sprintf("%s: the user-scope copy at %s loads and shadows this repo's copy at %s (Claude Code: personal over project)", name, userPath, repoPath))
 	}
 }
