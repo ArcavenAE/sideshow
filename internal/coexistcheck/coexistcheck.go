@@ -165,6 +165,12 @@ func Run(opts Options) (*Report, error) {
 		}
 	}
 
+	// (11) skill shadow: a skill the repo carries natively that the
+	// pack also binds at user scope. Claude Code loads the personal
+	// copy over the project one, so the repo's own copy is not the
+	// one a session runs (aae-orc-phytt, F-k).
+	checkSkillShadow(rep, opts)
+
 	// (7) retreat anchor.
 	rep.RetreatAnchor = captureAnchor(opts.RepoDir, opts.Now)
 

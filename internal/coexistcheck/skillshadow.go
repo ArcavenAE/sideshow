@@ -1,9 +1,12 @@
 package coexistcheck
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/ArcavenAE/sideshow/internal/foreign"
 )
 
 // repoSkillNames lists the skills the repo carries natively: each
@@ -25,4 +28,28 @@ func repoSkillNames(repoDir string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// checkSkillShadow reports each skill present both in the repo's
+// .claude/skills and in the pack's user-scope bound set. Advisory:
+// a shadow does not make enable unsafe, so it is WARN, never a
+// refusal. The loaded copy is the user-scope one on the Claude Code
+// version where this was observed (2.1.x, native 6.2.2 repo loading
+// the user-scope 6.10.0 bmad-help); it is an observation, not a
+// documented contract.
+func checkSkillShadow(rep *Report, opts Options) {
+	if len(opts.BoundSkills) == 0 {
+		return
+	}
+	bound := make(map[string]bool, len(opts.BoundSkills))
+	for _, n := range opts.BoundSkills {
+		bound[n] = true
+	}
+	for _, name := range repoSkillNames(opts.RepoDir) {
+		if !bound[name] {
+			continue
+		}
+		rep.add(11, "skill-shadow", foreign.Warn,
+			fmt.Sprintf("%s exists in this repo's .claude/skills and in the user-scope %s binding; the user-scope copy loads, so the repo's copy is shadowed", name, opts.Pack))
+	}
 }
