@@ -51,21 +51,17 @@ func seedIdentity(repoDir, customDir, flagName string, dryRun bool) error {
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("read %s: %w", rel, err)
 	}
-	if inlineCore.Match(data) {
-		fmt.Printf("  identity: skipped, %s defines core as an inline table; add user_name and project_name to it by hand\n", rel)
-		return nil
-	}
-	// One line, once, when no name resolves and the file has none.
-	if userName == "" {
-		if _, wouldAdd := addCoreKeys(string(data), []identityKey{{"user_name", ""}}); len(wouldAdd) > 0 {
-			defer fmt.Println("user_name not set: pass --user-name or set git user.name")
-		}
-	}
 	updated, added := addCoreKeys(string(data), want)
 	if len(added) > 0 {
 		if why := cannotAppendCore(string(data)); why != "" {
 			fmt.Printf("  identity: skipped, %s uses %s, so a [core] table cannot be added; add user_name and project_name under core by hand\n", rel, why)
 			return nil
+		}
+	}
+	// One line, once, when no name resolves and the file has none.
+	if userName == "" {
+		if _, wouldAdd := addCoreKeys(string(data), []identityKey{{"user_name", ""}}); len(wouldAdd) > 0 {
+			defer fmt.Println("user_name not set: pass --user-name or set git user.name")
 		}
 	}
 	if len(added) == 0 {
@@ -108,12 +104,15 @@ func gitIgnores(repoDir, rel string) bool {
 	return exec.Command("git", "-C", repoDir, "check-ignore", "-q", "--", rel).Run() == nil
 }
 
+// coreName matches the three spellings of the bare key core.
+const coreName = `(?:core|"core"|'core')`
+
 var (
 	tableHeader = regexp.MustCompile(`^\s*\[([^\[\]]+)\]\s*(#.*)?$`)
 	arrayHeader = regexp.MustCompile(`^\s*\[\[`)
-	inlineCore  = regexp.MustCompile(`(?m)^\s*core\s*=`)
+	inlineCore  = regexp.MustCompile(`^\s*` + coreName + `\s*=`)
 	quotedCore  = regexp.MustCompile(`^\s*\[\s*["']core["']\s*\]`)
-	dottedCore  = regexp.MustCompile(`^\s*core\.`)
+	dottedCore  = regexp.MustCompile(`^\s*` + coreName + `\s*\.`)
 )
 
 // addCoreKeys returns content with each wanted key set under [core]
@@ -144,8 +143,9 @@ func addCoreKeys(content string, want []identityKey) (string, []string) {
 			continue
 		}
 		for _, k := range want {
-			plain := regexp.MustCompile(`^\s*` + k.name + `\s*=`)
-			dotted := regexp.MustCompile(`^\s*core\.` + k.name + `\s*=`)
+			key := `(?:` + k.name + `|"` + k.name + `"|'` + k.name + `')`
+			plain := regexp.MustCompile(`^\s*` + key + `\s*=`)
+			dotted := regexp.MustCompile(`^\s*` + coreName + `\s*\.\s*` + key + `\s*=`)
 			if (table == "core" && plain.MatchString(l)) || (table == "" && dotted.MatchString(l)) {
 				defined[k.name] = true
 			}
@@ -182,7 +182,8 @@ func addCoreKeys(content string, want []identityKey) (string, []string) {
 
 // cannotAppendCore names why a [core] table cannot be added to content
 // without defining core twice, or "" when it can. A top-level dotted key
-// (core.x = ...) or a quoted header (["core"]) already defines core, and
+// (core.x = ...), an inline table (core = { ... }) or a quoted header
+// (["core"]) already defines core, and
 // a strict TOML parser rejects a second [core] header after either. A
 // dotted key under another table belongs to that table, so it does not
 // count.
@@ -198,6 +199,9 @@ func cannotAppendCore(content string) string {
 		}
 		if topLevel && dottedCore.MatchString(l) {
 			return "dotted core keys"
+		}
+		if topLevel && inlineCore.MatchString(l) {
+			return "an inline core table"
 		}
 	}
 	return ""

@@ -352,6 +352,10 @@ func TestProjectInit_DottedOrQuotedCoreIsLeftAlone(t *testing.T) {
 		"dotted other key":     "core.communication_language = \"English\"\n",
 		"quoted header":        "[\"core\"]\nlanguage = \"en\"\n",
 		"single-quoted header": "['core']\nlanguage = 'en'\n",
+		"spaced dotted key":    "core . user_name = \"Mine\"\n",
+		"quoted dotted key":    "\"core\".user_name = \"Mine\"\n",
+		"single-quoted dotted": "'core'.user_name = \"Mine\"\n",
+		"quoted inline table":  "\"core\" = { language = \"en\" }\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			repo := identityFixture(t, "bmad", "widget")
@@ -422,5 +426,113 @@ func TestProjectInit_DottedKeyUnderAnotherTableDoesNotBlock(t *testing.T) {
 	got := userLayer(repo, "bmad")
 	if !strings.Contains(got, "core.y = 2") || !strings.Contains(got, "[core]") || !strings.Contains(got, `user_name = "Ada"`) {
 		t.Errorf("the file was not edited as expected:\n%s", got)
+	}
+}
+
+// Control: the same spellings that already define both keys need no
+// edit, and are not reported as needing a hand edit.
+func TestProjectInit_SpelledDottedCoreThatHasBothKeysIsQuiet(t *testing.T) {
+	for name, existing := range map[string]string{
+		"spaced":        "core . user_name = \"A\"\ncore . project_name = \"B\"\n",
+		"quoted":        "\"core\".user_name = \"A\"\n\"core\".project_name = \"B\"\n",
+		"single-quoted": "'core'.user_name = \"A\"\n'core'.project_name = \"B\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := identityFixture(t, "bmad", "widget")
+			dir := filepath.Join(repo, "_bmad-custom")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte(existing), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := userLayer(repo, "bmad"); got != existing {
+				t.Errorf("the file was edited:\n%s", got)
+			}
+			if strings.Contains(out, "by hand") {
+				t.Errorf("a complete file was reported as needing a hand edit:\n%s", out)
+			}
+		})
+	}
+}
+
+// The key names themselves may be quoted. A [core] table that holds
+// them that way already defines them, so init must not write a duplicate
+// key, which a strict TOML parser rejects.
+func TestProjectInit_QuotedKeyNamesUnderCoreCountAsDefined(t *testing.T) {
+	t.Run("both quoted", func(t *testing.T) {
+		repo := identityFixture(t, "bmad", "widget")
+		dir := filepath.Join(repo, "_bmad-custom")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		existing := "[core]\n\"user_name\" = \"A\"\n\"project_name\" = \"B\"\n"
+		if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte(existing), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := userLayer(repo, "bmad"); got != existing {
+			t.Errorf("the file was edited:\n%s", got)
+		}
+		if strings.Contains(out, "by hand") || strings.Contains(out, "user_name not set") {
+			t.Errorf("a complete file was reported as incomplete:\n%s", out)
+		}
+	})
+	t.Run("single-quoted user_name alone", func(t *testing.T) {
+		repo := identityFixture(t, "bmad", "widget")
+		dir := filepath.Join(repo, "_bmad-custom")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte("[core]\n'user_name' = \"A\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := captureStdout(t, func() error {
+			return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		got := userLayer(repo, "bmad")
+		if strings.Count(got, "user_name") != 1 || !strings.Contains(got, `project_name = "widget"`) {
+			t.Errorf("want the existing user_name kept once and project_name added:\n%s", got)
+		}
+	})
+}
+
+// A core key under another table belongs to that table: [other] then
+// core = 1 is other.core, so it does not define core and the file is
+// edited as usual. Bare and quoted spellings alike.
+func TestProjectInit_CoreKeyUnderAnotherTableDoesNotBlock(t *testing.T) {
+	for name, existing := range map[string]string{
+		"bare":          "[other]\ncore = 1\n",
+		"quoted":        "[other]\n\"core\" = 1\n",
+		"single-quoted": "[other]\n'core' = 1\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := identityFixture(t, "bmad", "widget")
+			dir := filepath.Join(repo, "_bmad-custom")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte(existing), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := captureStdout(t, func() error {
+				return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			got := userLayer(repo, "bmad")
+			if !strings.HasPrefix(got, existing) || !strings.Contains(got, "[core]") || !strings.Contains(got, `user_name = "Ada"`) {
+				t.Errorf("the file was not edited as expected:\n%s", got)
+			}
+		})
 	}
 }
