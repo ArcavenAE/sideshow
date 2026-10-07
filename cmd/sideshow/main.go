@@ -896,17 +896,21 @@ func runStatus() error {
 			fmt.Printf("  activation: per-repo required; user-scope bindings do not apply\n")
 			continue
 		}
-		available, err := bindings.CountForPack(p.Name, p.Path)
-		if err != nil {
-			fmt.Printf("  available: error: %v\n", err)
+		available, availErr := bindings.CountForPack(p.Name, p.Path)
+		if availErr != nil {
+			fmt.Printf("  available: error: %v\n", availErr)
 		} else {
 			fmt.Printf("  available: %d\n", available)
 		}
-		synced, err := bindings.SyncedCount(p.Name, p.Path)
-		if err != nil {
-			fmt.Printf("  synced:    error: %v\n", err)
+		synced, syncErr := bindings.SyncedCount(p.Name, p.Path)
+		if syncErr != nil {
+			fmt.Printf("  synced:    error: %v\n", syncErr)
 		} else {
 			fmt.Printf("  synced:    %d\n", synced)
+		}
+		// A diagnostic, not a gate: status still exits 0 (aae-orc-zfkxy).
+		if availErr == nil && syncErr == nil && synced < available {
+			fmt.Printf("  UNWIRED:   %d of %d artifacts are not synced; run 'sideshow commands sync'\n", available-synced, available)
 		}
 	}
 
