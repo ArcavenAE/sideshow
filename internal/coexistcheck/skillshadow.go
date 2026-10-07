@@ -41,10 +41,17 @@ func repoSkillNames(repoDir string) []string {
 // personal-over-project order. The finding says "loads" for that
 // observed copy and nothing wider.
 func checkSkillShadow(rep *Report, opts Options) {
+	repoSkills := repoSkillNames(opts.RepoDir)
 	if len(opts.BoundSkills) == 0 {
+		// Nothing was compared. Say so when the repo has skills that
+		// could have been, so a quiet report does not read as clean.
+		if len(repoSkills) > 0 {
+			rep.add(11, "skill-shadow", foreign.Info,
+				"skill-shadow not checked: no sync manifest for "+opts.Pack)
+		}
 		return
 	}
-	for _, name := range repoSkillNames(opts.RepoDir) {
+	for _, name := range repoSkills {
 		userPath, ok := opts.BoundSkills[name]
 		if !ok {
 			continue
