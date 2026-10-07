@@ -26,6 +26,7 @@ func layer1Checks() []Check {
 		{ID: "store-shape", Layer: 1, Run: checkStoreShape},
 		{ID: "store-freeze", Layer: 1, Run: checkStoreFreeze},
 		{ID: "store-content-census", Layer: 1, Run: checkContentCensus},
+		{ID: "store-declared-rewrites", Layer: 1, Run: checkDeclaredRewrites},
 		{ID: "store-file-manifest", Layer: 1, Run: checkStoreFileManifest},
 		{ID: "sync-manifest", Layer: 1, Run: checkSyncManifest},
 		{ID: "receipt-markers", Layer: 1, Run: checkReceiptMarkers},
