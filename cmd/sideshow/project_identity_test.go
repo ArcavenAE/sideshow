@@ -315,3 +315,22 @@ func TestProjectInit_WrittenLayerIsGitIgnored(t *testing.T) {
 		t.Errorf("git would commit the identity layer:\n%s", out)
 	}
 }
+
+// Control: a user_name the file already defines needs no hint.
+func TestProjectInit_NoNotSetLineWhenTheFileHasAName(t *testing.T) {
+	repo := identityFixture(t, "bmad", "widget")
+	dir := filepath.Join(repo, "_bmad-custom")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte("[core]\nuser_name = \"Mine\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "user_name not set") {
+		t.Errorf("the file has a user_name, yet init said none was set:\n%s", out)
+	}
+}
