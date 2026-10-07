@@ -144,18 +144,62 @@ func TestCwdKnown_PlainPackOnlyNeverRecommendsEnable(t *testing.T) {
 	}
 }
 
-// A registry that cannot be read is said so; it is not read as "no
-// record" without comment.
-func TestCwdKnown_NamesAnUnreadableCustomSourceRegistry(t *testing.T) {
+// A registry that cannot be read is its own finding. It is not read as
+// "no record": the user may well be registered, and the unreadable file
+// is the thing to fix (the same fail-closed shape as the ledger check).
+func TestCwdKnown_UnreadableRegistryIsItsOwnFinding(t *testing.T) {
 	cwdFixture(t, map[string]string{"demo": plainPack})
 	write(t, filepath.Join(os.Getenv("SIDESHOW_HOME"), "custom-sources.yaml"), "sources: [unclosed\n")
 
-	f := cwdKnown(t, t.TempDir())
-	if f.Status != Warn {
-		t.Fatalf("cwd-known = %v, want warn", f.Status)
+	report, _, err := Run(Options{Layers: []int{3}, RepoDir: t.TempDir(), Now: time.Unix(0, 0)})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(f.Detail, "custom-source registry could not be read") {
-		t.Errorf("detail hides the unreadable registry: %q", f.Detail)
+	own := findBy(report.Findings, "cwd-custom-sources")
+	if len(own) != 1 || own[0].Status != Unavailable || own[0].Class != Advisory || own[0].Next == "" {
+		t.Fatalf("want one advisory unavailable finding with a next step, got %+v", own)
+	}
+	if !strings.Contains(own[0].Detail, "custom-sources.yaml") {
+		t.Errorf("the finding must name the unreadable file: %q", own[0].Detail)
+	}
+	for _, f := range findBy(report.Findings, "cwd-known") {
+		if f.Status == Warn {
+			t.Errorf("an unreadable registry was reported as no record: %+v", f)
+		}
+	}
+}
+
+// When another source already knows the directory, the unreadable
+// registry is still said, and cwd-known stays ok.
+func TestCwdKnown_UnreadableRegistryIsSaidEvenWhenAnotherSourceMatches(t *testing.T) {
+	cwdFixture(t, map[string]string{"demo": plainPack})
+	repo := t.TempDir()
+	home := os.Getenv("SIDESHOW_HOME")
+	write(t, filepath.Join(home, "registry.yaml"),
+		"packs: []\nprojects:\n  - id: p\n    installations:\n      - root: "+repo+"\n")
+	write(t, filepath.Join(home, "custom-sources.yaml"), "sources: [unclosed\n")
+
+	report, _, err := Run(Options{Layers: []int{3}, RepoDir: repo, Now: time.Unix(0, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if known := findBy(report.Findings, "cwd-known"); len(known) != 1 || known[0].Status != OK {
+		t.Fatalf("cwd-known = %+v, want one ok finding from the installation root", known)
+	}
+	if own := findBy(report.Findings, "cwd-custom-sources"); len(own) != 1 || own[0].Status != Unavailable {
+		t.Errorf("the unreadable registry was dropped without comment: %+v", own)
+	}
+}
+
+// Control: a readable registry adds no finding of its own.
+func TestCwdKnown_ReadableRegistryAddsNoSeparateFinding(t *testing.T) {
+	cwdFixture(t, map[string]string{"demo": plainPack})
+	report, _, err := Run(Options{Layers: []int{3}, RepoDir: t.TempDir(), Now: time.Unix(0, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if own := findBy(report.Findings, "cwd-custom-sources"); len(own) != 0 {
+		t.Errorf("a readable registry produced %+v", own)
 	}
 }
 
