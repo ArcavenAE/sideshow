@@ -37,9 +37,10 @@ func newTextFixture(t *testing.T) textFixture {
 		"customize.toml":   "# " + ref + "\nkey = \"v\"\n",
 		"scripts/run.sh":   "#!/bin/sh\n# " + ref + "\n",
 		"scripts/utf8.py":  "# héllo ✓ no reference here\nprint(\"✓\")\n",
-		"blob.dat":         "\x00\x01" + ref + "\x00",
+		"blob.dat":         "\x00\x01 " + ref + "\n\x00",
 		"latin1.txt.bak":   "\xff\xfe " + ref + "\n",
 		"nested/notes.txt": "see " + ref + "\n",
+		"legacy.md":        "\xff\xfe " + ref + "\n",
 	}
 	src := map[string][]byte{}
 	for rel, content := range files {
@@ -149,5 +150,15 @@ func TestSkillDirBinding_Sync_SymlinkKeepsExtensionRule(t *testing.T) {
 	}
 	if !strings.Contains(string(link), ref) {
 		t.Errorf("a symlinked .py was rewritten by content eligibility:\n%s", link)
+	}
+}
+
+// A file whose extension was already rewritten stays rewritten even when
+// its bytes are not valid UTF-8; the content rule only adds files.
+func TestSkillDirBinding_Sync_ListedExtensionsStillRewrittenWhateverTheBytes(t *testing.T) {
+	f := newTextFixture(t)
+
+	if got := f.read(t, "legacy.md"); !strings.Contains(got, f.pack+"/core/workflow.md") {
+		t.Errorf("legacy.md (invalid UTF-8, listed extension) lost its rewrite:\n%q", got)
 	}
 }

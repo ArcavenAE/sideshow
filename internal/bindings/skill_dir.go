@@ -1,12 +1,14 @@
 package bindings
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // SkillDirBinding handles the bmad 6.3.0-era distribution shape: per-skill
@@ -107,7 +109,7 @@ func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 
-		if shouldRewrite(path) {
+		if rewritableSkillFile(path, d, data) {
 			content := b.rules.rewrite(string(data))
 			if filepath.Base(path) == "SKILL.md" {
 				content = appendFallbackFooter(content, b.packPath)
@@ -123,6 +125,24 @@ func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
 		}
 		return nil
 	})
+}
+
+// rewritableSkillFile reports whether a file under a bound skill passes
+// through the reference rewrite. The extension list in shouldRewrite
+// still qualifies a file, so nothing that was rewritten before stops
+// being rewritten. Any other regular file qualifies by content: the
+// whole file is valid UTF-8 and holds no NUL byte, which covers the
+// xml, py, toml and sh files that carry {project-root}/_bmad/ references
+// (aae-orc-k5vro). A symlink keeps the extension rule alone, so the
+// content rule never reaches through a link.
+func rewritableSkillFile(path string, d fs.DirEntry, data []byte) bool {
+	if shouldRewrite(path) {
+		return true
+	}
+	if d.Type()&fs.ModeSymlink != 0 {
+		return false
+	}
+	return utf8.Valid(data) && !bytes.Contains(data, []byte{0})
 }
 
 // shouldRewrite reports whether a file's content should pass through path
