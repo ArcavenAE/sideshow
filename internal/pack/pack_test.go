@@ -817,3 +817,39 @@ func TestUnfreezeTree_RestoresOwnerWrite(t *testing.T) {
 		t.Errorf("write after unfreeze failed: %v", err)
 	}
 }
+
+// aae-orc-6la0l: a pack without exec-manifest.txt skipped the exec-bit
+// check and said nothing, so an install that had checked nothing read
+// the same as one that had checked everything.
+func TestInstallFromLocal_SaysWhenNoExecManifestWasChecked(t *testing.T) {
+	freezeSafeHome(t)
+	src := makeModeFixture(t)
+
+	out := captureStdout(t, func() {
+		if err := InstallFromLocal("modes", src, true); err != nil {
+			t.Errorf("InstallFromLocal: %v", err)
+		}
+	})
+	if !strings.Contains(out, "no exec manifest") {
+		t.Errorf("install without an exec manifest did not say so:\n%s", out)
+	}
+}
+
+// Control: a pack that ships the census was checked, so there is
+// nothing to disclaim.
+func TestInstallFromLocal_NoExecManifestNoticeWhenItWasChecked(t *testing.T) {
+	freezeSafeHome(t)
+	src := makeModeFixture(t)
+	if err := os.WriteFile(filepath.Join(src, "exec-manifest.txt"), []byte("bin/tool.sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := InstallFromLocal("modes", src, true); err != nil {
+			t.Errorf("InstallFromLocal: %v", err)
+		}
+	})
+	if strings.Contains(out, "no exec manifest") {
+		t.Errorf("a checked install carried the no-manifest notice:\n%s", out)
+	}
+}
