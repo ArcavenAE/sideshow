@@ -152,8 +152,24 @@ func (s *ClaudeSettings) RemoveReadPermission(readPath string) bool {
 	return removed
 }
 
+// anchorAbsolute returns the form of a Read rule path that Claude Code
+// resolves from the filesystem root. A single leading slash is anchored at
+// the settings source instead (the user settings directory, or the
+// project root), so an absolute path is written with a second slash.
+// Paths that are not absolute, or already carry the double slash, are
+// returned as they are (aae-orc-8qmpi).
+func anchorAbsolute(path string) string {
+	if strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") {
+		return "/" + path
+	}
+	return path
+}
+
 // ConfigureForScope adds the read permission for a sideshow pack path
-// to the appropriate Claude Code settings file.
+// to the appropriate Claude Code settings file. The rule is written in
+// the double-slash anchored form; the single-slash rule an earlier
+// install wrote for the same path is replaced, and any other entry is
+// left alone.
 func ConfigureForScope(scope Scope, packPath string, projectRoot string) error {
 	settingsPath := SettingsPath(scope, projectRoot)
 
@@ -162,14 +178,20 @@ func ConfigureForScope(scope Scope, packPath string, projectRoot string) error {
 		return err
 	}
 
-	// Normalize the path — use the parent directory of the packs dir
+	// Normalize the path: use the parent directory of the packs dir
 	// so all packs under it are covered with one permission
 	readPath := packPath
 	if !strings.HasSuffix(readPath, "/") {
 		readPath += "/"
 	}
+	anchored := anchorAbsolute(readPath)
 
-	if !settings.AddReadPermission(readPath) {
+	replaced := false
+	if anchored != readPath {
+		replaced = settings.RemoveReadPermission(readPath)
+	}
+	added := settings.AddReadPermission(anchored)
+	if !added && !replaced {
 		fmt.Printf("  Permission already configured in %s\n", settingsPath)
 		return nil
 	}
@@ -178,6 +200,10 @@ func ConfigureForScope(scope Scope, packPath string, projectRoot string) error {
 		return fmt.Errorf("save settings: %w", err)
 	}
 
-	fmt.Printf("  Added Read(%s) to %s\n", readPath, settingsPath)
+	if replaced {
+		fmt.Printf("  Replaced Read(%s) with Read(%s) in %s\n", readPath, anchored, settingsPath)
+		return nil
+	}
+	fmt.Printf("  Added Read(%s) to %s\n", anchored, settingsPath)
 	return nil
 }
