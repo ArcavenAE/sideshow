@@ -40,14 +40,25 @@ func repoSkillNames(repoDir string) []string {
 // and personal over project", so a personal (user-scope) copy runs in
 // place of the repo's. It matches the observation in aae-orc-phytt (a
 // native 6.2.2 repo loading the user-scope 6.10.0 bmad-help).
+//
+// Skills are matched by directory name, as the documented rule matches
+// them. A skill whose SKILL.md frontmatter sets a different command name
+// is not caught.
 func checkSkillShadow(rep *Report, opts Options) {
+	// nil means the caller never loaded the sync manifest (the enable
+	// preflight, the adopt dry run and doctor layer 3 do not), so nothing
+	// was compared and nothing is claimed.
+	if opts.BoundSkills == nil {
+		return
+	}
 	repoSkills := repoSkillNames(opts.RepoDir)
 	if len(opts.BoundSkills) == 0 {
-		// Nothing was compared. Say so when the repo has skills that
-		// could have been, so a quiet report does not read as clean.
+		// The manifest was read and holds no user-scope skills for this
+		// pack. Say so when the repo has skills that could have been
+		// compared, so a quiet report does not read as clean.
 		if len(repoSkills) > 0 {
 			rep.add(11, "skill-shadow", foreign.Info,
-				"skill-shadow not checked: no sync manifest for "+opts.Pack)
+				"skill-shadow not checked: no skill-dir entries in the sync manifest for "+opts.Pack)
 		}
 		return
 	}
