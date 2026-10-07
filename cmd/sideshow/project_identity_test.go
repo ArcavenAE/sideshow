@@ -24,6 +24,14 @@ func identityFixtureWith(t *testing.T, packName, repoName string, ignoreLayer bo
 	t.Helper()
 	store := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
+	// Isolate git's own config: a global or system user.name on the host
+	// would otherwise answer the "no name" cases.
+	emptyGitConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(emptyGitConfig, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", emptyGitConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("SIDESHOW_HOME", store)
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	t.Cleanup(func() { _ = pack.UnfreezeTree(store) })
@@ -332,5 +340,87 @@ func TestProjectInit_NoNotSetLineWhenTheFileHasAName(t *testing.T) {
 	}
 	if strings.Contains(out, "user_name not set") {
 		t.Errorf("the file has a user_name, yet init said none was set:\n%s", out)
+	}
+}
+
+// A second definition of core after dotted keys or a quoted header makes
+// the layer invalid TOML for a strict parser (tomllib), so init leaves
+// such a file alone and says why. Nothing is added to it.
+func TestProjectInit_DottedOrQuotedCoreIsLeftAlone(t *testing.T) {
+	for name, existing := range map[string]string{
+		"dotted user_name":        "core.user_name = \"Mine\"\n",
+		"dotted other key":        "core.communication_language = \"English\"\n",
+		"quoted header":           "[\"core\"]\nlanguage = \"en\"\n",
+		"single-quoted header":    "['core']\nlanguage = 'en'\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := identityFixture(t, "bmad", "widget")
+			dir := filepath.Join(repo, "_bmad-custom")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte(existing), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := captureStdout(t, func() error {
+				return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+			})
+			if err != nil {
+				t.Fatalf("project init: %v", err)
+			}
+			if got := userLayer(repo, "bmad"); got != existing {
+				t.Errorf("the file was edited:\n%s", got)
+			}
+			if !strings.Contains(out, "by hand") {
+				t.Errorf("init did not say what to do:\n%s", out)
+			}
+		})
+	}
+}
+
+// Control: dotted core keys that already define everything wanted need
+// no edit and no complaint.
+func TestProjectInit_DottedCoreThatAlreadyHasBothKeysIsQuiet(t *testing.T) {
+	repo := identityFixture(t, "bmad", "widget")
+	dir := filepath.Join(repo, "_bmad-custom")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := "core.user_name = \"A\"\ncore.project_name = \"B\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdout(t, func() error { return runProjectInitForPack([]string{"bmad"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := userLayer(repo, "bmad"); got != existing {
+		t.Errorf("the file was edited:\n%s", got)
+	}
+	if strings.Contains(out, "by hand") {
+		t.Errorf("a complete file was reported as needing a hand edit:\n%s", out)
+	}
+}
+
+// Control: a dotted key under another table is that table's own key
+// (other.core.y), so it does not define core and the file is edited.
+func TestProjectInit_DottedKeyUnderAnotherTableDoesNotBlock(t *testing.T) {
+	repo := identityFixture(t, "bmad", "widget")
+	dir := filepath.Join(repo, "_bmad-custom")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := "[other]\nx = 1\ncore.y = 2\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureStdout(t, func() error {
+		return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := userLayer(repo, "bmad")
+	if !strings.Contains(got, "core.y = 2") || !strings.Contains(got, "[core]") || !strings.Contains(got, `user_name = "Ada"`) {
+		t.Errorf("the file was not edited as expected:\n%s", got)
 	}
 }

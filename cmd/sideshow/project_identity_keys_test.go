@@ -18,7 +18,6 @@ func TestAddCoreKeys(t *testing.T) {
 		{"core without keys", "[core]\nlanguage = \"en\"\n", "[core]\nuser_name = \"Ada\"\nproject_name = \"widget\"\nlanguage = \"en\"\n", "user_name,project_name"},
 		{"other table only", "[agents.x]\nk = 1\n", "[agents.x]\nk = 1\n\n[core]\nuser_name = \"Ada\"\nproject_name = \"widget\"\n", "user_name,project_name"},
 		{"key in another table is not core's", "[agents.x]\nuser_name = \"Other\"\n", "[agents.x]\nuser_name = \"Other\"\n\n[core]\nuser_name = \"Ada\"\nproject_name = \"widget\"\n", "user_name,project_name"},
-		{"dotted key defined", "core.user_name = \"Mine\"\n", "core.user_name = \"Mine\"\n\n[core]\nproject_name = \"widget\"\n", "project_name"},
 		{"one key defined", "[core]\nproject_name = \"mine\"\n", "[core]\nuser_name = \"Ada\"\nproject_name = \"mine\"\n", "user_name"},
 		{"both defined", "[core]\nuser_name = \"a\"\nproject_name = \"b\"\n", "[core]\nuser_name = \"a\"\nproject_name = \"b\"\n", ""},
 		{"header with comment", "[core] # mine\n", "[core] # mine\nuser_name = \"Ada\"\nproject_name = \"widget\"\n", "user_name,project_name"},
