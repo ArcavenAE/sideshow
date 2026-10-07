@@ -51,6 +51,10 @@ func seedIdentity(repoDir, customDir, flagName string, dryRun bool) error {
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("read %s: %w", rel, err)
 	}
+	if inlineCore.Match(data) {
+		fmt.Printf("  identity: skipped, %s defines core as an inline table; add user_name and project_name to it by hand\n", rel)
+		return nil
+	}
 	updated, added := addCoreKeys(string(data), want)
 	if len(added) == 0 {
 		fmt.Printf("  identity: %s already has %s\n", rel, strings.Join(keyNames(want), " and "))
@@ -98,6 +102,7 @@ func gitIgnores(repoDir, rel string) bool {
 var (
 	tableHeader = regexp.MustCompile(`^\s*\[([^\[\]]+)\]\s*(#.*)?$`)
 	arrayHeader = regexp.MustCompile(`^\s*\[\[`)
+	inlineCore  = regexp.MustCompile(`(?m)^\s*core\s*=`)
 )
 
 // addCoreKeys returns content with each wanted key set under [core]
