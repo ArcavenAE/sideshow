@@ -3,6 +3,7 @@ package doctor
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ArcavenAE/sideshow/internal/coexistcheck"
@@ -24,6 +25,18 @@ func layer3Checks() []Check {
 }
 
 func checkCwdKnown(ctx *Context) []Finding {
+	out := checkCwdKnownSources(ctx)
+	if ctx.CustomSourcesErr != nil && ctx.RepoDir != "" {
+		out = append(out, Finding{
+			Layer: 3, ID: "cwd-custom-sources", Status: Unavailable, Class: Advisory,
+			Detail: "the custom-source registry (custom-sources.yaml in the sideshow data dir) could not be read: " + ctx.CustomSourcesErr.Error() + "; registrations made by project init cannot be counted",
+			Next:   "inspect custom-sources.yaml by hand; do not delete it, then re-run doctor",
+		})
+	}
+	return out
+}
+
+func checkCwdKnownSources(ctx *Context) []Finding {
 	if ctx.RepoDir == "" {
 		return []Finding{{
 			Layer: 3, ID: "cwd-known", Status: Unavailable, Class: Advisory,
@@ -49,17 +62,51 @@ func checkCwdKnown(ctx *Context) []Finding {
 			}
 		}
 	}
+	for _, src := range ctx.CustomSources {
+		if ctx.RepoDir == src.Project || strings.HasPrefix(ctx.RepoDir, src.Project+string(filepath.Separator)) {
+			how = append(how, "custom-source registration "+src.Project+" (pack "+src.Pack+")")
+		}
+	}
 	if len(how) == 0 {
+		if ctx.CustomSourcesErr != nil {
+			// The registry that may hold this directory did not load, so
+			// "no record" would be a guess; cwd-custom-sources says why.
+			return nil
+		}
 		return []Finding{{
 			Layer: 3, ID: "cwd-known", Subject: ctx.RepoDir, Status: Warn, Class: Advisory,
 			Detail: "sideshow has no record of this directory; an agent started here finds no sideshow-managed content",
-			Next:   "sideshow enable <pack> --repo . (plugin-class) or sideshow init (project distribution)",
+			Next:   cwdKnownHint(ctx.Packs),
 		}}
 	}
 	return []Finding{{
 		Layer: 3, ID: "cwd-known", Subject: ctx.RepoDir, Status: OK, Class: Advisory,
 		Detail: "known via " + strings.Join(how, "; "),
 	}}
+}
+
+// cwdKnownHint names the command that would make a directory known, per
+// installed pack: `enable` for a plugin-class pack, which activates per
+// repo, and `project init` for any other, since `enable` refuses a pack
+// that is not plugin-class. A pack whose activation contract cannot be
+// read is not recommended for `enable`. With no pack in scope there is
+// nothing to name, so the generic form stays.
+func cwdKnownHint(packs []pack.InstalledPack) string {
+	if len(packs) == 0 {
+		return "sideshow enable <pack> --repo . (plugin-class) or sideshow init (project distribution)"
+	}
+	sorted := append([]pack.InstalledPack(nil), packs...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	var hints []string
+	for _, p := range sorted {
+		act, err := pack.LoadActivation(p.Path)
+		if err == nil && act.PluginClass() {
+			hints = append(hints, "sideshow enable "+p.Name+" --repo .")
+			continue
+		}
+		hints = append(hints, "sideshow project init "+p.Name)
+	}
+	return strings.Join(hints, " or ")
 }
 
 // checkCwdCoexistence runs the read-only coexist-check battery for
