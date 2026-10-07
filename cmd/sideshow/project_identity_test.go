@@ -207,3 +207,29 @@ func TestProjectInit_RefusesToWriteANameTheRepoWouldCommit(t *testing.T) {
 		t.Errorf("init did not say why it skipped the identity:\n%s", out)
 	}
 }
+
+// A core table written inline cannot take a second [core] header, so
+// init leaves the file alone and says so.
+func TestProjectInit_InlineCoreTableIsLeftAlone(t *testing.T) {
+	repo := identityFixture(t, "bmad", "widget")
+	dir := filepath.Join(repo, "_bmad-custom")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := "core = { language = \"en\" }\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.user.toml"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureStdout(t, func() error {
+		return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+	})
+	if err != nil {
+		t.Fatalf("project init: %v", err)
+	}
+	if got := userLayer(repo, "bmad"); got != existing {
+		t.Errorf("the file was edited:\n%s", got)
+	}
+	if !strings.Contains(out, "inline") {
+		t.Errorf("init did not say why it skipped:\n%s", out)
+	}
+}
