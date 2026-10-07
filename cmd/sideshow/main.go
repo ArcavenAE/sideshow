@@ -721,13 +721,24 @@ func runProjectUnregister(args []string) error {
 
 func runProjectInitForPack(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sideshow project init <pack> [--dry-run]")
+		return fmt.Errorf("usage: sideshow project init <pack> [--user-name <name>] [--dry-run]")
 	}
 	packName := args[0]
 	dryRun := false
-	for _, a := range args[1:] {
-		if a == "--dry-run" || a == "-n" {
+	userName := ""
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--dry-run" || a == "-n":
 			dryRun = true
+		case a == "--user-name":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--user-name requires a value")
+			}
+			i++
+			userName = args[i]
+		case strings.HasPrefix(a, "--user-name="):
+			userName = strings.TrimPrefix(a, "--user-name=")
 		}
 	}
 
@@ -798,6 +809,14 @@ func runProjectInitForPack(args []string) error {
 
 	if result.Error != nil {
 		return fmt.Errorf("distribute: %w", result.Error)
+	}
+
+	// Seed the identity the pack no longer ships (aae-orc-jy1j). After
+	// the distribute step, which is what gitignores the user layer.
+	if seedsIdentity(packName) {
+		if err := seedIdentity(cwd, customDir, userName, dryRun); err != nil {
+			return err
+		}
 	}
 
 	// Register this repo as a custom source so `commands sync` binds
