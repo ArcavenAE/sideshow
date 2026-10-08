@@ -3,6 +3,7 @@ package pack
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -121,5 +122,53 @@ func TestInstallFromLocal_NoActivateKeepsCurrent(t *testing.T) {
 	}
 	if active != "3.0.0" {
 		t.Errorf("active = %q after activating install, want 3.0.0", active)
+	}
+}
+
+// --no-activate cannot be honored on a pack's first install (current and
+// the registry must exist), so the install says so instead of staying
+// silent (aae-orc-8qolb). A later install with the flag prints the
+// existing "Not activated" line and no such notice.
+func TestInstall_NoActivateOnFirstInstallSaysItWasIgnored(t *testing.T) {
+	freezeSafeHome(t)
+
+	src1 := t.TempDir()
+	writePackYAML(t, src1, "1.0.0")
+	first := captureStdout(t, func() {
+		if err := InstallFromLocal("testpack", src1, false); err != nil {
+			t.Errorf("first install: %v", err)
+		}
+	})
+	want := "--no-activate ignored: this is the first install of testpack, so 1.0.0 is activated."
+	if !strings.Contains(first, want) {
+		t.Errorf("first install output lacks the notice %q:\n%s", want, first)
+	}
+
+	src2 := t.TempDir()
+	writePackYAML(t, src2, "2.0.0")
+	second := captureStdout(t, func() {
+		if err := InstallFromLocal("testpack", src2, false); err != nil {
+			t.Errorf("second install: %v", err)
+		}
+	})
+	if strings.Contains(second, "ignored") {
+		t.Errorf("second install claims the flag was ignored:\n%s", second)
+	}
+	if !strings.Contains(second, "Not activated") {
+		t.Errorf("second install lacks the Not activated line:\n%s", second)
+	}
+}
+
+func TestInstall_ActivatingFirstInstallPrintsNoIgnoredNotice(t *testing.T) {
+	freezeSafeHome(t)
+	src := t.TempDir()
+	writePackYAML(t, src, "3.0.0")
+	out := captureStdout(t, func() {
+		if err := InstallFromLocal("testpack", src, true); err != nil {
+			t.Errorf("activating first install: %v", err)
+		}
+	})
+	if strings.Contains(out, "ignored") {
+		t.Errorf("a first install without the flag printed the notice:\n%s", out)
 	}
 }

@@ -173,7 +173,8 @@ go install github.com/ArcavenAE/sideshow/cmd/sideshow@latest
 ## Quickstart
 
 ```bash
-# Install a pack version into the user store (does not change what's active)
+# Install a pack version into the user store. --no-activate leaves the active
+# version alone; a pack's first install always activates, flag or not
 sideshow install bmad --from ~/Downloads/bmad-6.10.0 --no-activate
 
 # Installing a version the store already holds is refused; --force writes over it
