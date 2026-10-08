@@ -79,26 +79,6 @@ func RemoveEnvShim(path, name, value string) (removed bool, err error) {
 	return true, writeSettings(path, settings)
 }
 
-// PreflightSettingsShape reads the settings file and reports what
-// RemoveHookChain and RemoveEnvShim would refuse on: unreadable or
-// malformed JSON, and a hooks or env block that is not an object. It
-// writes nothing, so a caller can refuse before the first removal
-// rewrites the file (sideshow#160). A missing file passes.
-func PreflightSettingsShape(path string) error {
-	settings, existed, err := readSettings(path)
-	if err != nil {
-		return err
-	}
-	if !existed {
-		return nil
-	}
-	if _, err := hooksObject(settings, path); err != nil {
-		return err
-	}
-	_, err = envObject(settings, path)
-	return err
-}
-
 // VerifyEnvShim checks that the settings file resolves name to
 // wantValue — the bind-time check behind "zero unresolved references
 // in materialized output", re-run by doctor. The error text names the
@@ -123,6 +103,26 @@ func VerifyEnvShim(path, name, wantValue string) error {
 		return fmt.Errorf("env shim drifted: %s sets env.%s=%q, want %q", path, name, got, wantValue)
 	}
 	return nil
+}
+
+// PreflightSettingsShape reads the settings file and reports what
+// RemoveHookChain and RemoveEnvShim would refuse on: unreadable or
+// malformed JSON, and a hooks or env block that is not an object. It
+// writes nothing, so a caller can refuse before the first removal
+// rewrites the file (sideshow#160). A missing file passes.
+func PreflightSettingsShape(path string) error {
+	settings, existed, err := readSettings(path)
+	if err != nil {
+		return err
+	}
+	if !existed {
+		return nil
+	}
+	if _, err := hooksObject(settings, path); err != nil {
+		return err
+	}
+	_, err = envObject(settings, path)
+	return err
 }
 
 // InlineEnvBelt returns the NAME='value' prefix every synthesized
