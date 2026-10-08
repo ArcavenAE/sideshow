@@ -60,7 +60,8 @@ var inPlaceAllowlist = map[string]string{
 // Known limits:
 //   - Not seen: a write through another package (syscall, x/sys, a
 //     vendored writer), a shell-out to cp or tee, a write through an
-//     *os.File opened elsewhere (the open is what it flags), and a writer
+//     *os.File or *os.Root opened elsewhere (the open is what it flags;
+//     a *os.Root received as a parameter is not), and a writer
 //     reached by reflection or a plugin. os.CreateTemp and os.Rename are not
 //     in-place writes and are not flagged.
 //   - Flagged though harmless, and in the tree nowhere: an OpenFile flag
@@ -222,6 +223,10 @@ func checkAllowlist(found map[string]bool, allow map[string]string) (unlisted, s
 
 // Every in-place writer is on the allowlist with a reason, and every
 // allowlist entry still names a writer (sideshow#185).
+//
+// Known limit: nothing tests that the three t.Errorf report blocks below
+// are wired; disabling one survives. checkAllowlist, which computes what
+// they report, is tested on its own.
 func TestNoUnlistedInPlaceWriters(t *testing.T) {
 	found := findInPlaceWriters(t, filepath.Join("..", ".."))
 	unlisted, stale, noReason := checkAllowlist(found, inPlaceAllowlist)
