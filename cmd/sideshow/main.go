@@ -39,13 +39,14 @@ Usage:
   sideshow list                           List installed packs (all versions, active marked)
   sideshow commands sync                  Sync commands + skills bindings (pack content
                                           and registered _<pack>-custom/skills/ sources)
-  sideshow project init <pack>            Apply consumer-repo convention to cwd and
+  sideshow project init <pack> [--user-name <name>] [--dry-run]
+                                          Apply consumer-repo convention to cwd and
                                           register it as a custom-skills source
   sideshow project unregister <pack> [--repo <path>]
                                           Remove a repo from the custom-skills source
                                           registry (next sync withdraws its skills)
   sideshow status                         Show installation status
-  sideshow coexist <pack> [--repo <path>]  Read-only foreign-install census and coexistence findings
+  sideshow coexist <pack> [--repo <path>] [--sideshow-active]  Read-only foreign-install census and coexistence findings
   sideshow enable <pack>[@<ver>] [--repo <path>] [--scope local|project] [--override-stale-lock]  Activate a pack in one repo (repo-bindings)
   sideshow disable <pack> [--repo <path>] [--override-stale-lock]  Reverse an enable exactly (ledger replay)
   sideshow activate <pack> [--repo <path>] [--agent <name>]  Consented persona flip (repo default agent)
