@@ -333,33 +333,73 @@ func CountForPack(_, packPath string) (int, error) {
 
 // SyncedCount returns the total number of artifacts currently synced to
 // tool-config directories for this pack across all binding types.
-// Ownership is determined by the canonical-id / basename set the pack
-// ships at packPath — not by a name prefix — so packs that ship
-// multi-prefix bindings (bmad ships bmad-* and gds-*) are accounted
-// fully. The first arg is reserved for future per-pack lookup hints
-// (e.g. a registry-stored manifest of what was actually written) and
-// is unused today; pass the pack name for forward compatibility.
-func SyncedCount(_, packPath string) (int, error) {
+// An artifact counts only when the pack ships it at packPath, the sync
+// manifest records packName as its writer, and the file is still at the
+// target. The credit holds as of the last completed sync: a sync that
+// fails part-way returns before it saves the manifest, so the record can
+// trail what is on disk until the next sync completes. Shipping alone is not enough: two packs that ship the same
+// canonical id would otherwise each count the other's copy as their own
+// (aae-orc-zwx4b). Ownership of what is shipped is by canonical id /
+// basename, not a name prefix, so packs that ship multi-prefix bindings
+// (bmad ships bmad-* and gds-*) are accounted fully. A pack synced
+// before the manifest existed reads as not synced until the next sync
+// records it.
+func SyncedCount(packName, packPath string) (int, error) {
 	resolved, err := filepath.EvalSymlinks(packPath)
 	if err != nil {
 		return 0, err
 	}
+	m, err := loadManifest()
+	if err != nil {
+		return 0, err
+	}
+	// Manifest order is sync order, so when two packs recorded the same
+	// path the later entry wrote the bytes now on disk. Only that last
+	// writer counts the path as synced.
+	lastWriter := make(map[string]string, len(m.Entries))
+	for _, e := range m.Entries {
+		lastWriter[e.Path] = e.Pack
+	}
+	skills := map[string]struct{}{}
+	commands := map[string]struct{}{}
+	for _, e := range m.Entries {
+		if e.Pack != packName || lastWriter[e.Path] != packName {
+			continue
+		}
+		switch e.Kind {
+		case "skill-dir":
+			skills[filepath.Base(e.Path)] = struct{}{}
+		case "markdown-command":
+			commands[filepath.Base(e.Path)] = struct{}{}
+		}
+	}
 
 	total := 0
 
-	c, err := countSyncedCommands(resolved)
+	c, err := countSyncedCommandsRecorded(resolved, commands)
 	if err != nil {
 		return 0, err
 	}
 	total += c
 
-	s, err := countSyncedSkills(resolved)
+	s, err := countSyncedSkillsRecorded(resolved, skills)
 	if err != nil {
 		return 0, err
 	}
 	total += s
 
 	return total, nil
+}
+
+// intersectNames returns the names present in both sets.
+func intersectNames(a, b map[string]struct{}) map[string]struct{} {
+	out := make(map[string]struct{}, len(a))
+	for n := range a {
+		if _, ok := b[n]; ok {
+			out[n] = struct{}{}
+		}
+	}
+	return out
 }
 
 // claudeCommandsDir returns the Claude Code commands directory under

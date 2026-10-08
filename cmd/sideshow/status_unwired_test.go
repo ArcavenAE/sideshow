@@ -117,6 +117,12 @@ func TestRunStatus_UnwiredCountsTheUnsyncedRemainder(t *testing.T) {
 func TestRunStatus_NoUnwiredLineWhenSyncedCountDoesNotRead(t *testing.T) {
 	unwiredFixture(t, "alpha", "beta")
 
+	// Sync first: the count reads only what the manifest says this pack
+	// wrote, so the unreadable directory has to hold recorded skills for
+	// the probe to reach it (aae-orc-zwx4b).
+	if err := runCommandsSync(); err != nil {
+		t.Fatalf("runCommandsSync: %v", err)
+	}
 	skills := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "skills")
 	if err := os.MkdirAll(skills, 0o755); err != nil {
 		t.Fatal(err)
