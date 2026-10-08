@@ -24,6 +24,10 @@ type Row struct {
 	EnabledAt     string   `yaml:"enabled_at"`
 	Artifacts     []string `yaml:"artifacts"`
 	Selection     string   `yaml:"selection"`
+	// SettingsRestoredSHA is the sha256 of the settings file as an
+	// incomplete disable pass left it. A later pass that finds it never
+	// runs the settings restore again (sideshow#171).
+	SettingsRestoredSHA string `yaml:"settings_restored_sha,omitempty"`
 }
 
 // Ledger is the whole repo-bindings file.
