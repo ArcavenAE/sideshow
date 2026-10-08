@@ -607,6 +607,14 @@ func runUse(args []string) error {
 	}
 	fmt.Printf("Activated %s %s\n", name, version)
 
+	// A plugin-class pack syncs no user-scope bindings, so the sync
+	// summary below reads as a no-op. What use did change is the version
+	// a later enable binds by default (aae-orc-y75sj). An unreadable
+	// pack.yaml says nothing here; the sync below reports it.
+	if act, actErr := pack.LoadActivation(filepath.Join(pack.PacksDir(), name, version)); actErr == nil && (act.PluginClass() || (act != nil && act.PerRepoRequired)) {
+		fmt.Printf("  No user-scope bindings are created for %s. 'sideshow enable %s' with no @version now binds %s; repos already enabled keep the version they were enabled with.\n", name, name, version)
+	}
+
 	return bindings.Sync()
 }
 
