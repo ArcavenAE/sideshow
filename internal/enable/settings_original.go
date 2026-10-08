@@ -135,6 +135,11 @@ func restoreOriginalSettings(ledgerPath, settings, ref, beforeSHA string, create
 	if createdByEnable {
 		return
 	}
+	if beforeSHA == "" {
+		// The settings file is gone (the repo was deleted or reset
+		// after enable): nothing to restore and nothing was rewritten.
+		return
+	}
 	canonical := func(why string) {
 		fmt.Printf("note: %s %s; disable removed exactly what enable added and rewrote the file in canonical form\n", settings, why)
 	}

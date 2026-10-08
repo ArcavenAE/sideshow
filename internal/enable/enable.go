@@ -133,6 +133,16 @@ func Enable(opts Options) error {
 			}
 		}
 		if len(lines) > 0 {
+			// An earlier enable of this pack in this repo leaves a ledger
+			// row; when the repo was deleted or reset without disable, the
+			// checks below describe that row, not this repo (aae-orc-v0i1i).
+			if led, ledErr := ledger.Load(opts.LedgerPath); ledErr == nil {
+				if row := led.RepoRow(opts.RepoDir, opts.Pack); row != nil {
+					lines = append([]string{fmt.Sprintf(
+						"the ledger row from an earlier enable of %s %s here (%s) is still present, so the checks below describe that enable, not this repo; run 'sideshow disable %s' in this repo to clear the row, then enable again",
+						opts.Pack, row.Version, row.EnabledAt, opts.Pack)}, lines...)
+				}
+			}
 			return fmt.Errorf("enable refused by coexist-check:\n%s", strings.Join(lines, "\n"))
 		}
 	}

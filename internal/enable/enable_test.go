@@ -250,6 +250,9 @@ func TestEnable_RefusesForeignDualEnable(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "coexist-check") {
 		t.Fatalf("Enable = %v, want coexist-check refusal", err)
 	}
+	if strings.Contains(err.Error(), "ledger row") {
+		t.Errorf("refusal with no ledger row mentions one:\n%v", err)
+	}
 	after := snapshot(t, repo)
 	if len(before) != len(after) {
 		t.Error("refused enable still wrote into the repo")
