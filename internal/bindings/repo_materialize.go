@@ -328,37 +328,9 @@ func verifyRepoExec(storeRoot string, t RepoTarget, units []unit) error {
 // pruned only when empty so user content that arrived after enable
 // survives. Returns the number of paths removed.
 func RemoveRepoArtifacts(t RepoTarget, artifacts []RepoArtifact) (int, error) {
-	repoDir, err := filepath.Abs(t.RepoDir)
+	abs, err := planRepoRemoval(t, artifacts)
 	if err != nil {
-		return 0, fmt.Errorf("resolve repo dir: %w", err)
-	}
-	t.RepoDir = repoDir
-	root := t.harnessRoot()
-
-	// Containment preflight over the whole set before touching anything.
-	// Two allowed roots: the harness dir (the binding root itself is a
-	// legal artifact only as a parent-dir, where Remove-if-empty is
-	// safe) and the compat-symlink shapes under plugins/ (D2). Anything
-	// else fails closed.
-	abs := make([]string, len(artifacts))
-	for i, a := range artifacts {
-		p := filepath.Join(repoDir, filepath.FromSlash(a.Path))
-		rel, relErr := filepath.Rel(root, p)
-		rootAsParentDir := rel == "." && a.Kind == ArtifactParentDir
-		underHarness := relErr == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(a.Path) &&
-			(rel != "." || rootAsParentDir)
-		if !underHarness && !compatRemovalAllowed(a) {
-			return 0, fmt.Errorf("refusing removal: artifact %q (kind %s) resolves outside the allowed binding roots of %s", a.Path, a.Kind, repoDir)
-		}
-		// The compiled preserve floor, checked independently of the
-		// containment predicate above (aae-orc-d3nq.42). Containment
-		// answers "is this inside the area I manage"; the floor answers
-		// "is this something nobody may delete". Both must pass, so a
-		// bug in the first is survivable while the second holds.
-		if err := preserve.Check(p); err != nil {
-			return 0, err
-		}
-		abs[i] = p
+		return 0, err
 	}
 
 	removed := 0
@@ -400,4 +372,51 @@ func RemoveRepoArtifacts(t RepoTarget, artifacts []RepoArtifact) (int, error) {
 		removed++
 	}
 	return removed, nil
+}
+
+// PreflightRepoArtifacts runs RemoveRepoArtifacts' containment and
+// preserve-floor checks over the whole set without touching anything, so
+// a caller can refuse a bad record before it makes any other change
+// (sideshow#160).
+func PreflightRepoArtifacts(t RepoTarget, artifacts []RepoArtifact) error {
+	_, err := planRepoRemoval(t, artifacts)
+	return err
+}
+
+// planRepoRemoval validates every artifact and returns the absolute path
+// of each, in order. Nothing is touched.
+func planRepoRemoval(t RepoTarget, artifacts []RepoArtifact) ([]string, error) {
+	repoDir, err := filepath.Abs(t.RepoDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve repo dir: %w", err)
+	}
+	t.RepoDir = repoDir
+	root := t.harnessRoot()
+
+	// Containment preflight over the whole set before touching anything.
+	// Two allowed roots: the harness dir (the binding root itself is a
+	// legal artifact only as a parent-dir, where Remove-if-empty is
+	// safe) and the compat-symlink shapes under plugins/ (D2). Anything
+	// else fails closed.
+	abs := make([]string, len(artifacts))
+	for i, a := range artifacts {
+		p := filepath.Join(repoDir, filepath.FromSlash(a.Path))
+		rel, relErr := filepath.Rel(root, p)
+		rootAsParentDir := rel == "." && a.Kind == ArtifactParentDir
+		underHarness := relErr == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(a.Path) &&
+			(rel != "." || rootAsParentDir)
+		if !underHarness && !compatRemovalAllowed(a) {
+			return nil, fmt.Errorf("refusing removal: artifact %q (kind %s) resolves outside the allowed binding roots of %s", a.Path, a.Kind, repoDir)
+		}
+		// The compiled preserve floor, checked independently of the
+		// containment predicate above (aae-orc-d3nq.42). Containment
+		// answers "is this inside the area I manage"; the floor answers
+		// "is this something nobody may delete". Both must pass, so a
+		// bug in the first is survivable while the second holds.
+		if err := preserve.Check(p); err != nil {
+			return nil, err
+		}
+		abs[i] = p
+	}
+	return abs, nil
 }

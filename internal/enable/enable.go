@@ -296,6 +296,15 @@ func Disable(opts Options) error {
 		return fmt.Errorf("disable refused (pass --override-stale-lock to proceed past these):\n%s", guard.Refusal())
 	}
 
+	// Validate every recorded artifact before any write: a row disable
+	// would refuse must leave the settings file, the artifacts, the
+	// sidecar and the row as they were (sideshow#160).
+	arts, removeSettingsFile := parseArtifactStrings(row.Artifacts)
+	target := bindings.RepoTarget{RepoDir: opts.RepoDir, Scope: bindings.RepoScope(row.SettingsScope)}
+	if err := bindings.PreflightRepoArtifacts(target, arts); err != nil {
+		return err
+	}
+
 	settings := settingsFile(opts.RepoDir, bindings.RepoScope(row.SettingsScope))
 	// The file as disable found it, hashed before any removal rewrites
 	// it, to compare with the sha enable recorded (aae-orc-gf80m).
@@ -310,8 +319,6 @@ func Disable(opts Options) error {
 		return err
 	}
 
-	arts, removeSettingsFile := parseArtifactStrings(row.Artifacts)
-	target := bindings.RepoTarget{RepoDir: opts.RepoDir, Scope: bindings.RepoScope(row.SettingsScope)}
 	removed, err := bindings.RemoveRepoArtifacts(target, arts)
 	if err != nil {
 		return err
