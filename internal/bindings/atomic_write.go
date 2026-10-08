@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // writeFileAtomic replaces path with data by writing a temp file in the
@@ -65,12 +67,32 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
-// followLinks resolves a chain of symlinks at path by hand, so a link whose
-// final target does not exist yet (a dangling link) still resolves to the
-// path where the target will be created, as an in-place write through the
-// link would. A missing directory surfaces when the temp file is created.
+// followLinks returns the path a write to path lands on. EvalSymlinks
+// answers when the target exists. When it does not (a dangling link, or a
+// new file), the chain is walked by hand, and each hop resolves its own
+// directory with EvalSymlinks before the link's target is applied, never
+// lexically: a `..` in a relative target climbs the physical directory, as
+// the kernel does, even when the link's directory is itself a symlink. A
+// missing directory is an error, as for an in-place write.
 func followLinks(path string) (string, error) {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("resolve %s: %w", path, err)
+	}
 	for range 40 {
+		dir, base := ".", path
+		if i := strings.LastIndexByte(path, os.PathSeparator); i >= 0 {
+			dir, base = path[:i], path[i+1:]
+			if dir == "" {
+				dir = string(os.PathSeparator)
+			}
+		}
+		physDir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			return "", fmt.Errorf("resolve directory of %s: %w", path, err)
+		}
+		path = filepath.Join(physDir, base)
 		info, err := os.Lstat(path)
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {
 			return path, nil
@@ -79,10 +101,11 @@ func followLinks(path string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("read symlink %s: %w", path, err)
 		}
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(path), target)
+		if filepath.IsAbs(target) {
+			path = target
+		} else {
+			path = physDir + string(os.PathSeparator) + target
 		}
-		path = target
 	}
 	return "", fmt.Errorf("too many levels of symbolic links at %s", path)
 }
