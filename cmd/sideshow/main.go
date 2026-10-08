@@ -88,6 +88,51 @@ Examples:
 `)
 }
 
+// verbHelp is the usage line and flags of the verbs that have help of
+// their own; any other verb falls back to the full usage (sideshow#100).
+var verbHelp = map[string]string{
+	"enable": `Usage: sideshow enable <pack>[@<version>] [--repo <path>] [--scope local|project] [--override-stale-lock]
+
+Activate a pack in one repo (repo-bindings).
+
+Flags:
+  --repo <path>          Repo to enable in (default: current directory)
+  --scope local|project  local (default) keeps registration in settings.local.json;
+                         project copies the pack in and commits registration to settings.json
+  --override-stale-lock  Proceed past a stale running-factory lock
+`,
+	"disable": `Usage: sideshow disable <pack> [--repo <path>] [--override-stale-lock]
+
+Reverse an enable exactly (ledger replay).
+
+Flags:
+  --repo <path>          Repo to disable in (default: current directory)
+  --override-stale-lock  Proceed past a stale running-factory lock
+`,
+}
+
+// helpFor returns the per-verb help that args (os.Args[1:]) ask for, or
+// false when the request is for the full usage or is not a help request.
+func helpFor(args []string) (string, bool) {
+	if len(args) == 0 {
+		return "", false
+	}
+	verb := ""
+	switch {
+	case args[0] == "help" && len(args) > 1:
+		verb = args[1]
+	case args[0] != "help":
+		for _, a := range args[1:] {
+			if a == "-h" || a == "--help" {
+				verb = args[0]
+				break
+			}
+		}
+	}
+	text, ok := verbHelp[verb]
+	return text, ok
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -97,6 +142,10 @@ func main() {
 	// Help anywhere on the command line prints usage and performs no
 	// action. This runs before dispatch so no subcommand can execute
 	// as a side effect of asking for help (sideshow#57).
+	if text, ok := helpFor(os.Args[1:]); ok {
+		fmt.Fprint(os.Stderr, text)
+		return
+	}
 	for _, a := range os.Args[1:] {
 		if a == "-h" || a == "--help" {
 			usage()
@@ -159,7 +208,7 @@ func main() {
 		err = runAdopt(os.Args[2:])
 	case "coexist":
 		err = runCoexist(os.Args[2:])
-	case "version", "--version", "-V":
+	case "version", "--version", "-V", "-v":
 		fmt.Printf("sideshow %s\n", version)
 	case "help", "--help", "-h":
 		usage()
