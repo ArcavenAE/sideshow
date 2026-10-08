@@ -306,6 +306,11 @@ func Disable(opts Options) error {
 	}
 
 	settings := settingsFile(opts.RepoDir, bindings.RepoScope(row.SettingsScope))
+	// The hook chain is removed before the env shim, so a settings file
+	// the shim removal would refuse must be refused before either runs.
+	if err := bindings.PreflightSettingsShape(settings); err != nil {
+		return err
+	}
 	// The file as disable found it, hashed before any removal rewrites
 	// it, to compare with the sha enable recorded (aae-orc-gf80m).
 	beforeSHA := ""
