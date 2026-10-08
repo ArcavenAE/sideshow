@@ -245,3 +245,129 @@ func TestSnapshotAndDiffFootprints(t *testing.T) {
 		t.Errorf("diff = %v, want the changed registry", diff)
 	}
 }
+
+// suppressedForeign stands up a foreign install of the pack, enabled at
+// project scope by the repo's committed settings and suppressed here by a
+// local override, the state adopt leaves behind. Each test writes the repo
+// settings so it can also carry the agent key.
+func suppressedForeign(t *testing.T, opts Options) {
+	t.Helper()
+	write(t, opts.ConfigDir, "plugins/installed_plugins.json", `{"version": 2, "plugins": {"vsdd-factory@claude-mp": [
+	  {"scope": "project", "installPath": "/nonexistent", "version": "1.0.0-rc.23", "gitCommitSha": "abc123"}
+	]}}`)
+}
+
+const enableProject = `"enabledPlugins": {"vsdd-factory@claude-mp": true}`
+
+const suppressLocal = `"enabledPlugins": {"vsdd-factory@claude-mp": false}`
+
+// danglingAgentWarns returns the agent-key-audit WARNs that name a
+// default agent (sideshow#95 item 2).
+func danglingAgentWarns(rep *Report) []Result {
+	var out []Result
+	for _, r := range rep.Results {
+		if r.Check == 5 && r.Severity == foreign.Warn && strings.Contains(r.Detail, "default agent") {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// A foreign-form default agent in the committed settings, with that
+// identity suppressed here, resolves to nothing; the WARN names the agent
+// and both remedies.
+func TestRun_ForeignDefaultAgentBesideSuppressedIdentityWarns(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	suppressedForeign(t, opts)
+	write(t, opts.RepoDir, ".claude/settings.json", `{`+enableProject+`, "agent": "vsdd-factory:orchestrator"}`)
+	write(t, opts.RepoDir, ".claude/settings.local.json", `{`+suppressLocal+`}`)
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got := danglingAgentWarns(rep)
+	if len(got) != 1 {
+		t.Fatalf("want one default-agent WARN, got %d: %+v", len(got), rep.Results)
+	}
+	for _, want := range []string{"vsdd-factory:orchestrator", "vsdd-factory@claude-mp", "adopt vsdd-factory --rewrite-agent", "sideshow activate vsdd-factory"} {
+		if !strings.Contains(got[0].Detail, want) {
+			t.Errorf("WARN lacks %q: %s", want, got[0].Detail)
+		}
+	}
+	if rep.Refuse() {
+		t.Errorf("the finding is advisory, but the run refused: %+v", rep.Results)
+	}
+}
+
+// The local file wins, so a foreign agent there fires even when the
+// committed file is clean.
+func TestRun_ForeignDefaultAgentInLocalSettingsWarns(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	suppressedForeign(t, opts)
+	write(t, opts.RepoDir, ".claude/settings.json", `{`+enableProject+`, "agent": "vsdd-orchestrator"}`)
+	write(t, opts.RepoDir, ".claude/settings.local.json", `{`+suppressLocal+`, "agent": "vsdd-factory:orchestrator"}`)
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(danglingAgentWarns(rep)) != 1 {
+		t.Errorf("want one default-agent WARN from the local file: %+v", rep.Results)
+	}
+}
+
+// A clean local agent overrides a foreign committed one, so the session
+// sees the bound agent and nothing dangles.
+func TestRun_CleanLocalAgentOverForeignCommittedDoesNotWarn(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	suppressedForeign(t, opts)
+	write(t, opts.RepoDir, ".claude/settings.json", `{`+enableProject+`, "agent": "vsdd-factory:orchestrator"}`)
+	write(t, opts.RepoDir, ".claude/settings.local.json", `{`+suppressLocal+`, "agent": "vsdd-orchestrator"}`)
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := danglingAgentWarns(rep); len(got) != 0 {
+		t.Errorf("a clean local agent still warned: %+v", got)
+	}
+}
+
+// Control: the foreign identity is enabled here, so its agent resolves
+// and there is no finding.
+func TestRun_ForeignDefaultAgentBesideEnabledIdentityDoesNotWarn(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	suppressedForeign(t, opts)
+	write(t, opts.RepoDir, ".claude/settings.json", `{`+enableProject+`, "agent": "vsdd-factory:orchestrator"}`)
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := danglingAgentWarns(rep); len(got) != 0 {
+		t.Errorf("an enabled identity's agent was reported as dangling: %+v", got)
+	}
+}
+
+// Control: a prefixed agent of the pack that is not the foreign form
+// never fires, whatever the suppression state.
+func TestRun_BoundAgentBesideSuppressedIdentityDoesNotWarn(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	suppressedForeign(t, opts)
+	write(t, opts.RepoDir, ".claude/settings.json", `{`+enableProject+`, "agent": "vsdd-orchestrator"}`)
+	write(t, opts.RepoDir, ".claude/settings.local.json", `{`+suppressLocal+`}`)
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := danglingAgentWarns(rep); len(got) != 0 {
+		t.Errorf("the bound agent was reported as dangling: %+v", got)
+	}
+}
