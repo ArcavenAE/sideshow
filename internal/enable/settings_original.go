@@ -108,6 +108,12 @@ func readSidecar(ledgerPath, name string) (enabledSHA string, original []byte, e
 	return sha, orig, nil
 }
 
+// sidecarExists reports whether the original-bytes record is present.
+func sidecarExists(ledgerPath, name string) bool {
+	_, err := os.Stat(filepath.Join(sidecarDir(ledgerPath), name))
+	return err == nil
+}
+
 func removeSidecar(ledgerPath, name string) {
 	if name == "" {
 		return
@@ -152,12 +158,16 @@ func restoreOriginalSettings(ledgerPath, settings, ref, beforeSHA string, create
 		canonical(fmt.Sprintf("has an unreadable record of its original bytes (%v)", err))
 		return
 	}
-	if beforeSHA != enabledSHA {
-		canonical("changed since enable")
-		return
-	}
 	now, err := os.ReadFile(settings)
-	if err != nil || !sameJSON(now, original) {
+	if beforeSHA != enabledSHA {
+		// A pass killed after the settings rewrite leaves the file
+		// different from the enabled bytes, yet removal brings it back to
+		// the original content: restore its bytes from the record.
+		if err != nil || !sameJSON(now, original) {
+			canonical("changed since enable")
+			return
+		}
+	} else if err != nil || !sameJSON(now, original) {
 		canonical("did not match its original content after removal")
 		return
 	}

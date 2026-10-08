@@ -360,20 +360,42 @@ func Disable(opts Options) error {
 		}
 	}
 
-	if len(unknown) > 0 && len(unknown) == len(arts) && hooksRemoved == 0 && !shimRemoved {
-		// A rerun over a row the first pass already took apart: the
-		// settings file was not rewritten, so there is nothing to restore.
-		removeSidecar(opts.LedgerPath, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope))
+	sidecar := sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope)
+	if len(unknown) > 0 && hooksRemoved == 0 && !shimRemoved && !sidecarExists(opts.LedgerPath, sidecar) {
+		// A rerun over a row an earlier pass already took apart: nothing
+		// of ours was in the settings file, and its record was consumed,
+		// so there is nothing to restore and nothing false to say.
 	} else {
-		restoreOriginalSettings(opts.LedgerPath, settings, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope), beforeSHA, removeSettingsFile)
+		restoreOriginalSettings(opts.LedgerPath, settings, sidecar, beforeSHA, removeSettingsFile)
 	}
 
 	if len(unknown) > 0 {
+		// Keep every unknown row, and every known row whose path is still
+		// on disk (a parent dir the unknown path sits in), in ledger order,
+		// so a later disable removes them.
 		kept := *row
-		kept.Artifacts = make([]string, 0, len(unknown))
+		kept.Artifacts = nil
+		for _, s := range row.Artifacts {
+			kind, path, ok := strings.Cut(s, ":")
+			if !ok {
+				continue
+			}
+			if kind == "settings-file-created" {
+				if _, statErr := os.Lstat(settings); statErr == nil {
+					kept.Artifacts = append(kept.Artifacts, s)
+				}
+				continue
+			}
+			if !bindings.KnownArtifactKind(kind) {
+				kept.Artifacts = append(kept.Artifacts, s)
+				continue
+			}
+			if _, statErr := os.Lstat(filepath.Join(opts.RepoDir, filepath.FromSlash(path))); statErr == nil {
+				kept.Artifacts = append(kept.Artifacts, s)
+			}
+		}
 		desc := make([]string, 0, len(unknown))
 		for _, a := range unknown {
-			kept.Artifacts = append(kept.Artifacts, a.Kind+":"+a.Path)
 			desc = append(desc, a.Kind+" "+a.Path)
 		}
 		if err := led.SetRow(opts.RepoDir, opts.Pack, kept); err != nil {

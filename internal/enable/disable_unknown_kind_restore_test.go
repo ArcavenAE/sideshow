@@ -74,8 +74,9 @@ func TestDisable_UnknownKindRerunAfterKillRestoresFromSidecar(t *testing.T) {
 	if _, err := bindings.RemoveHookChain(settings, opts.Pack); err != nil {
 		t.Fatal(err)
 	}
-	led := opts.LedgerPath
-	_ = led
+	if _, err := bindings.RemoveEnvShim(settings, "CLAUDE_PLUGIN_ROOT", opts.StoreRoot); err != nil {
+		t.Fatal(err)
+	}
 	if len(sidecarFiles(t, opts)) != 1 {
 		t.Fatal("the scene has no sidecar to survive the kill")
 	}
