@@ -20,12 +20,9 @@ import (
 // and a symlink at path is followed, so the link stays and its target is
 // replaced.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		resolved, rerr := filepath.EvalSymlinks(path)
-		if rerr != nil {
-			return fmt.Errorf("resolve symlink %s: %w", path, rerr)
-		}
-		path = resolved
+	path, err := followLinks(path)
+	if err != nil {
+		return err
 	}
 	mode := perm
 	existing := false
@@ -66,6 +63,28 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("replace %s: %w", filepath.Base(path), err)
 	}
 	return nil
+}
+
+// followLinks resolves a chain of symlinks at path by hand, so a link whose
+// final target does not exist yet (a dangling link) still resolves to the
+// path where the target will be created, as an in-place write through the
+// link would. A missing directory surfaces when the temp file is created.
+func followLinks(path string) (string, error) {
+	for range 40 {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return path, nil
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "", fmt.Errorf("read symlink %s: %w", path, err)
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		path = target
+	}
+	return "", fmt.Errorf("too many levels of symbolic links at %s", path)
 }
 
 // createTempBeside creates a new file next to path with the given mode
