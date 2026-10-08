@@ -201,3 +201,98 @@ func TestSync_PartialSkillDirIsReportedAndRecorded(t *testing.T) {
 		assertPaths(t, written, nil)
 	})
 }
+
+func readOnlyDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+}
+
+// A destination that cannot be written is never reported as written:
+// each write path lists a path only after its write succeeded
+// (sideshow#161, review of #170).
+func TestSync_WriteFailureIsNeverReportedAsWritten(t *testing.T) {
+	t.Run("markdown-command first pass", func(t *testing.T) {
+		home := collisionEnv(t)
+		readOnlyDir(t, filepath.Join(home, ".claude", "commands"))
+		p := cmdPack(t, map[string]string{"a.md": "a"})
+		_, written, err := NewMarkdownCommandBinding("p", "1", p).Sync()
+		if err == nil {
+			t.Fatal("no error")
+		}
+		assertPaths(t, written, nil)
+	})
+	t.Run("markdown-command second pass", func(t *testing.T) {
+		home := collisionEnv(t)
+		readOnlyDir(t, filepath.Join(home, ".claude", "commands"))
+		p := t.TempDir()
+		writeFile(t, filepath.Join(p, "bmad-help.md"), "x")
+		_, written, err := NewMarkdownCommandBinding("p", "1", p).Sync()
+		if err == nil {
+			t.Fatal("no error")
+		}
+		assertPaths(t, written, nil)
+	})
+	t.Run("skill-dir", func(t *testing.T) {
+		home := collisionEnv(t)
+		readOnlyDir(t, filepath.Join(home, ".claude", "skills", "s1"))
+		p := skillPack(t, "s1", "x")
+		_, written, err := NewSkillDirBinding("p", "1", p).Sync()
+		if err == nil {
+			t.Fatal("no error")
+		}
+		assertPaths(t, written, nil)
+	})
+	t.Run("custom-skill-dir", func(t *testing.T) {
+		home := collisionEnv(t)
+		readOnlyDir(t, filepath.Join(home, ".claude", "skills", "s1"))
+		project := t.TempDir()
+		writeFile(t, filepath.Join(project, "_p-custom", "skills", "s1", "SKILL.md"), "x")
+		_, written, err := NewCustomSkillDirBinding("p", project, []string{"s1"}).Sync()
+		if err == nil {
+			t.Fatal("no error")
+		}
+		assertPaths(t, written, nil)
+	})
+}
+
+// A skill directory with no files is still a synced skill: it is listed
+// and recorded, as before this change (sideshow#161, review of #170).
+func TestSync_EmptySkillDirIsStillRecorded(t *testing.T) {
+	t.Run("skill-dir", func(t *testing.T) {
+		home := collisionEnv(t)
+		p := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(p, ".claude", "skills", "empty"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		n, written, err := NewSkillDirBinding("p", "1", p).Sync()
+		if err != nil || n != 1 {
+			t.Fatalf("Sync = %d, %v", n, err)
+		}
+		assertPaths(t, written, []string{filepath.Join(home, ".claude", "skills", "empty")})
+
+		if _, _, err := runSync([]Binding{NewSkillDirBinding("p", "1", p)}); err != nil {
+			t.Fatal(err)
+		}
+		if got := recordedPacks(t)["empty"]; len(got) != 1 || got[0] != "p" {
+			t.Errorf("empty skill recorded for %v, want p", got)
+		}
+	})
+	t.Run("custom-skill-dir", func(t *testing.T) {
+		home := collisionEnv(t)
+		project := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(project, "_p-custom", "skills", "empty"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		n, written, err := NewCustomSkillDirBinding("p", project, []string{"empty"}).Sync()
+		if err != nil || n != 1 {
+			t.Fatalf("Sync = %d, %v", n, err)
+		}
+		assertPaths(t, written, []string{filepath.Join(home, ".claude", "skills", "empty")})
+	})
+}
