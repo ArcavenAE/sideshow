@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/bindings"
 	"github.com/ArcavenAE/sideshow/internal/coexistcheck"
 	"github.com/ArcavenAE/sideshow/internal/enable"
@@ -652,7 +653,7 @@ func writeAgentKey(repoDir, agent string) error {
 	if err != nil {
 		return fmt.Errorf("marshal settings: %w", err)
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write settings %s: %w", path, err)
 	}
 	return nil

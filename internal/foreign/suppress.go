@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 )
 
 // SuppressInRepo and UnsuppressInRepo set (or remove) a repo-side
@@ -98,7 +100,7 @@ func writeSettingsObject(path string, settings map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("marshal settings: %w", err)
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write settings %s: %w", path, err)
 	}
 	return nil

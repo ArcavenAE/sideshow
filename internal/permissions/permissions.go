@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/foreign"
 )
 
@@ -67,7 +68,7 @@ func (s *ClaudeSettings) Save(path string) error {
 		return fmt.Errorf("marshal settings: %w", err)
 	}
 
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return atomicfile.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 // GetAllowList returns the current permissions.allow list.

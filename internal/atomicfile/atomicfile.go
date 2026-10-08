@@ -22,6 +22,11 @@ import (
 // (the temp file is created with perm, so the kernel applies the umask),
 // and a symlink at path is followed, so the link stays and its target is
 // replaced.
+//
+// Two differences from an in-place write remain: a read-only file in a
+// writable directory is replaced (keeping its read-only mode) where an
+// in-place write was refused, and a file with other hard links is split,
+// the path getting the new bytes while the other names keep the old.
 func WriteFile(path string, data []byte, perm os.FileMode) error {
 	path, err := followLinks(path)
 	if err != nil {
