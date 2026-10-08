@@ -208,6 +208,21 @@ Full walkthrough with signed-release verification and a roster test:
 [`examples/bmad/`](examples/bmad/README.md). How pack content finds its
 paths (rewriting vs shim vs fallback): [`docs/path-resolution.md`](docs/path-resolution.md).
 
+### Isolating a store for a test run
+
+Two variables isolate a scratch run, and each moves a different thing:
+
+- `SIDESHOW_HOME` moves sideshow's own data: the pack store, the
+  repo-bindings ledger and the sync manifest.
+- `CLAUDE_CONFIG_DIR` moves where Claude Code's files are written:
+  synced skills and commands, and the user-scope permission rule when
+  you pass `--scope user` explicitly.
+
+Set both for a run that must not touch your real setup. With
+`SIDESHOW_HOME` alone, `sync` and `use` still write skills and commands
+under `$HOME/.claude`. `install` skips Claude Code permission
+configuration whenever `SIDESHOW_HOME` is set, unless you pass `--scope`.
+
 ## Plugin-shaped packs (repo bindings)
 
 Packs that upstream ships as a claude plugin (vsdd-factory) install
