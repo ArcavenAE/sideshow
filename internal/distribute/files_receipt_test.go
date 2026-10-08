@@ -187,3 +187,64 @@ func TestFiles_TheKeptReceiptIsWhatSideshowWroteNotTheCurrentPack(t *testing.T) 
 		t.Errorf("the update did not reach the restored file:\n%s", g.read("conf/a.cfg"))
 	}
 }
+
+func (g *filesRig) receipt(target string) string {
+	return PriorChecksums(g.reg, "p", "/root", "repos.yaml", g.repo.Name, "testpack")[target]
+}
+
+// The receipt holds the old version's sha and the disk holds the new
+// version's exact bytes: a run wrote them and died before the registry
+// saved, or the user applied the update by hand. That is not an edit. The
+// file reads as already current, the receipt moves to the new sha, and an
+// edit after it is preserved (sideshow#190, the order #189 fixed for rules).
+func TestFiles_ALaggingReceiptWithCurrentBytesIsMovedNotReadAsAnEdit(t *testing.T) {
+	t.Parallel()
+	g := newFilesRig(t)
+	g.run(false)
+	old := g.receipt("conf/a.cfg")
+	g.source["conf/a.cfg"] = "a from pack v2\n"
+	if err := os.WriteFile(g.path("conf/a.cfg"), []byte("a from pack v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dry := g.run(true)["conf/a.cfg"]
+	wantAction(t, dry, "skipped", "already current")
+	if dry.RecordReceipt {
+		t.Errorf("a dry run asks to record a receipt")
+	}
+	if g.receipt("conf/a.cfg") != old {
+		t.Fatalf("a dry run moved the receipt")
+	}
+
+	wantAction(t, g.run(false)["conf/a.cfg"], "skipped", "already current")
+	if got, want := g.receipt("conf/a.cfg"), sum([]byte("a from pack v2\n")); got != want {
+		t.Fatalf("receipt = %q, want the new sha %q", got, want)
+	}
+	if err := os.WriteFile(g.path("conf/a.cfg"), []byte("a from pack v2\nmy edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantAction(t, g.run(false)["conf/a.cfg"], "skipped", "modified since sideshow wrote it")
+}
+
+// Without a marker, equal bytes prove only equality: a file with no receipt
+// stays user-authored even when it matches the pack, and nothing is recorded.
+func TestFiles_NoReceiptAndBytesEqualToThePackIsStillUserAuthored(t *testing.T) {
+	t.Parallel()
+	g := newFilesRig(t)
+	if err := os.MkdirAll(filepath.Dir(g.path("conf/a.cfg")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(g.path("conf/a.cfg"), []byte(g.source["conf/a.cfg"]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, dry := range []bool{true, false} {
+		a := g.run(dry)["conf/a.cfg"]
+		wantAction(t, a, "skipped", "no record of writing it")
+		if a.RecordReceipt {
+			t.Errorf("dry=%v: asks to record a receipt for a user's own copy", dry)
+		}
+		if g.receipt("conf/a.cfg") != "" {
+			t.Fatalf("dry=%v: recorded a receipt for a user's own copy", dry)
+		}
+	}
+}
