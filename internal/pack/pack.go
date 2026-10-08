@@ -212,7 +212,9 @@ func ValidateShape(sourcePath string) error {
 // authoritative: a mismatch is an error, never a rename, so the store
 // cannot hold one pack's content under another pack's name
 // (aae-orc-cv1b6). A pack.yaml that exists but will not parse is also
-// an error, since it cannot vouch for any name.
+// an error, since it cannot vouch for any name. When both locations
+// declare a name and the names differ, the source contradicts itself and
+// is refused under any caller name (sideshow#132).
 //
 // Sources that declare no name (installer output without pack.yaml, or
 // a pack.yaml with no name field) keep the caller-supplied name, so
@@ -225,6 +227,7 @@ func ValidateShape(sourcePath string) error {
 // the checked case.
 func ValidateName(name, sourcePath string) (undeclared string, err error) {
 	undeclared = "installer layout"
+	var declaredRel, declaredName string // the first declaration read
 	for _, rel := range []string{"pack.yaml", filepath.Join("_bmad", "pack.yaml")} {
 		data, readErr := os.ReadFile(filepath.Join(sourcePath, rel))
 		if readErr != nil {
@@ -240,16 +243,29 @@ func ValidateName(name, sourcePath string) (undeclared string, err error) {
 			undeclared = "pack.yaml has no name"
 			continue
 		}
-		if m.Name != name {
+		if declaredName == "" {
+			declaredRel, declaredName = rel, m.Name
+			continue
+		}
+		if m.Name != declaredName {
 			return "", fmt.Errorf(
-				"pack name mismatch: asked to install %q, but %s declares name %q; "+
-					"install it as %q (sideshow install %s --from %s)",
-				name, filepath.Join(sourcePath, rel), m.Name, m.Name, m.Name, sourcePath,
+				"pack name contradiction: %s declares name %q but %s declares name %q; "+
+					"a source must name itself one way",
+				filepath.Join(sourcePath, declaredRel), declaredName, filepath.Join(sourcePath, rel), m.Name,
 			)
 		}
-		return "", nil
 	}
-	return undeclared, nil
+	if declaredName == "" {
+		return undeclared, nil
+	}
+	if declaredName != name {
+		return "", fmt.Errorf(
+			"pack name mismatch: asked to install %q, but %s declares name %q; "+
+				"install it as %q (sideshow install %s --from %s)",
+			name, filepath.Join(sourcePath, declaredRel), declaredName, declaredName, declaredName, sourcePath,
+		)
+	}
+	return "", nil
 }
 
 // printUndeclaredNameNote says that the installed name was taken as
