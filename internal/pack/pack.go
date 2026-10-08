@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -158,7 +159,7 @@ func (r *Registry) Save() error {
 	if err != nil {
 		return fmt.Errorf("marshal registry: %w", err)
 	}
-	return os.WriteFile(RegistryPath(), data, 0o644)
+	return atomicfile.WriteFile(RegistryPath(), data, 0o644)
 }
 
 // ValidateShape returns nil if sourcePath looks like a recognized pack

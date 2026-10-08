@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"gopkg.in/yaml.v3"
 )
@@ -139,7 +140,7 @@ func (l *Ledger) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create sideshow data dir: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write repo-bindings ledger: %w", err)
 	}
 	return nil

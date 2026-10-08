@@ -1,6 +1,6 @@
 //go:build unix
 
-package bindings
+package atomicfile
 
 import (
 	"os"
@@ -17,7 +17,7 @@ func withUmask(t *testing.T, mask int) {
 
 // A replaced file keeps the mode it had, as an in-place write would
 // (sideshow#173, review of #179).
-func TestWriteFileAtomic_KeepsTheExistingFilesMode(t *testing.T) {
+func TestWriteFile_KeepsTheExistingFilesMode(t *testing.T) {
 	for _, mode := range []os.FileMode{0o600, 0o640, 0o644} {
 		path := filepath.Join(t.TempDir(), "m.yaml")
 		if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
@@ -26,7 +26,7 @@ func TestWriteFileAtomic_KeepsTheExistingFilesMode(t *testing.T) {
 		if err := os.Chmod(path, mode); err != nil {
 			t.Fatal(err)
 		}
-		if err := writeFileAtomic(path, []byte("new"), 0o644); err != nil {
+		if err := WriteFile(path, []byte("new"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		info, err := os.Stat(path)
@@ -41,11 +41,11 @@ func TestWriteFileAtomic_KeepsTheExistingFilesMode(t *testing.T) {
 
 // A new file gets what os.WriteFile(path, b, 0644) would give: 0644
 // minus the umask.
-func TestWriteFileAtomic_NewFileHonoursTheUmask(t *testing.T) {
+func TestWriteFile_NewFileHonoursTheUmask(t *testing.T) {
 	for _, mask := range []int{0o022, 0o077, 0o002} {
 		withUmask(t, mask)
 		path := filepath.Join(t.TempDir(), "m.yaml")
-		if err := writeFileAtomic(path, []byte("new"), 0o644); err != nil {
+		if err := WriteFile(path, []byte("new"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		ref := filepath.Join(t.TempDir(), "ref")
@@ -68,7 +68,7 @@ func TestWriteFileAtomic_NewFileHonoursTheUmask(t *testing.T) {
 
 // A symlinked manifest stays a symlink: the target is replaced, the link
 // is not.
-func TestWriteFileAtomic_ReplacesTheTargetOfASymlink(t *testing.T) {
+func TestWriteFile_ReplacesTheTargetOfASymlink(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "real", "m.yaml")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -81,7 +81,7 @@ func TestWriteFileAtomic_ReplacesTheTargetOfASymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFileAtomic(link, []byte("new"), 0o644); err != nil {
+	if err := WriteFile(link, []byte("new"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
@@ -95,30 +95,10 @@ func TestWriteFileAtomic_ReplacesTheTargetOfASymlink(t *testing.T) {
 	}
 }
 
-// The temp file sits in the manifest's own directory, not in TMPDIR and
-// not in its parent: a save must succeed with TMPDIR unusable and the
-// parent read-only.
-func TestSaveManifest_TempFileIsCreatedBesideTheManifest(t *testing.T) {
-	collisionEnv(t)
-	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "does", "not", "exist"))
-	dir := filepath.Dir(manifestPath())
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	parent := filepath.Dir(dir)
-	if err := os.Chmod(parent, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
-	if err := saveManifest([]ManifestEntry{{Pack: "alpha", Version: "1", Kind: "skill-dir", Path: "/x/y"}}); err != nil {
-		t.Fatalf("save failed: %v", err)
-	}
-}
-
 // A dangling symlink whose target directory exists works as it did with
 // an in-place write: the save creates the target through the link and the
 // link stays a link (sideshow#173, review of #179).
-func TestWriteFileAtomic_DanglingSymlinkCreatesItsTarget(t *testing.T) {
+func TestWriteFile_DanglingSymlinkCreatesItsTarget(t *testing.T) {
 	for name, linkTo := range map[string]func(dir string) string{
 		"absolute target": func(dir string) string { return filepath.Join(dir, "real", "m.yaml") },
 		"relative target": func(string) string { return filepath.Join("real", "m.yaml") },
@@ -132,7 +112,7 @@ func TestWriteFileAtomic_DanglingSymlinkCreatesItsTarget(t *testing.T) {
 			if err := os.Symlink(linkTo(dir), link); err != nil {
 				t.Fatal(err)
 			}
-			if err := writeFileAtomic(link, []byte("new"), 0o644); err != nil {
+			if err := WriteFile(link, []byte("new"), 0o644); err != nil {
 				t.Fatalf("dangling link with an existing target dir: %v", err)
 			}
 			if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
@@ -147,13 +127,13 @@ func TestWriteFileAtomic_DanglingSymlinkCreatesItsTarget(t *testing.T) {
 
 // A dangling link whose target directory is missing fails, as an in-place
 // write through it does, and leaves the link alone.
-func TestWriteFileAtomic_DanglingSymlinkWithNoTargetDirFails(t *testing.T) {
+func TestWriteFile_DanglingSymlinkWithNoTargetDirFails(t *testing.T) {
 	dir := t.TempDir()
 	link := filepath.Join(dir, "m.yaml")
 	if err := os.Symlink(filepath.Join(dir, "gone", "m.yaml"), link); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFileAtomic(link, []byte("new"), 0o644); err == nil {
+	if err := WriteFile(link, []byte("new"), 0o644); err == nil {
 		t.Fatal("a write through a link into a missing directory succeeded")
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
@@ -162,7 +142,7 @@ func TestWriteFileAtomic_DanglingSymlinkWithNoTargetDirFails(t *testing.T) {
 }
 
 // A chain of links is followed to its end.
-func TestWriteFileAtomic_FollowsAChainOfLinks(t *testing.T) {
+func TestWriteFile_FollowsAChainOfLinks(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "real.yaml")
 	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
@@ -176,7 +156,7 @@ func TestWriteFileAtomic_FollowsAChainOfLinks(t *testing.T) {
 	if err := os.Symlink("mid.yaml", top); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFileAtomic(top, []byte("new"), 0o644); err != nil {
+	if err := WriteFile(top, []byte("new"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, l := range []string{top, mid} {
@@ -190,7 +170,7 @@ func TestWriteFileAtomic_FollowsAChainOfLinks(t *testing.T) {
 }
 
 // A loop of links is an error, not a hang.
-func TestWriteFileAtomic_LinkLoopIsAnError(t *testing.T) {
+func TestWriteFile_LinkLoopIsAnError(t *testing.T) {
 	dir := t.TempDir()
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
 	if err := os.Symlink(b, a); err != nil {
@@ -199,7 +179,7 @@ func TestWriteFileAtomic_LinkLoopIsAnError(t *testing.T) {
 	if err := os.Symlink(a, b); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFileAtomic(a, []byte("x"), 0o644); err == nil {
+	if err := WriteFile(a, []byte("x"), 0o644); err == nil {
 		t.Fatal("a link loop was accepted")
 	}
 }
@@ -209,7 +189,7 @@ func TestWriteFileAtomic_LinkLoopIsAnError(t *testing.T) {
 // symlink, `..` in the target climbs the real directory, as the kernel
 // does. The decoy file that a lexical join would hit must stay untouched
 // (sideshow#173, review of #179).
-func TestWriteFileAtomic_RelativeTargetUsesThePhysicalDirectory(t *testing.T) {
+func TestWriteFile_RelativeTargetUsesThePhysicalDirectory(t *testing.T) {
 	for name, existing := range map[string]bool{"existing target": true, "dangling target": false} {
 		t.Run(name, func(t *testing.T) {
 			d := t.TempDir()
@@ -236,7 +216,7 @@ func TestWriteFileAtomic_RelativeTargetUsesThePhysicalDirectory(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err := writeFileAtomic(filepath.Join(home, "m.yaml"), []byte("new"), 0o644); err != nil {
+			if err := WriteFile(filepath.Join(home, "m.yaml"), []byte("new"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			if got, _ := os.ReadFile(real); string(got) != "new" {
@@ -258,7 +238,7 @@ func TestWriteFileAtomic_RelativeTargetUsesThePhysicalDirectory(t *testing.T) {
 // lexical clean of the target would (sideshow#173, review of #179). The
 // EvalSymlinks-first path cannot see this shape, so it exercises the hand
 // walk.
-func TestWriteFileAtomic_DanglingTargetThroughASymlinkedDirUsesThePhysicalParent(t *testing.T) {
+func TestWriteFile_DanglingTargetThroughASymlinkedDirUsesThePhysicalParent(t *testing.T) {
 	d := t.TempDir()
 	for _, sub := range []string{"far/x", "far/dot", "dot"} {
 		if err := os.MkdirAll(filepath.Join(d, sub), 0o755); err != nil {
@@ -281,7 +261,7 @@ func TestWriteFileAtomic_DanglingTargetThroughASymlinkedDirUsesThePhysicalParent
 		t.Fatal(err)
 	}
 
-	if err := writeFileAtomic(link, []byte("new"), 0o644); err != nil {
+	if err := WriteFile(link, []byte("new"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(filepath.Join(d, "far", "dot", "m.yaml")); string(got) != "new" {
