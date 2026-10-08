@@ -832,11 +832,17 @@ func runProjectInitForPack(args []string) error {
 
 	wrote := 0
 	skipped := 0
+	conflicts := 0
 	for _, a := range result.Actions {
 		switch a.Status {
 		case "wrote", "merged":
 			wrote++
 			fmt.Printf("  %s: %s %s\n", a.Type, a.Status, a.Path)
+		case "conflict":
+			// Existing content is never replaced; name what was left
+			// alone and why (aae-orc-ylmnc).
+			conflicts++
+			fmt.Printf("  %s: conflict %s: %s\n", a.Type, a.Path, a.Detail)
 		case "skipped":
 			skipped++
 		case "error":
@@ -844,7 +850,11 @@ func runProjectInitForPack(args []string) error {
 		}
 	}
 
-	fmt.Printf("Done: %d wrote, %d already present\n", wrote, skipped)
+	if conflicts > 0 {
+		fmt.Printf("Done: %d wrote, %d already present, %d conflicts (left untouched; the repo is partly linked into the store)\n", wrote, skipped, conflicts)
+	} else {
+		fmt.Printf("Done: %d wrote, %d already present\n", wrote, skipped)
+	}
 
 	// Weaving runs last, because it operates on the tree the steps above
 	// produce. See docs/pack-weaving-spec.md.
