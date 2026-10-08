@@ -948,8 +948,23 @@ func distributeFile(repoRoot string, file FileArtifact, opts Options) Action {
 		recorded, known := opts.PriorChecksums[file.Target]
 		switch {
 		case !known:
+			// Known limit, not fixed here: a first write whose registry save
+			// fails leaves no receipt, so that file reads as user-authored from
+			// then on. That is safe; deleting the file takes the pack's version.
 			action.Status = "skipped"
 			action.Detail = "exists and sideshow has no record of writing it (user-authored)"
+			return action
+		case onDisk == sourceSum:
+			// The bytes are what the pack ships and sideshow has a receipt, so
+			// whatever the receipt holds, this is not an edit: a receipt that
+			// lags (a run wrote the new version and was killed before the
+			// registry saved, or the user applied the update by hand) is moved
+			// to the pack's sha. Unlike a rule, a file has no marker, so this
+			// holds only for a known receipt: with none, equal bytes prove
+			// equality and nothing more, and the case above leaves it alone.
+			action.Status = "skipped"
+			action.Detail = "already current"
+			action.RecordReceipt = !opts.DryRun
 			return action
 		case strings.TrimPrefix(recorded, "sha256:") != onDisk:
 			action.Status = "skipped"
@@ -957,11 +972,6 @@ func distributeFile(repoRoot string, file FileArtifact, opts Options) Action {
 			// Keep the receipt of what sideshow wrote, not the pack's current
 			// bytes, so the edit is still read as an edit on the next run.
 			action.Artifact.Checksum = recorded
-			action.RecordReceipt = !opts.DryRun
-			return action
-		case onDisk == sourceSum:
-			action.Status = "skipped"
-			action.Detail = "already current"
 			action.RecordReceipt = !opts.DryRun
 			return action
 		}
