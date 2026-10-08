@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 )
 
 // CSVInjection appends rows to a pack-owned CSV the installer regenerates.
@@ -90,9 +92,5 @@ func applyCSVInjections(d *Declaration, repoRoot string, opts Options) []Action 
 // writeFilePreservingMode writes content, keeping the existing file mode when
 // there is one.
 func writeFilePreservingMode(path string, content []byte) error {
-	mode := os.FileMode(0o644)
-	if fi, err := os.Stat(path); err == nil {
-		mode = fi.Mode().Perm()
-	}
-	return os.WriteFile(path, content, mode)
+	return atomicfile.WriteFile(path, content, 0o644)
 }

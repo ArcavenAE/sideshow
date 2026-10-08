@@ -22,12 +22,6 @@ import (
 // call has been converted fails the stale check below, so the list can
 // only shrink.
 var inPlaceAllowlist = map[string]string{
-	"internal/distribute/distribute.go:distributeRule":         "pending: #185 tier 3 (user files)",
-	"internal/distribute/distribute.go:distributeClaudeMD":     "pending: #185 tier 3 (user files)",
-	"internal/distribute/distribute.go:distributeGitignore":    "pending: #185 tier 3 (user files)",
-	"internal/distribute/distribute.go:seedCustomTemplate":     "pending: #185 tier 3, to classify (seed)",
-	"internal/distribute/distribute.go:distributeFile":         "pending: #185 tier 3, to classify (pack file)",
-	"internal/weave/ops_csv.go:writeFilePreservingMode":        "pending: #185 tier 3 (user files)",
 	"internal/distribute/distribute.go:distributeCustomBridge": "out: an empty .gitkeep; nothing to lose (#185 ruling)",
 	"internal/bindings/bound_variant.go:RenderBoundVariant":    "out: rebuilt from the store on every run (#185 ruling)",
 	"internal/bindings/bound_variant.go:translateExecManifest": "out: rebuilt from the store on every run (#185 ruling)",

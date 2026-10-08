@@ -262,7 +262,7 @@ func distributeRule(repoRoot string, rule RuleArtifact, opts Options) Action {
 		return action
 	}
 
-	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
+	if err := atomicfile.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 		action.Status = "error"
 		action.Detail = fmt.Sprintf("write: %v", err)
 		return action
@@ -489,7 +489,7 @@ func distributeClaudeMD(repoRoot string, section ClaudeMDArtifact, opts Options)
 		}
 	}
 
-	if err := os.WriteFile(claudeMDPath, []byte(newContent), 0o644); err != nil {
+	if err := atomicfile.WriteFile(claudeMDPath, []byte(newContent), 0o644); err != nil {
 		action.Status = "error"
 		action.Detail = fmt.Sprintf("write CLAUDE.md: %v", err)
 		return action
@@ -770,7 +770,7 @@ func seedCustomTemplate(templateDir, destDir string) (int, error) {
 		if readErr != nil {
 			return readErr
 		}
-		if writeErr := os.WriteFile(target, data, 0o644); writeErr != nil {
+		if writeErr := atomicfile.WriteFile(target, data, 0o644); writeErr != nil {
 			return writeErr
 		}
 		count++
@@ -819,7 +819,7 @@ func distributeGitignore(repoRoot string, line string, opts Options) Action {
 	}
 	content += line + "\n"
 
-	if err := os.WriteFile(giPath, []byte(content), 0o644); err != nil {
+	if err := atomicfile.WriteFile(giPath, []byte(content), 0o644); err != nil {
 		action.Status = "error"
 		action.Detail = fmt.Sprintf("write .gitignore: %v", err)
 		return action
@@ -923,7 +923,7 @@ func distributeFile(repoRoot string, file FileArtifact, opts Options) Action {
 	}
 	// Verbatim. No marker, no trailing newline fixup: the pack ships the bytes
 	// the consumer needs to parse.
-	if err := os.WriteFile(targetPath, sourceData, 0o644); err != nil {
+	if err := atomicfile.WriteFile(targetPath, sourceData, 0o644); err != nil {
 		action.Status = "error"
 		action.Detail = fmt.Sprintf("write: %v", err)
 		return action
