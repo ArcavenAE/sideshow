@@ -248,3 +248,45 @@ func TestRules_DryRunMirrorsEachCase(t *testing.T) {
 		})
 	}
 }
+
+// RecordResults replaces a pack's artifact list with what one run records,
+// so the receipt of a skipped, edited rule must be carried in that list or
+// it is lost whenever any other rule is written in the same run.
+func TestRules_AnEditedRuleKeepsItsReceiptWhileAnotherRuleIsWritten(t *testing.T) {
+	t.Parallel()
+	repo := project.Subrepo{Name: "r", AbsPath: t.TempDir(), Present: true}
+	root := t.TempDir()
+	reg := &pack.Registry{}
+	srcB := "B v1\n"
+	run := func(version string) []Action {
+		for name, content := range map[string]string{"a.md": "A\n", "b.md": srcB} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		opts := Options{
+			PackName: "testpack", PackVersion: version, PackRoot: root,
+			PriorRuleChecksums: PriorRuleChecksums(reg, "p", "/root", "repos.yaml", "r", "testpack"),
+		}
+		m := &Manifest{Rules: []RuleArtifact{
+			{Source: "a.md", Target: ".claude/rules/a.md"},
+			{Source: "b.md", Target: ".claude/rules/b.md"},
+		}}
+		res := ToRepo(repo, m, opts)
+		RecordResults(reg, "p", "/root", "repos.yaml", []Result{res}, opts)
+		return res.Actions
+	}
+	run("1.0.0")
+	aPath := filepath.Join(repo.AbsPath, ".claude/rules/a.md")
+	edited := "edited A\n"
+	if err := os.WriteFile(aPath, []byte(fileMarker("testpack", "1.0.0")+"\n"+edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srcB = "B v2\n"
+	for i, version := range []string{"1.1.0", "1.1.0"} {
+		acts := run(version)
+		if acts[0].Status != "skipped" || !strings.Contains(acts[0].Detail, "modified since sideshow wrote it") {
+			t.Errorf("run %d: edited rule = %q %q", i+1, acts[0].Status, acts[0].Detail)
+		}
+	}
+}

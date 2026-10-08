@@ -184,7 +184,7 @@ func RecordResults(reg *pack.Registry, projectID, root, manifest string, results
 		// Collect artifacts that were actually written
 		var artifacts []pack.DistributedArtifact
 		for _, action := range res.Actions {
-			if action.Status == "wrote" || action.Status == "merged" {
+			if action.Status == "wrote" || action.Status == "merged" || action.RecordReceipt {
 				artifacts = append(artifacts, action.Artifact)
 			}
 		}
@@ -241,23 +241,65 @@ func distributeRule(repoRoot string, rule RuleArtifact, opts Options) Action {
 
 	// Check if target exists
 	existingData, err := os.ReadFile(targetPath)
+	wantSum := sha256hex([]byte(content))
 	if err == nil {
-		// File exists — check if sideshow owns it
+		// File exists. Without the marker it is the user's.
 		if !strings.HasPrefix(string(existingData), markerPrefix) {
 			action.Status = "skipped"
 			action.Detail = "exists without sideshow marker (user-authored)"
 			return action
 		}
-		// Sideshow owns it — overwrite
+		// The marker says sideshow created it, not that it is unedited.
+		// The receipt does: what sideshow last wrote, by checksum.
+		onDisk := sha256hex(existingData)
+		receipt := "sha256:" + wantSum
+		would := ""
+		if opts.DryRun {
+			would = "would "
+		}
+		skip := func(detail string) Action {
+			action.Status = "skipped"
+			action.Detail = detail
+			if opts.DryRun {
+				action.Detail = "would skip: " + detail
+			}
+			return action
+		}
+		recorded, known := opts.PriorRuleChecksums[rule.Target]
+		switch {
+		case known && strings.TrimPrefix(recorded, "sha256:") != onDisk:
+			// Edited since sideshow wrote it: keep the edit and the receipt.
+			action = skip("modified since sideshow wrote it (user edit preserved)")
+			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: recorded}
+			action.RecordReceipt = true
+			return action
+		case known && onDisk == wantSum:
+			action = skip("already current")
+			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: receipt}
+			action.RecordReceipt = true
+			return action
+		case !known && onDisk == wantSum:
+			// Sideshow's own bytes, no receipt yet: record one.
+			action.Status = "skipped"
+			action.Detail = would + "record receipt (unchanged)"
+			if !opts.DryRun {
+				action.Detail = "unchanged (receipt recorded)"
+			}
+			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: receipt}
+			action.RecordReceipt = !opts.DryRun
+			return action
+		case !known:
+			// A marker, no receipt, and bytes this run would not write: sideshow
+			// knows least here, so it leaves the file and records nothing.
+			return skip("has a sideshow marker but no receipt; left as is; delete it to take the pack's version")
+		}
+		// Known receipt and unedited, but the pack's bytes moved: update.
 	}
 
 	if opts.DryRun {
-		if err == nil && strings.HasPrefix(string(existingData), markerPrefix) {
+		if err == nil {
 			action.Status = "wrote"
 			action.Detail = "would update (sideshow-managed)"
-		} else if err == nil {
-			action.Status = "skipped"
-			action.Detail = "exists without sideshow marker (user-authored)"
 		} else {
 			action.Status = "wrote"
 			action.Detail = "would create"
@@ -952,6 +994,13 @@ func distributeFile(repoRoot string, file FileArtifact, opts Options) Action {
 // is the read side of what RecordResults writes. An absent record yields an
 // empty map, which distributeFile treats as "own nothing".
 func PriorChecksums(reg *pack.Registry, projectID, root, manifest, repoName, packName string) map[string]string {
+	return priorChecksumsOfType("files", reg, projectID, root, manifest, repoName, packName)
+}
+
+// priorChecksumsOfType reads the receipts of one artifact type. Each type
+// has its own map, so a rule and a file at the same path never read each
+// other's receipt.
+func priorChecksumsOfType(typ string, reg *pack.Registry, projectID, root, manifest, repoName, packName string) map[string]string {
 	out := map[string]string{}
 	if reg == nil {
 		return out
@@ -973,7 +1022,7 @@ func PriorChecksums(reg *pack.Registry, projectID, root, manifest, repoName, pac
 					continue
 				}
 				for _, a := range pd.Artifacts {
-					if a.Type == "files" && a.Path != "" && a.Checksum != "" {
+					if a.Type == typ && a.Path != "" && a.Checksum != "" {
 						out[a.Path] = a.Checksum
 					}
 				}
@@ -992,5 +1041,5 @@ func sha256hex(data []byte) string {
 // last time sideshow wrote them, keyed by repo-relative path. It is the
 // rules counterpart of PriorChecksums and reads only rules entries.
 func PriorRuleChecksums(reg *pack.Registry, projectID, root, manifest, repoName, packName string) map[string]string {
-	return map[string]string{}
+	return priorChecksumsOfType("rules", reg, projectID, root, manifest, repoName, packName)
 }

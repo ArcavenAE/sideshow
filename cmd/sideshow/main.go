@@ -401,6 +401,10 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 			repoOpts := opts
 			repoOpts.PriorChecksums = distribute.PriorChecksums(
 				reg, id.ID, projectRoot, filepath.Base(manifestPath), repo.Name, p.name)
+			// Rules carry a marker, but the marker only says who created the
+			// file. The receipt says what its bytes were.
+			repoOpts.PriorRuleChecksums = distribute.PriorRuleChecksums(
+				reg, id.ID, projectRoot, filepath.Base(manifestPath), repo.Name, p.name)
 
 			result := distribute.ToRepo(repo, &p.manifest, repoOpts)
 			allResults = append(allResults, result)
