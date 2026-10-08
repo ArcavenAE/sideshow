@@ -115,3 +115,69 @@ func TestInstallFromLocal_RefusesUnparseablePackYaml(t *testing.T) {
 		t.Errorf("error %q does not name pack.yaml", err)
 	}
 }
+
+// writeInstallerOutput creates an installer-layout source: the unified
+// _config/manifest.yaml, no pack.yaml, so nothing in it names the pack.
+func writeInstallerOutput(t *testing.T) string {
+	t.Helper()
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "_config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "_config", "manifest.yaml"), []byte("installation:\n  version: \"6.12.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "a.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return src
+}
+
+// An installer-layout source declares no pack name, so the caller's name
+// stands. That is by design, but the install says so rather than staying
+// silent, so a mislabelled install is visible (aae-orc-cv1b6).
+func TestInstallFromLocal_InstallerLayoutSaysNoNameWasDeclared(t *testing.T) {
+	freezeSafeHome(t)
+	src := writeInstallerOutput(t)
+
+	out := captureStdout(t, func() {
+		if err := InstallFromLocal("spectacle", src, true); err != nil {
+			t.Errorf("InstallFromLocal: %v", err)
+		}
+	})
+	want := "the source declares no pack name (installer layout); installed as spectacle as given"
+	if !strings.Contains(out, want) {
+		t.Errorf("output lacks %q:\n%s", want, out)
+	}
+}
+
+// A pack.yaml with no name field is the same case with its own reason.
+func TestInstallFromLocal_NamelessPackYamlSaysNoNameWasDeclared(t *testing.T) {
+	freezeSafeHome(t)
+	src := writeNativePack(t, "version: 1.0.0\n")
+
+	out := captureStdout(t, func() {
+		if err := InstallFromLocal("custom", src, true); err != nil {
+			t.Errorf("InstallFromLocal: %v", err)
+		}
+	})
+	want := "the source declares no pack name (pack.yaml has no name); installed as custom as given"
+	if !strings.Contains(out, want) {
+		t.Errorf("output lacks %q:\n%s", want, out)
+	}
+}
+
+// A source that names itself, and the name matches, prints no notice.
+func TestInstallFromLocal_DeclaredNamePrintsNoNotice(t *testing.T) {
+	freezeSafeHome(t)
+	src := writeNativePack(t, "name: demo\nversion: 1.0.0\n")
+
+	out := captureStdout(t, func() {
+		if err := InstallFromLocal("demo", src, true); err != nil {
+			t.Errorf("InstallFromLocal: %v", err)
+		}
+	})
+	if strings.Contains(out, "declares no pack name") {
+		t.Errorf("a declared name printed the notice:\n%s", out)
+	}
+}

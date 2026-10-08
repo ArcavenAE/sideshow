@@ -177,6 +177,11 @@ go install github.com/ArcavenAE/sideshow/cmd/sideshow@latest
 # version alone; a pack's first install always activates, flag or not
 sideshow install bmad --from ~/Downloads/bmad-6.10.0 --no-activate
 
+# The name you install under must match the name in the pack's own pack.yaml;
+# a mismatch is refused. A source with no declared name (installer output with
+# no pack.yaml) installs under the name you give, and the install prints a note
+# saying so. Signed packs from sideshow-packs carry a pack.yaml name.
+
 # Installing a version the store already holds is refused; --force writes over it
 # (it never deletes, so files only the old source had will remain)
 sideshow install bmad --from ~/Downloads/bmad-6.10.0 --no-activate --force
