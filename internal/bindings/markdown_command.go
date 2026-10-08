@@ -42,13 +42,14 @@ func (b *MarkdownCommandBinding) PackVersion() string { return b.version }
 
 // Sync materializes markdown command files into ~/.claude/commands/ with
 // pack-content path rewrites and the fallback-resolution footer appended.
-func (b *MarkdownCommandBinding) Sync() (int, error) {
+func (b *MarkdownCommandBinding) Sync() (int, []string, error) {
 	claudeDir := claudeCommandsDir()
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return 0, fmt.Errorf("create commands dir: %w", err)
+		return 0, nil, fmt.Errorf("create commands dir: %w", err)
 	}
 
 	synced := 0
+	var written []string
 
 	// First pass: commands/ subdirectory.
 	commandsSubdir := filepath.Join(b.packPath, "commands")
@@ -76,11 +77,12 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 			if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
 				return fmt.Errorf("write command %s: %w", destPath, err)
 			}
+			written = append(written, destPath)
 			synced++
 			return nil
 		})
 		if walkErr != nil {
-			return synced, walkErr
+			return synced, written, walkErr
 		}
 	}
 
@@ -118,13 +120,14 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 
 		destPath := filepath.Join(claudeDir, name)
 		if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
-			return nil // skip on write error
+			return fmt.Errorf("write command %s: %w", destPath, err)
 		}
+		written = append(written, destPath)
 		synced++
 		return nil
 	})
 
-	return synced, walkErr
+	return synced, written, walkErr
 }
 
 // Artifacts returns the destination command files this binding owns,

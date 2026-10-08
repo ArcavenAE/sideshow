@@ -711,3 +711,43 @@ func TestPackFilterNarrowsEveryLayer(t *testing.T) {
 		}
 	}
 }
+
+// An incomplete manifest (sideshow#161) shows one warning naming what
+// failed; a complete one, and one from before the field, show none.
+func TestSyncManifest_IncompleteLine(t *testing.T) {
+	home := fakeHome(t)
+	registryYAML(t, home, "packs: []\n")
+	incomplete := func(t *testing.T) bool {
+		t.Helper()
+		report, _, err := Run(Options{Layers: []int{1}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range findBy(report.Findings, "sync-manifest") {
+			if f.Status == Warn && strings.Contains(f.Detail, "incomplete: beta/markdown-command") && strings.Contains(f.Detail, "as of 2026-10-08T00:00:00Z") {
+				return true
+			}
+		}
+		return false
+	}
+	write(t, filepath.Join(home, "sync-manifest.yaml"), `schema_version: 0.2.0
+synced_at: "2026-10-08T00:00:00Z"
+complete: false
+failed:
+  - pack: beta
+    version: 1.0.0
+    kind: markdown-command
+    error: boom
+`)
+	if !incomplete(t) {
+		t.Error("no incomplete warning for an incomplete manifest")
+	}
+	write(t, filepath.Join(home, "sync-manifest.yaml"), "schema_version: 0.2.0\ncomplete: true\n")
+	if incomplete(t) {
+		t.Error("incomplete warning on a complete manifest")
+	}
+	write(t, filepath.Join(home, "sync-manifest.yaml"), "schema_version: 0.1.0\n")
+	if incomplete(t) {
+		t.Error("incomplete warning on a 0.1.0 manifest")
+	}
+}

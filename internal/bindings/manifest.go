@@ -21,6 +21,40 @@ type SyncManifest struct {
 	SchemaVersion string          `yaml:"schema_version"`
 	SyncedAt      string          `yaml:"synced_at"`
 	Entries       []ManifestEntry `yaml:"entries"`
+	// Complete is false when the sync that wrote this manifest had a
+	// failing binding: the entries then merge what succeeded with the
+	// previous record, and Failed names what did not sync. A manifest
+	// with no such field (schema 0.1.0) reads as complete (sideshow#161).
+	Complete *bool           `yaml:"complete,omitempty"`
+	Failed   []FailedBinding `yaml:"failed,omitempty"`
+}
+
+// FailedBinding names a binding that did not sync, and why.
+type FailedBinding struct {
+	Pack    string `yaml:"pack"`
+	Version string `yaml:"version"`
+	Kind    string `yaml:"kind"`
+	Error   string `yaml:"error"`
+}
+
+// IsComplete reports whether the sync that wrote the manifest finished.
+// A manifest without the field is complete.
+func (m *SyncManifest) IsComplete() bool {
+	return m.Complete == nil || *m.Complete
+}
+
+// IncompleteNote is the one line status and doctor print while the
+// manifest is incomplete, or "" when it is complete:
+// "as of <synced_at>; incomplete: <pack>/<kind>, ...".
+func (m *SyncManifest) IncompleteNote() string {
+	if m.IsComplete() {
+		return ""
+	}
+	names := make([]string, 0, len(m.Failed))
+	for _, f := range m.Failed {
+		names = append(names, f.Pack+"/"+f.Kind)
+	}
+	return fmt.Sprintf("as of %s; incomplete: %s", m.SyncedAt, strings.Join(names, ", "))
 }
 
 // ManifestEntry is one synced artifact: the destination path plus the
@@ -64,10 +98,20 @@ func loadManifest() (*SyncManifest, error) {
 
 // saveManifest writes the sync manifest for the just-completed sync.
 func saveManifest(entries []ManifestEntry) error {
+	complete := true
+	return saveManifestWith(entries, &complete, nil)
+}
+
+// saveManifestWith writes the manifest with its completeness. A sync that
+// finished passes complete true; one that failed part-way passes false and
+// the bindings that failed (sideshow#161).
+func saveManifestWith(entries []ManifestEntry, complete *bool, failed []FailedBinding) error {
 	m := SyncManifest{
-		SchemaVersion: "0.1.0",
+		SchemaVersion: "0.2.0",
 		SyncedAt:      time.Now().UTC().Format(time.RFC3339),
 		Entries:       entries,
+		Complete:      complete,
+		Failed:        failed,
 	}
 	data, err := yaml.Marshal(&m)
 	if err != nil {

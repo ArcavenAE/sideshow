@@ -51,23 +51,24 @@ func (b *SkillDirBinding) PackVersion() string { return b.version }
 // rewritten to the absolute store path; project-state references are left
 // literal. SKILL.md receives the fallback-resolution footer (it is the LLM
 // entry point). Returns the number of skills synced.
-func (b *SkillDirBinding) Sync() (int, error) {
+func (b *SkillDirBinding) Sync() (int, []string, error) {
 	skillsSrc := filepath.Join(b.packPath, ".claude", "skills")
 	skillsDst := claudeSkillsDir()
 
 	if err := os.MkdirAll(skillsDst, 0o755); err != nil {
-		return 0, fmt.Errorf("create skills dir: %w", err)
+		return 0, nil, fmt.Errorf("create skills dir: %w", err)
 	}
 
 	entries, err := os.ReadDir(skillsSrc)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, nil
+			return 0, nil, nil
 		}
-		return 0, fmt.Errorf("read skills source: %w", err)
+		return 0, nil, fmt.Errorf("read skills source: %w", err)
 	}
 
 	synced := 0
+	var written []string
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -76,20 +77,28 @@ func (b *SkillDirBinding) Sync() (int, error) {
 		src := filepath.Join(skillsSrc, skillName)
 		dst := filepath.Join(skillsDst, skillName)
 
-		if err := b.syncSkillTree(src, dst); err != nil {
-			return synced, fmt.Errorf("sync skill %s: %w", skillName, err)
+		wrote, err := b.syncSkillTree(src, dst)
+		if wrote || err == nil {
+			// The skill dir is the unit of ownership: once a file in it
+			// has landed, its bytes are on disk even if a later one fails.
+			// A skill with no files is still a synced skill.
+			written = append(written, dst)
+		}
+		if err != nil {
+			return synced, written, fmt.Errorf("sync skill %s: %w", skillName, err)
 		}
 		synced++
 	}
 
-	return synced, nil
+	return synced, written, nil
 }
 
 // syncSkillTree recursively copies a single skill directory from src into
 // dst, applying path rewrites to text files and appending the
-// fallback-resolution footer to SKILL.md.
-func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, werr error) error {
+// fallback-resolution footer to SKILL.md. wrote reports whether at least
+// one file was written, including when a later file fails.
+func (b *SkillDirBinding) syncSkillTree(src, dst string) (wrote bool, err error) {
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
 		}
@@ -123,8 +132,10 @@ func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
 		if err := writeWithSourceMode(target, data, path); err != nil {
 			return fmt.Errorf("write %s: %w", target, err)
 		}
+		wrote = true
 		return nil
 	})
+	return wrote, err
 }
 
 // rewritableSkillFile reports whether a file under a bound skill passes
