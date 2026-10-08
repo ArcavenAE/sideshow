@@ -29,9 +29,18 @@ func runDeactivate(args []string) error {
 	return enable.Deactivate(*opts)
 }
 
+// The per-command usage strings, read by usage_drift_test.go.
+const (
+	activateUsage   = "usage: sideshow activate <pack> [--repo <path>] [--agent <name>]"
+	deactivateUsage = "usage: sideshow deactivate <pack> [--repo <path>]"
+)
+
 func parseActivateArgs(verb string, args []string, allowAgent bool) (*enable.Options, string, error) {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
-		return nil, "", fmt.Errorf("usage: sideshow %s <pack> [--repo <path>]", verb)
+		if verb == "activate" {
+			return nil, "", fmt.Errorf("%s", activateUsage)
+		}
+		return nil, "", fmt.Errorf("%s", deactivateUsage)
 	}
 	packName, version, _ := strings.Cut(args[0], "@")
 	repoDir, err := os.Getwd()

@@ -29,9 +29,19 @@ func runDisable(args []string) error {
 	return enable.Disable(*opts)
 }
 
+// The per-command usage strings. usage_drift_test.go reads them to check
+// the top-level help lines and the parsers against them.
+const (
+	enableUsage  = "usage: sideshow enable <pack>[@<version>] [--repo <path>] [--scope local|project] [--override-stale-lock]"
+	disableUsage = "usage: sideshow disable <pack> [--repo <path>] [--override-stale-lock]"
+)
+
 func parseVerbArgs(verb string, args []string) (*enable.Options, error) {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
-		return nil, fmt.Errorf("usage: sideshow %s <pack>[@<version>] [--repo <path>] [--scope local|project] [--override-stale-lock]", verb)
+		if verb == "disable" {
+			return nil, fmt.Errorf("%s", disableUsage)
+		}
+		return nil, fmt.Errorf("%s", enableUsage)
 	}
 	packName, version, _ := strings.Cut(args[0], "@")
 	repoDir, err := os.Getwd()
