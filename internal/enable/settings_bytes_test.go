@@ -206,3 +206,36 @@ func TestEnable_CreatedSettingsFileWritesNoSidecar(t *testing.T) {
 		t.Errorf("fallback line for a file enable created:\n%s", out)
 	}
 }
+
+// A row enabled before sidecars existed has no record of the original
+// bytes: disable still removes exactly what enable added and says why the
+// file is in canonical form.
+func TestDisable_NoSidecarSaysTheOriginalBytesWereNotKept(t *testing.T) {
+	store := writeStore(t)
+	repo := t.TempDir()
+	p := plantSettings(t, repo, bindings.ScopeLocal, nonCanonicalSettings)
+	opts := baseOpts(t, repo, store)
+	if err := Enable(opts); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	for _, f := range sidecarFiles(t, opts) {
+		if err := os.Remove(filepath.Join(filepath.Dir(opts.LedgerPath), "settings-originals", f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := captureOut(t, func() {
+		if err := Disable(opts); err != nil {
+			t.Errorf("Disable: %v", err)
+		}
+	})
+	if !strings.Contains(out, "no record of its original bytes") || !strings.Contains(out, "canonical form") {
+		t.Errorf("older-row line missing:\n%s", out)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "CLAUDE_PLUGIN_ROOT") || !strings.Contains(string(got), "team-guard") {
+		t.Errorf("fallback removal wrong:\n%s", got)
+	}
+}

@@ -35,16 +35,15 @@ import (
 
 const (
 	sidecarDirName = "settings-originals"
-	// restoreArtifact tags the ledger artifact that names the sidecar.
-	restoreArtifact = "settings-restore"
-	sidecarMagic    = "sideshow-settings-original v1\n"
+	sidecarMagic   = "sideshow-settings-original v1\n"
 )
 
 func sidecarDir(ledgerPath string) string {
 	return filepath.Join(filepath.Dir(ledgerPath), sidecarDirName)
 }
 
-// sidecarName is stable per repo, pack, and scope.
+// sidecarName is stable per repo, pack, and scope, so the ledger row
+// needs no field for it and an older sideshow never meets a new tag.
 func sidecarName(repoDir, pack, scope string) string {
 	sum := sha256.Sum256([]byte(repoDir + "\x00" + pack + "\x00" + scope))
 	return hex.EncodeToString(sum[:16]) + ".orig"
@@ -118,16 +117,6 @@ func removeSidecar(ledgerPath, name string) {
 	}
 }
 
-// restoreRef returns the sidecar name a ledger row records, or "".
-func restoreRef(rows []string) string {
-	for _, s := range rows {
-		if kind, name, ok := strings.Cut(s, ":"); ok && kind == restoreArtifact {
-			return name
-		}
-	}
-	return ""
-}
-
 // sameJSON reports whether two settings documents parse to equal values.
 func sameJSON(a, b []byte) bool {
 	var x, y any
@@ -149,11 +138,11 @@ func restoreOriginalSettings(ledgerPath, settings, ref, beforeSHA string, create
 	canonical := func(why string) {
 		fmt.Printf("note: %s %s; disable removed exactly what enable added and rewrote the file in canonical form\n", settings, why)
 	}
-	if ref == "" {
+	enabledSHA, original, err := readSidecar(ledgerPath, ref)
+	if os.IsNotExist(err) {
 		canonical("has no record of its original bytes (enabled by an older sideshow)")
 		return
 	}
-	enabledSHA, original, err := readSidecar(ledgerPath, ref)
 	if err != nil {
 		canonical(fmt.Sprintf("has an unreadable record of its original bytes (%v)", err))
 		return

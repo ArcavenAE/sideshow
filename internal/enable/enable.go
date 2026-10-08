@@ -246,7 +246,6 @@ func Enable(opts Options) error {
 		if err := writeSidecar(opts.LedgerPath, sidecar, sha256Hex(enabled), originalSettings); err != nil {
 			return err
 		}
-		row.Artifacts = append(row.Artifacts, restoreArtifact+":"+sidecar)
 	}
 	if err := led.SetRow(opts.RepoDir, opts.Pack, row); err != nil {
 		removeSidecar(opts.LedgerPath, sidecar)
@@ -329,7 +328,7 @@ func Disable(opts Options) error {
 		}
 	}
 
-	restoreOriginalSettings(opts.LedgerPath, settings, restoreRef(row.Artifacts), beforeSHA, removeSettingsFile)
+	restoreOriginalSettings(opts.LedgerPath, settings, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope), beforeSHA, removeSettingsFile)
 
 	led.DeleteRow(opts.RepoDir, opts.Pack)
 	if err := led.Save(opts.LedgerPath); err != nil {
@@ -512,9 +511,6 @@ func parseArtifactStrings(rows []string) ([]bindings.RepoArtifact, bool) {
 		if kind == "settings-file-created" {
 			settingsCreated = true
 			continue
-		}
-		if kind == restoreArtifact {
-			continue // names the settings sidecar, not a removable artifact
 		}
 		arts = append(arts, bindings.RepoArtifact{Kind: kind, Path: path})
 	}
