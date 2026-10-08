@@ -171,17 +171,27 @@ func envObject(settings map[string]any, path string) (map[string]any, error) {
 	return env, nil
 }
 
+// RenderSettings returns the bytes writeSettings puts on disk for a
+// settings map: two-space indent and a trailing newline.
+func RenderSettings(settings map[string]any) ([]byte, error) {
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal settings: %w", err)
+	}
+	return append(data, '\n'), nil
+}
+
 // writeSettings persists a settings object with stable two-space
 // indentation and a trailing newline.
 func writeSettings(path string, settings map[string]any) error {
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err := RenderSettings(settings)
 	if err != nil {
-		return fmt.Errorf("marshal settings: %w", err)
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create settings dir: %w", err)
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write settings %s: %w", path, err)
 	}
 	return nil
