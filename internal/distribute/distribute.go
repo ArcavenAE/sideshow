@@ -284,13 +284,13 @@ func distributeRule(repoRoot string, rule RuleArtifact, opts Options) Action {
 			// by hand) is moved to the new sha, not read as an edit.
 			action = skip("already current")
 			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: receipt}
-			action.RecordReceipt = true
+			action.RecordReceipt = !opts.DryRun
 			return action
 		case known && strings.TrimPrefix(recorded, "sha256:") != onDisk:
 			// Edited since sideshow wrote it: keep the edit and the receipt.
 			action = skip("modified since sideshow wrote it (user edit preserved)")
 			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: recorded}
-			action.RecordReceipt = true
+			action.RecordReceipt = !opts.DryRun
 			return action
 		case !known:
 			// A marker, no receipt, and bytes this run would not write: sideshow
@@ -954,10 +954,15 @@ func distributeFile(repoRoot string, file FileArtifact, opts Options) Action {
 		case strings.TrimPrefix(recorded, "sha256:") != onDisk:
 			action.Status = "skipped"
 			action.Detail = "modified since sideshow wrote it (user edit preserved)"
+			// Keep the receipt of what sideshow wrote, not the pack's current
+			// bytes, so the edit is still read as an edit on the next run.
+			action.Artifact.Checksum = recorded
+			action.RecordReceipt = !opts.DryRun
 			return action
 		case onDisk == sourceSum:
 			action.Status = "skipped"
 			action.Detail = "already current"
+			action.RecordReceipt = !opts.DryRun
 			return action
 		}
 	}
