@@ -88,12 +88,19 @@ What the scopes mean:
 
 - **local** (default): bindings are symlinks into the machine store
   and registration goes to `.claude/settings.local.json`. Nothing
-  enters your repo's git history. This is the testing-the-waters
-  posture.
-- **project**: bindings are full self-contained copies (absolute
-  symlinks do not cross machines) and registration goes to the
-  committed `.claude/settings.json`. Choose this only when the whole
-  team is meant to get the pack on checkout, and expect the diff.
+  enters your repo's git history, but the materialized paths
+  (`.claude/skills/`, `.claude/agents/`, `plugins/`) show as untracked
+  in `git status` unless the repo already gitignores them. This is the
+  testing-the-waters posture.
+- **project**: the skill and agent bindings are full self-contained
+  copies and registration goes to the committed
+  `.claude/settings.json`. Choose this only when the whole team is
+  meant to get the pack's content on checkout, and expect the diff.
+  The registration is not portable: `plugins/<pack>` is an absolute
+  symlink into the machine store, and the committed hook commands and
+  `env.CLAUDE_PLUGIN_ROOT` carry an absolute store path. A teammate who
+  checks the repo out gets the copies, and still needs the pack
+  installed at that path on their machine for registration to resolve.
 
 What materializes where (the store-vs-repo split):
 
