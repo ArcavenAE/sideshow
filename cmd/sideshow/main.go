@@ -854,19 +854,36 @@ func runProjectInitForPack(args []string) error {
 		Present: true,
 	}
 
-	// PriorChecksums is deliberately nil here. This path operates on cwd alone
-	// and has no project installation context (no project id, no repos.yaml), so
-	// there is no receipt to read. The effect on `files:` artifacts is fail-safe
-	// but incomplete: sideshow creates a missing file and then leaves it alone on
-	// every later run, because without a receipt it cannot distinguish its own
-	// output from a user's file. Refreshing a file artifact needs the
-	// `init --scope project` path. Tracked as a follow-on to aae-orc-rx3.
-	result := distribute.ToRepo(repo, &packYAML.Distribute, distribute.Options{
+	// The receipt this path reads and writes lives in the same registry as the
+	// orchestrator path's, under a key derived from cwd alone: the repo's own
+	// identity if it has one, else a hash of the resolved path, and one fixed
+	// manifest name. A moved repo has no receipt, which is the fail-safe
+	// direction: a file is then user-authored, and a rule is adopted only when
+	// its bytes already equal the current content. Two keys for one repo (this
+	// path and the orchestrator's) are fine: the same pack bytes give the same
+	// sha, and a receipt that lags current bytes is moved, not read as an edit.
+	reg, err := pack.LoadRegistry()
+	if err != nil {
+		return fmt.Errorf("load registry: %w", err)
+	}
+	projectID, root, err := project.SingleRepoKey(cwd)
+	if err != nil {
+		return fmt.Errorf("project init: resolve repo key: %w", err)
+	}
+	// The repo name is part of the key, so take it from the resolved root: the
+	// same repo reached through a symlink must find its receipt.
+	repo.Name = filepath.Base(root)
+	distOpts := distribute.Options{
 		DryRun:      dryRun,
 		PackName:    packYAML.Name,
 		PackVersion: packYAML.Version,
 		PackRoot:    packRoot,
-	})
+		PriorChecksums: distribute.PriorChecksums(
+			reg, projectID, root, project.SingleRepoManifest, repo.Name, packYAML.Name),
+		PriorRuleChecksums: distribute.PriorRuleChecksums(
+			reg, projectID, root, project.SingleRepoManifest, repo.Name, packYAML.Name),
+	}
+	result := distribute.ToRepo(repo, &packYAML.Distribute, distOpts)
 
 	if result.Error != nil {
 		return fmt.Errorf("distribute: %w", result.Error)
@@ -906,8 +923,16 @@ func runProjectInitForPack(args []string) error {
 			fmt.Printf("  %s: conflict %s: %s\n", a.Type, a.Path, a.Detail)
 		case "skipped":
 			skipped++
+			fmt.Printf("  %s: skipped %s: %s\n", a.Type, a.Path, a.Detail)
 		case "error":
 			fmt.Fprintf(os.Stderr, "  %s: error %s: %s\n", a.Type, a.Path, a.Detail)
+		}
+	}
+
+	if !dryRun {
+		distribute.RecordResults(reg, projectID, root, project.SingleRepoManifest, []distribute.Result{result}, distOpts)
+		if err := reg.Save(); err != nil {
+			return fmt.Errorf("save registry: %w", err)
 		}
 	}
 
