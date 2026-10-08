@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 )
 
@@ -74,7 +75,7 @@ func Run(projectRoot string, userName string) error {
 			config = replaceConfigValue(config, "user_name", userName)
 		}
 
-		if err := os.WriteFile(destFile, []byte(config), 0o644); err != nil {
+		if err := atomicfile.WriteFile(destFile, []byte(config), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", destFile, err)
 		}
 
