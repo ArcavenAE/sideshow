@@ -270,7 +270,17 @@ func countMarkdownCommands(packPath string) int {
 // multi-prefix commands (e.g. bmad's bmad-* + gds-*) would otherwise be
 // undercounted by a "<packName>-" heuristic.
 func countSyncedCommands(packPath string) (int, error) {
+	return countSyncedCommandsRecorded(packPath, nil)
+}
+
+// countSyncedCommandsRecorded is countSyncedCommands narrowed to the
+// basenames in recorded, the commands the sync manifest says this pack
+// wrote; nil means no narrowing.
+func countSyncedCommandsRecorded(packPath string, recorded map[string]struct{}) (int, error) {
 	owned := commandBasenames(packPath)
+	if recorded != nil {
+		owned = intersectNames(owned, recorded)
+	}
 	if len(owned) == 0 {
 		return 0, nil
 	}

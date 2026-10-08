@@ -242,7 +242,17 @@ func countSkillDirs(packPath string) int {
 // name prefix. Packs may ship skills with multiple prefixes (bmad ships
 // bmad-* and gds-* both); a prefix heuristic undercounts those packs.
 func countSyncedSkills(packPath string) (int, error) {
+	return countSyncedSkillsRecorded(packPath, nil)
+}
+
+// countSyncedSkillsRecorded is countSyncedSkills narrowed to the ids in
+// recorded, the skills the sync manifest says this pack wrote; nil means
+// no narrowing.
+func countSyncedSkillsRecorded(packPath string, recorded map[string]struct{}) (int, error) {
 	owned := skillCanonicalIds(packPath)
+	if recorded != nil {
+		owned = intersectNames(owned, recorded)
+	}
 	if len(owned) == 0 {
 		return 0, nil
 	}
