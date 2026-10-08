@@ -1,4 +1,5 @@
-package bindings
+// Package atomicfile replaces a file whole or not at all.
+package atomicfile
 
 import (
 	"crypto/rand"
@@ -11,7 +12,7 @@ import (
 	"strings"
 )
 
-// writeFileAtomic replaces path with data by writing a temp file in the
+// WriteFile replaces path with data by writing a temp file in the
 // same directory, syncing it, and renaming it over the old file, so a
 // reader or a later run sees the old file or the whole new one, never a
 // torn write (sideshow#173). The temp file is removed on any failure.
@@ -21,7 +22,7 @@ import (
 // (the temp file is created with perm, so the kernel applies the umask),
 // and a symlink at path is followed, so the link stays and its target is
 // replaced.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+func WriteFile(path string, data []byte, perm os.FileMode) error {
 	path, err := followLinks(path)
 	if err != nil {
 		return err

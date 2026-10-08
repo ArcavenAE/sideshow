@@ -73,21 +73,22 @@ func TestSaveManifest_LeavesNoTempFileAndKeepsTheMode(t *testing.T) {
 	}
 }
 
-// When the rename fails, the temp file does not stay behind.
-func TestWriteFileAtomic_FailureRemovesTheTempFile(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "m.yaml")
-	if err := os.Mkdir(target, 0o755); err != nil { // a directory cannot be replaced by a file
+// The temp file sits in the manifest's own directory, not in TMPDIR and
+// not in its parent: a save must succeed with TMPDIR unusable and the
+// parent read-only.
+func TestSaveManifest_TempFileIsCreatedBesideTheManifest(t *testing.T) {
+	collisionEnv(t)
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "does", "not", "exist"))
+	dir := filepath.Dir(manifestPath())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFileAtomic(target, []byte("x"), 0o644); err == nil {
-		t.Fatal("renaming a file over a directory succeeded")
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	parent := filepath.Dir(dir)
+	if err := os.Chmod(parent, 0o555); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "m.yaml" {
-		t.Errorf("stray files after a failed replace: %v", entries)
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	if err := saveManifest([]ManifestEntry{{Pack: "alpha", Version: "1", Kind: "skill-dir", Path: "/x/y"}}); err != nil {
+		t.Fatalf("save failed: %v", err)
 	}
 }

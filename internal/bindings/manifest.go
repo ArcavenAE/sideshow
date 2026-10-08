@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"gopkg.in/yaml.v3"
 )
@@ -121,7 +122,7 @@ func saveManifestWith(entries []ManifestEntry, complete *bool, failed []FailedBi
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create sideshow dir: %w", err)
 	}
-	if err := writeFileAtomic(path, data, 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write sync manifest: %w", err)
 	}
 	return nil
