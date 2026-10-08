@@ -251,3 +251,39 @@ func TestWriteFileAtomic_RelativeTargetUsesThePhysicalDirectory(t *testing.T) {
 		})
 	}
 }
+
+// A dangling link whose relative target passes through another symlink
+// (lnk/../dot/m.yaml, with lnk linking elsewhere) creates the file where
+// the kernel does, under the physical parent of lnk's target, not where a
+// lexical clean of the target would (sideshow#173, review of #179). The
+// EvalSymlinks-first path cannot see this shape, so it exercises the hand
+// walk.
+func TestWriteFileAtomic_DanglingTargetThroughASymlinkedDirUsesThePhysicalParent(t *testing.T) {
+	d := t.TempDir()
+	for _, sub := range []string{"far/x", "far/dot", "dot"} {
+		if err := os.MkdirAll(filepath.Join(d, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(d, "far", "x"), filepath.Join(d, "lnk")); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(d, "m.yaml")
+	// A literal: filepath.Join would clean the ".." away.
+	if err := os.Symlink("lnk/../dot/m.yaml", link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeFileAtomic(link, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(d, "far", "dot", "m.yaml")); string(got) != "new" {
+		t.Errorf("the kernel's target far/dot/m.yaml = %q, want new", got)
+	}
+	if _, err := os.Lstat(filepath.Join(d, "dot", "m.yaml")); !os.IsNotExist(err) {
+		t.Errorf("a file was created at the lexical path dot/m.yaml (%v)", err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link was replaced: %v, %v", info, err)
+	}
+}
