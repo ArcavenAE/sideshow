@@ -114,3 +114,92 @@ func TestSaveManifest_TempFileIsCreatedBesideTheManifest(t *testing.T) {
 		t.Fatalf("save failed: %v", err)
 	}
 }
+
+// A dangling symlink whose target directory exists works as it did with
+// an in-place write: the save creates the target through the link and the
+// link stays a link (sideshow#173, review of #179).
+func TestWriteFileAtomic_DanglingSymlinkCreatesItsTarget(t *testing.T) {
+	for name, linkTo := range map[string]func(dir string) string{
+		"absolute target": func(dir string) string { return filepath.Join(dir, "real", "m.yaml") },
+		"relative target": func(string) string { return filepath.Join("real", "m.yaml") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "real"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			link := filepath.Join(dir, "m.yaml")
+			if err := os.Symlink(linkTo(dir), link); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeFileAtomic(link, []byte("new"), 0o644); err != nil {
+				t.Fatalf("dangling link with an existing target dir: %v", err)
+			}
+			if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+				t.Errorf("the link was replaced by a regular file: %v, %v", info, err)
+			}
+			if got, _ := os.ReadFile(filepath.Join(dir, "real", "m.yaml")); string(got) != "new" {
+				t.Errorf("target = %q, want new", got)
+			}
+		})
+	}
+}
+
+// A dangling link whose target directory is missing fails, as an in-place
+// write through it does, and leaves the link alone.
+func TestWriteFileAtomic_DanglingSymlinkWithNoTargetDirFails(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "m.yaml")
+	if err := os.Symlink(filepath.Join(dir, "gone", "m.yaml"), link); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(link, []byte("new"), 0o644); err == nil {
+		t.Fatal("a write through a link into a missing directory succeeded")
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link was replaced: %v, %v", info, err)
+	}
+}
+
+// A chain of links is followed to its end.
+func TestWriteFileAtomic_FollowsAChainOfLinks(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.yaml")
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mid := filepath.Join(dir, "mid.yaml")
+	top := filepath.Join(dir, "top.yaml")
+	if err := os.Symlink(target, mid); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("mid.yaml", top); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(top, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []string{top, mid} {
+		if info, err := os.Lstat(l); err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("%s is no longer a link", l)
+		}
+	}
+	if got, _ := os.ReadFile(target); string(got) != "new" {
+		t.Errorf("target = %q, want new", got)
+	}
+}
+
+// A loop of links is an error, not a hang.
+func TestWriteFileAtomic_LinkLoopIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	if err := os.Symlink(b, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(a, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(a, []byte("x"), 0o644); err == nil {
+		t.Fatal("a link loop was accepted")
+	}
+}
