@@ -105,6 +105,26 @@ func VerifyEnvShim(path, name, wantValue string) error {
 	return nil
 }
 
+// PreflightSettingsShape reads the settings file and reports what
+// RemoveHookChain and RemoveEnvShim would refuse on: unreadable or
+// malformed JSON, and a hooks or env block that is not an object. It
+// writes nothing, so a caller can refuse before the first removal
+// rewrites the file (sideshow#160). A missing file passes.
+func PreflightSettingsShape(path string) error {
+	settings, existed, err := readSettings(path)
+	if err != nil {
+		return err
+	}
+	if !existed {
+		return nil
+	}
+	if _, err := hooksObject(settings, path); err != nil {
+		return err
+	}
+	_, err = envObject(settings, path)
+	return err
+}
+
 // InlineEnvBelt returns the NAME='value' prefix every synthesized
 // hook command carries (the belt to the settings-env suspender): the
 // hook surface keeps working even where the settings env leg is
