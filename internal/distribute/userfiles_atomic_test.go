@@ -117,8 +117,11 @@ func TestDistributeRule_AtomicPins(t *testing.T) {
 		path := filepath.Join(repo, ".claude", "rules", "r.md")
 		seed := fileMarker("testpack", "0.9.0") + "\nold rule\n"
 		plant(t, path, seed)
+		opts := defaultOpts(packRoot)
+		// The receipt says sideshow wrote these bytes, so an update is allowed.
+		opts.PriorRuleChecksums = map[string]string{".claude/rules/r.md": "sha256:" + sha256hex([]byte(seed))}
 		return path, seed, func() error {
-			return actionErr(distributeRule(repo, RuleArtifact{Source: "rule.md", Target: ".claude/rules/r.md"}, defaultOpts(packRoot)))
+			return actionErr(distributeRule(repo, RuleArtifact{Source: "rule.md", Target: ".claude/rules/r.md"}, opts))
 		}
 	})
 }

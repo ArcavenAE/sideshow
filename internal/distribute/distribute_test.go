@@ -119,8 +119,8 @@ func TestDistributeRule_UpdatesMarkedFile(t *testing.T) {
 	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(rulesDir, "task-workflow.md"),
-		[]byte("<!-- managed by sideshow:testpack:0.9.0 -->\n# Old content\n"), 0o644); err != nil {
+	old := "<!-- managed by sideshow:testpack:0.9.0 -->\n# Old content\n"
+	if err := os.WriteFile(filepath.Join(rulesDir, "task-workflow.md"), []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,7 +129,11 @@ func TestDistributeRule_UpdatesMarkedFile(t *testing.T) {
 		Target: ".claude/rules/task-workflow.md",
 	}
 
-	action := distributeRule(repoRoot, rule, defaultOpts(packRoot))
+	// The receipt for the old bytes says sideshow wrote them, so an update
+	// is allowed (sideshow#90); without it the file is left as is.
+	opts := defaultOpts(packRoot)
+	opts.PriorRuleChecksums = map[string]string{rule.Target: "sha256:" + sha256hex([]byte(old))}
+	action := distributeRule(repoRoot, rule, opts)
 	if action.Status != "wrote" {
 		t.Errorf("status = %q, want wrote", action.Status)
 	}
