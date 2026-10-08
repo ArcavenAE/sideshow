@@ -50,6 +50,8 @@ var inPlaceAllowlist = map[string]string{
 //   - any reference to WriteFile, Create or Truncate in those packages,
 //     called or not, so an alias, a method value and ioutil.WriteFile are
 //     all seen;
+//   - any reference to OpenRoot or OpenInRoot, since a *os.Root has its own
+//     WriteFile, Create and OpenFile; a read-only root needs an entry too;
 //   - any reference to OpenFile, unless it is a call whose flag argument is
 //     os.O_RDONLY or the literal 0; a flag held in a variable, or any write
 //     bit with or without O_TRUNC, is flagged;
@@ -58,7 +60,10 @@ var inPlaceAllowlist = map[string]string{
 // What it does not see, so a reader knows the limit: a write through any
 // other package (syscall, golang.org/x/sys, a vendored writer), a shell-out
 // to cp or tee, a write through an *os.File opened elsewhere (the open is
-// what it flags), and a writer reached by reflection or a plugin. os.CreateTemp
+// what it flags), and a writer reached by reflection or a plugin.
+// Two read-only forms are flagged although harmless, and appear nowhere in
+// the tree: an OpenFile flag held in a const (const ro = os.O_RDONLY), and a
+// bare O_RDONLY under a dot import. os.CreateTemp
 // and os.Rename are not in-place writes and are not flagged.
 func findInPlaceWriters(t *testing.T, root string) map[string]bool {
 	t.Helper()
@@ -86,7 +91,7 @@ func findInPlaceWriters(t *testing.T, root string) map[string]bool {
 	return found
 }
 
-var writerNames = map[string]bool{"WriteFile": true, "Create": true, "Truncate": true, "OpenFile": true}
+var writerNames = map[string]bool{"WriteFile": true, "Create": true, "Truncate": true, "OpenFile": true, "OpenRoot": true, "OpenInRoot": true}
 
 func scanFile(file *ast.File, rel string, found map[string]bool) {
 	pkgs := map[string]string{} // local name -> "os" or "ioutil"
@@ -272,6 +277,8 @@ func run(f func(string, []byte, os.FileMode) error) {}
 func Ioutil() { _ = ioutil.WriteFile("x", nil, 0o644) }
 func Truncate() { _ = os.Truncate("x", 0) }
 var F = func() { _ = os.WriteFile("x", nil, 0o644) }
+func Root() { r, _ := os.OpenRoot("."); _ = r }
+func InRoot() { _, _ = os.OpenInRoot(".", "x") }
 func ReadOnly() { _, _ = os.OpenFile("x", os.O_RDONLY, 0) }
 func SelectorWrite() { _, _ = os.OpenFile("x", os.O_WRONLY, 0) }
 func LiteralWrite() { _, _ = os.OpenFile("x", 1, 0) }
@@ -288,8 +295,8 @@ func Temp() { _, _ = os.CreateTemp("", "x") }
 	want := []string{
 		"cmd/e/e.go:main",
 		"internal/a/a.go:Alias", "internal/a/a.go:Create", "internal/a/a.go:FlagVar",
-		"internal/a/a.go:Ioutil", "internal/a/a.go:LiteralWrite", "internal/a/a.go:MethodValue", "internal/a/a.go:NoTrunc",
-		"internal/a/a.go:Plain", "internal/a/a.go:SelectorWrite", "internal/a/a.go:Trunc", "internal/a/a.go:Truncate",
+		"internal/a/a.go:InRoot", "internal/a/a.go:Ioutil", "internal/a/a.go:LiteralWrite", "internal/a/a.go:MethodValue", "internal/a/a.go:NoTrunc",
+		"internal/a/a.go:Plain", "internal/a/a.go:Root", "internal/a/a.go:SelectorWrite", "internal/a/a.go:Trunc", "internal/a/a.go:Truncate",
 		"internal/a/a.go:var F", "internal/b/b.go:Renamed", "internal/c/c.go:Dot",
 	}
 	var names []string
