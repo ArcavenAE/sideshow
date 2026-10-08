@@ -10,6 +10,7 @@ package coexistcheck
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -167,6 +168,7 @@ func Run(opts Options) (*Report, error) {
 	// repo. Prefixed names are ours; a foreign enable means the
 	// harness ALSO loads namespace-qualified agents from the plugin.
 	checkAgentKeys(rep, opts, view)
+	checkDefaultAgent(rep, opts, view)
 
 	// (6) version skew: ledger row vs the store version being enabled.
 	if row != nil && opts.StoreRoot != "" {
@@ -303,6 +305,56 @@ func checkAgentKeys(rep *Report, opts Options, view *foreign.RepoView) {
 		rep.add(5, "agent-key-audit", foreign.Warn,
 			fmt.Sprintf("unprefixed .claude/agents entries (%s) beside an enabled foreign identity; bare-name agent calls may resolve to either channel", strings.Join(bare, ", ")))
 	}
+}
+
+// checkDefaultAgent warns when the repo's default agent carries the
+// foreign "<pack>:" prefix while that identity is suppressed here: the
+// session then offers no such agent. adopt without --rewrite-agent leaves
+// exactly this behind (sideshow#95). The effective agent is the local
+// settings file's key when it has one, else the committed file's, the order
+// Claude Code reads them in.
+func checkDefaultAgent(rep *Report, opts Options, view *foreign.RepoView) {
+	agent := effectiveDefaultAgent(opts.RepoDir)
+	if !strings.HasPrefix(agent, opts.Pack+":") {
+		return
+	}
+	for _, id := range view.Suppressed {
+		if !strings.HasPrefix(id, opts.Pack+"@") {
+			continue
+		}
+		rep.add(5, "agent-key-audit", foreign.Warn,
+			fmt.Sprintf("default agent %q names the foreign identity %s, which is suppressed in this repo, so no such agent resolves; flip it with 'sideshow adopt %s --rewrite-agent' or run 'sideshow activate %s'",
+				agent, id, opts.Pack, opts.Pack))
+		return
+	}
+}
+
+// effectiveDefaultAgent returns the "agent" key of settings.local.json,
+// falling back to settings.json when the local file has none.
+func effectiveDefaultAgent(repoDir string) string {
+	for _, name := range []string{"settings.local.json", "settings.json"} {
+		data, err := os.ReadFile(filepath.Join(repoDir, ".claude", name))
+		if err != nil {
+			continue
+		}
+		var m struct {
+			Agent string `json:"agent"`
+		}
+		if json.Unmarshal(data, &m) == nil && m.Agent != "" {
+			return m.Agent
+		}
+	}
+	return ""
+}
+
+// PassVerdict is the first words of the line a passing preflight ends on.
+// "preflight clean" is reserved for a run with no WARN and no ERROR, so a
+// reader cannot take a run that raised warnings for a clean one.
+func PassVerdict(warns int) string {
+	if warns == 0 {
+		return "preflight clean"
+	}
+	return fmt.Sprintf("preflight passed with %d warning(s)", warns)
 }
 
 func captureAnchor(repoDir string, now time.Time) *Anchor {

@@ -126,7 +126,9 @@ signal passes only with `--override-stale-lock`.
 sideshow coexist-check vsdd-factory
 ```
 
-Clean output ends with `preflight clean`. For a bound repo it also
+Output with no warning and no error ends with `preflight clean`. A run that
+raised warnings ends with `preflight passed with N warning(s)` instead, and
+enable and adopt may still proceed. For a bound repo it also
 verifies the env shim resolves to the pinned store path and the
 dispatcher is executable. Quick manual checks:
 

@@ -99,6 +99,6 @@ func runCoexistCheck(args []string) error {
 	if rep.Refuse() {
 		return fmt.Errorf("preflight refused: enable/adopt would not proceed in this repo")
 	}
-	fmt.Println("preflight clean: enable/adopt may proceed")
+	fmt.Printf("%s: enable/adopt may proceed\n", coexistcheck.PassVerdict(rep.Count(foreign.Warn)))
 	return nil
 }
