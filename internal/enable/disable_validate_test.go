@@ -28,14 +28,39 @@ func plantRow(t *testing.T, opts Options, repo, artifact string) {
 	}
 }
 
+// replaceCompatSymlink swaps the enable-created plugins/ symlink for a
+// real directory holding a file, as when the pack develops itself.
+func replaceCompatSymlink(t *testing.T, repo string) {
+	t.Helper()
+	link := filepath.Join(repo, "plugins", "vsdd-factory")
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("enable left no compat symlink at %s: %v", link, err)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(link, "keep.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A ledger row disable would refuse must be refused before disable touches
 // anything: the settings file keeps its enable-written bytes, the bound
 // artifacts stay, the sidecar stays, and the row stays, so a retry after
 // the row is fixed starts from a whole state (sideshow#160).
 func TestDisable_RefusedRowChangesNothing(t *testing.T) {
-	for name, bad := range map[string]string{
-		"unknown kind":     "future-kind:abc.orig",
-		"outside the repo": "agent-file:../outside.md",
+	for name, tc := range map[string]struct {
+		bad   string
+		setup func(t *testing.T, repo string)
+	}{
+		"unknown kind":     {bad: "future-kind:abc.orig"},
+		"outside the repo": {bad: "agent-file:../outside.md"},
+		// The removal loop's own refusal, which the plan must also make:
+		// the recorded compat symlink was replaced by a real directory.
+		"compat symlink replaced by a directory": {setup: replaceCompatSymlink},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -45,7 +70,12 @@ func TestDisable_RefusedRowChangesNothing(t *testing.T) {
 			if err := Enable(opts); err != nil {
 				t.Fatalf("Enable: %v", err)
 			}
-			plantRow(t, opts, repo, bad)
+			if tc.bad != "" {
+				plantRow(t, opts, repo, tc.bad)
+			}
+			if tc.setup != nil {
+				tc.setup(t, repo)
+			}
 
 			settings := filepath.Join(repo, ".claude", "settings.local.json")
 			beforeSettings, err := os.ReadFile(settings)
