@@ -115,3 +115,28 @@ func TestProjectInit_NoConflictsWordWhenThereAreNone(t *testing.T) {
 		t.Errorf("clean repo output mentions a conflict:\n%s", out)
 	}
 }
+
+// One conflict reads "1 conflict", not "1 conflicts".
+func TestProjectInit_OneConflictIsSingular(t *testing.T) {
+	repo := linksFixture(t)
+	p := filepath.Join(repo, "_bmad", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("real\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := captureStdout(t, func() error {
+		return runProjectInitForPack([]string{"bmad", "--user-name", "Ada"})
+	})
+	if err != nil {
+		t.Fatalf("project init: %v", err)
+	}
+	if !strings.Contains(out, ", 1 conflict (") {
+		t.Errorf("summary lacks \"1 conflict (\":\n%s", out)
+	}
+	if strings.Contains(out, "1 conflicts") {
+		t.Errorf("summary says \"1 conflicts\":\n%s", out)
+	}
+}
