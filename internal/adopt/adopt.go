@@ -500,13 +500,17 @@ func equivalenceReport(row *ledger.Row, install *foreign.Install) []string {
 	}
 
 	mismatches := diffHashes(storeHashes, cacheHashes)
+	show := mismatches
+	if len(show) > 10 {
+		show = show[:10]
+	}
 	if len(mismatches) == 0 {
 		lines = append(lines, fmt.Sprintf("E1 content parity: PASS — %d files identical across store and foreign tree (unrewritten originals; the bound variant's renames are by-design divergence)", len(storeHashes)))
+	} else if running, drifted := versionDrift(row, install); drifted {
+		// The operator consented to the drift, so differences are the
+		// expected result, not a reason to distrust the adoption.
+		lines = append(lines, fmt.Sprintf("E1 content parity: EXPECTED (version drift): %d differing paths (first %d: %s) between the running %s and the adopted %s", len(mismatches), len(show), strings.Join(show, ", "), running, row.Version))
 	} else {
-		show := mismatches
-		if len(show) > 10 {
-			show = show[:10]
-		}
 		lines = append(lines, fmt.Sprintf("E1 content parity: FAIL — %d differing paths (first %d: %s); same-version trees should be identical — verify the store artifact before trusting the adoption", len(mismatches), len(show), strings.Join(show, ", ")))
 	}
 
@@ -526,6 +530,16 @@ func equivalenceReport(row *ledger.Row, install *foreign.Install) []string {
 		lines = append(lines, fmt.Sprintf("E4 dispatcher identity: FAIL — store %s vs cache %s for %s", storeSha[:12], cacheSha[:12], row.Platform))
 	}
 	return lines
+}
+
+// versionDrift reports whether the foreign tree runs a different version
+// from the one adopted, and the running version.
+func versionDrift(row *ledger.Row, install *foreign.Install) (running string, drifted bool) {
+	running = install.TreeVersion
+	if running == "" {
+		running = install.Version
+	}
+	return running, running != "" && row.Version != "" && running != row.Version
 }
 
 func dispatcherName(platform string) string {
