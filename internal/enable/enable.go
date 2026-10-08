@@ -317,11 +317,21 @@ func Disable(opts Options) error {
 	if data, readErr := os.ReadFile(settings); readErr == nil {
 		beforeSHA = sha256Hex(data)
 	}
-	if _, err := bindings.RemoveHookChain(settings, opts.Pack); err != nil {
+	hooksRemoved, err := bindings.RemoveHookChain(settings, opts.Pack)
+	if err != nil {
 		return err
 	}
-	if _, err := bindings.RemoveEnvShim(settings, "CLAUDE_PLUGIN_ROOT", row.StorePath); err != nil {
+	shimRemoved, err := bindings.RemoveEnvShim(settings, "CLAUDE_PLUGIN_ROOT", row.StorePath)
+	if err != nil {
 		return err
+	}
+	// Rows of a kind this build does not know are skipped by removal and
+	// stay in the ledger (sideshow#171).
+	var unknown []bindings.RepoArtifact
+	for _, a := range arts {
+		if !bindings.KnownArtifactKind(a.Kind) {
+			unknown = append(unknown, a)
+		}
 	}
 
 	removed, err := bindings.RemoveRepoArtifacts(target, arts)
@@ -350,7 +360,30 @@ func Disable(opts Options) error {
 		}
 	}
 
-	restoreOriginalSettings(opts.LedgerPath, settings, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope), beforeSHA, removeSettingsFile)
+	if len(unknown) > 0 && len(unknown) == len(arts) && hooksRemoved == 0 && !shimRemoved {
+		// A rerun over a row the first pass already took apart: the
+		// settings file was not rewritten, so there is nothing to restore.
+		removeSidecar(opts.LedgerPath, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope))
+	} else {
+		restoreOriginalSettings(opts.LedgerPath, settings, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope), beforeSHA, removeSettingsFile)
+	}
+
+	if len(unknown) > 0 {
+		kept := *row
+		kept.Artifacts = make([]string, 0, len(unknown))
+		desc := make([]string, 0, len(unknown))
+		for _, a := range unknown {
+			kept.Artifacts = append(kept.Artifacts, a.Kind+":"+a.Path)
+			desc = append(desc, a.Kind+" "+a.Path)
+		}
+		if err := led.SetRow(opts.RepoDir, opts.Pack, kept); err != nil {
+			return err
+		}
+		if err := led.Save(opts.LedgerPath); err != nil {
+			return err
+		}
+		return fmt.Errorf("disable incomplete: %d artifacts of kinds this build does not know (%s); upgrade sideshow and run disable again", len(unknown), strings.Join(desc, ", "))
+	}
 
 	led.DeleteRow(opts.RepoDir, opts.Pack)
 	if err := led.Save(opts.LedgerPath); err != nil {

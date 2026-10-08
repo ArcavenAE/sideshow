@@ -84,6 +84,16 @@ const (
 	ArtifactParentDir = "parent-dir"
 )
 
+// KnownArtifactKind reports whether this build can remove an artifact of
+// the given kind. A row of any other kind is skipped and kept on disable.
+func KnownArtifactKind(kind string) bool {
+	switch kind {
+	case ArtifactSkillDir, ArtifactAgentFile, ArtifactParentDir, ArtifactCompatSymlink:
+		return true
+	}
+	return false
+}
+
 // RepoArtifact is one materialized path: repo-relative, slash-separated,
 // with the kind that decides its removal semantics.
 type RepoArtifact struct {
@@ -364,10 +374,16 @@ func RemoveRepoArtifacts(t RepoTarget, artifacts []RepoArtifact) (int, error) {
 			if rmErr := os.Remove(p); rmErr != nil {
 				return removed, fmt.Errorf("remove %s: %w", a.Path, rmErr)
 			}
-		default: // ArtifactAgentFile and future file-shaped kinds
+		case ArtifactAgentFile:
 			if rmErr := os.Remove(p); rmErr != nil {
 				return removed, fmt.Errorf("remove %s: %w", a.Path, rmErr)
 			}
+		default:
+			// A kind this build does not know is skipped and kept, never
+			// removed by omission as "a file" (sideshow#171). The caller
+			// reports it; the containment and preserve checks above
+			// already ran over it.
+			continue
 		}
 		removed++
 	}
