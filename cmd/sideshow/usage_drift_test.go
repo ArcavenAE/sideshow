@@ -23,8 +23,10 @@ import (
 // the scope this pin was approved for.
 
 var (
-	flagRE       = regexp.MustCompile(`--[a-z][a-z-]*(?:\s+(?:<[^>\s]+>|[a-z]+(?:\|[a-z]+)+))?`)
-	topLevelLine = regexp.MustCompile(`(?m)^  sideshow .*$`)
+	flagRE = regexp.MustCompile(`--[a-z][a-z-]*(?:\s+(?:<[^>\s]+>|[a-z]+(?:\|[a-z]+)+))?`)
+	// An entry is a "  sideshow ..." line plus the indented lines that
+	// continue it, since long entries wrap in usage().
+	topLevelLine = regexp.MustCompile(`(?m)^  sideshow .*(?:\n {10,}\S.*)*`)
 )
 
 type usageFlag struct {
@@ -58,7 +60,7 @@ func dummyValue(t *testing.T, token string) string {
 	}
 }
 
-// topLevelHelp returns the lines of `sideshow --help` that start a verb.
+// topLevelHelp returns the entries of `sideshow --help` that start a verb.
 func topLevelHelp(t *testing.T) []string {
 	t.Helper()
 	bin := buildBinary(t)

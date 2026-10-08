@@ -46,7 +46,7 @@ Usage:
                                           registry (next sync withdraws its skills)
   sideshow status                         Show installation status
   sideshow coexist <pack> [--repo <path>]  Read-only foreign-install census and coexistence findings
-  sideshow enable <pack>[@<ver>] [--repo <path>] [--scope local|project]  Activate a pack in one repo (repo-bindings)
+  sideshow enable <pack>[@<ver>] [--repo <path>] [--scope local|project] [--override-stale-lock]  Activate a pack in one repo (repo-bindings)
   sideshow disable <pack> [--repo <path>] [--override-stale-lock]  Reverse an enable exactly (ledger replay)
   sideshow activate <pack> [--repo <path>] [--agent <name>]  Consented persona flip (repo default agent)
   sideshow deactivate <pack> [--repo <path>]  Remove the persona flip only (prefix-guarded)
@@ -54,9 +54,11 @@ Usage:
   sideshow doctor [<pack>] [--layer <n,...>] [--repo <path>] [--json] [--strict]
                                           Read-only health report over store, receipts,
                                           and ledger (layers 1,3,4,5; docs/doctor-spec.md)
-  sideshow adopt <pack> [--repo <path>] [--rewrite-agent] [--dry-run] [--override-stale-lock]  Convert a repo from the foreign (claude-mp) channel
+  sideshow adopt <pack>[@<ver>] [--repo <path>] [--scope local|project] [--allow-version-change]
+                                          [--rewrite-agent] [--dry-run] [--override-stale-lock]  Convert a repo from the foreign (claude-mp) channel
   sideshow adopt <pack> --finish          Report remaining foreign residue (print-only)
-  sideshow adopt <pack> --migrate-user-scope [--also-repo <path>] [--sweep-root <dir>] [--yes]
+  sideshow adopt <pack> --migrate-user-scope [--also-repo <path>] [--sweep-root <dir>] [--commit-consent]
+                                          [--override-stale-lock] [--yes]
                                           Move a machine-wide foreign enable to per-repo enables
   sideshow version                        Show version
 
