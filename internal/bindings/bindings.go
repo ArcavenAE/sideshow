@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
 
 	"github.com/ArcavenAE/sideshow/internal/foreign"
 	"github.com/ArcavenAE/sideshow/internal/pack"
@@ -276,6 +279,8 @@ func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 	var current []ManifestEntry
 	failed := 0
 
+	warnCollisions(all)
+
 	for _, b := range all {
 		n, syncErr := b.Sync()
 		if syncErr != nil {
@@ -311,6 +316,56 @@ func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 
 	removed, err = reconcile(current)
 	return synced, removed, err
+}
+
+// warnCollisions says, before any write, which destination paths this
+// sync will write for a pack other than the one that last wrote them: two
+// packs in this run shipping the same id, or one pack about to overwrite
+// what the previous sync recorded for another (aae-orc-em8e). It only
+// warns. What sync writes, the manifest it saves, and the exit status are
+// unchanged, so the last writer still wins; a path is named once per
+// sync. A binding whose artifacts cannot be listed is left to the sync
+// itself to report.
+func warnCollisions(all []Binding) {
+	writers := map[string][]string{} // path -> distinct packs, in sync order
+	var order []string
+	for _, b := range all {
+		arts, err := b.Artifacts()
+		if err != nil {
+			continue
+		}
+		for _, a := range arts {
+			ps, seen := writers[a]
+			if !seen {
+				order = append(order, a)
+			}
+			if !slices.Contains(ps, b.PackName()) {
+				writers[a] = append(ps, b.PackName())
+			}
+		}
+	}
+
+	// Manifest order is sync order, so the last entry for a path is the
+	// pack whose bytes are on disk.
+	lastWriter := map[string]string{}
+	if m, err := loadManifest(); err == nil {
+		for _, e := range m.Entries {
+			lastWriter[e.Path] = e.Pack
+		}
+	}
+
+	sort.Strings(order)
+	for _, path := range order {
+		ps := writers[path]
+		switch {
+		case len(ps) > 1:
+			fmt.Fprintf(os.Stderr, "warning: %s is written by %s in this sync; the later copy (%s) wins\n",
+				path, strings.Join(ps, " and "), ps[len(ps)-1])
+		case lastWriter[path] != "" && lastWriter[path] != ps[0]:
+			fmt.Fprintf(os.Stderr, "warning: %s was last written by %s; %s overwrites it\n",
+				path, lastWriter[path], ps[0])
+		}
+	}
 }
 
 // CountForPack returns the total discoverable artifacts across all bindings
