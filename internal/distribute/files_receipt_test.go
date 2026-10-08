@@ -162,3 +162,28 @@ func TestDryRunNeverAsksToRecordAReceipt(t *testing.T) {
 		t.Errorf("a dry run moved the receipt")
 	}
 }
+
+// The receipt kept for an edited file is the one sideshow recorded, not the
+// pack's current bytes: if the user later puts the file back exactly as
+// sideshow wrote it, a pack update reaches it again.
+func TestFiles_TheKeptReceiptIsWhatSideshowWroteNotTheCurrentPack(t *testing.T) {
+	t.Parallel()
+	g := newFilesRig(t)
+	g.run(false)
+	original := g.read("conf/a.cfg")
+	if err := os.WriteFile(g.path("conf/a.cfg"), []byte(original+"my edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(g.path("conf/b.cfg")); err != nil {
+		t.Fatal(err)
+	}
+	g.source["conf/a.cfg"] = "a from pack v2\n"
+	wantAction(t, g.run(false)["conf/a.cfg"], "skipped", "modified since sideshow wrote it")
+	if err := os.WriteFile(g.path("conf/a.cfg"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantAction(t, g.run(false)["conf/a.cfg"], "wrote", "")
+	if g.read("conf/a.cfg") != "a from pack v2\n" {
+		t.Errorf("the update did not reach the restored file:\n%s", g.read("conf/a.cfg"))
+	}
+}
