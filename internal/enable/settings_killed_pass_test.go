@@ -97,3 +97,35 @@ func TestDisable_RerunDoesNotOverwriteAHandReformattedFile(t *testing.T) {
 		})
 	}
 }
+
+// On an ordinary enable then disable, an original that enable plus
+// disable cannot reproduce exactly keeps the "did not match" note. A
+// file nobody changed must not be reported as "changed since enable"
+// (the sha guard in restoreOriginalSettings).
+func TestDisable_UnchangedFileKeepsTheDidNotMatchNote(t *testing.T) {
+	for _, original := range []string{`{"env": {}}`, `{"hooks": {}}`} {
+		t.Run(original, func(t *testing.T) {
+			store := writeStore(t)
+			repo := t.TempDir()
+			settings := plantSettings(t, repo, bindings.ScopeLocal, original)
+			opts := baseOpts(t, repo, store)
+			if err := Enable(opts); err != nil {
+				t.Fatalf("Enable: %v", err)
+			}
+			out := captureOut(t, func() {
+				if err := Disable(opts); err != nil {
+					t.Errorf("Disable: %v", err)
+				}
+			})
+			if !strings.Contains(out, "did not match its original content after removal") {
+				t.Errorf("missing the did-not-match note:\n%s", out)
+			}
+			if strings.Contains(out, "changed since enable") {
+				t.Errorf("an unchanged file was reported as changed:\n%s", out)
+			}
+			if _, err := os.Stat(settings); err != nil {
+				t.Errorf("settings file: %v", err)
+			}
+		})
+	}
+}

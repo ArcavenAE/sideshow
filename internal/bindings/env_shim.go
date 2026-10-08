@@ -171,8 +171,6 @@ func envObject(settings map[string]any, path string) (map[string]any, error) {
 	return env, nil
 }
 
-// writeSettings persists a settings object with stable two-space
-// indentation and a trailing newline.
 // RenderSettings returns the bytes writeSettings puts on disk for a
 // settings map: two-space indent and a trailing newline.
 func RenderSettings(settings map[string]any) ([]byte, error) {
@@ -183,6 +181,8 @@ func RenderSettings(settings map[string]any) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// writeSettings persists a settings object with stable two-space
+// indentation and a trailing newline.
 func writeSettings(path string, settings map[string]any) error {
 	data, err := RenderSettings(settings)
 	if err != nil {
