@@ -318,6 +318,14 @@ func checkDefaultAgent(rep *Report, opts Options, view *foreign.RepoView) {
 	if !strings.HasPrefix(agent, opts.Pack+":") {
 		return
 	}
+	// The agent namespace is the plugin name, so any enabled identity of
+	// the pack keeps the agent resolvable: one re-enabled at a narrower
+	// scope, or one from a second marketplace.
+	for _, id := range view.EffectivelyEnabled {
+		if strings.HasPrefix(id, opts.Pack+"@") {
+			return
+		}
+	}
 	for _, id := range view.Suppressed {
 		if !strings.HasPrefix(id, opts.Pack+"@") {
 			continue

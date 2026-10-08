@@ -371,3 +371,46 @@ func TestRun_BoundAgentBesideSuppressedIdentityDoesNotWarn(t *testing.T) {
 		t.Errorf("the bound agent was reported as dangling: %+v", got)
 	}
 }
+
+// An identity can be suppressed at one scope and enabled again at a
+// narrower one; the harness then loads it, so its agent resolves and a
+// default agent naming it does not dangle (sideshow#95 follow-up).
+func TestRun_ForeignDefaultAgentDoesNotWarnWhenReEnabledLocally(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	suppressedForeign(t, opts)
+	write(t, opts.RepoDir, ".claude/settings.json", `{"enabledPlugins": {"vsdd-factory@claude-mp": false}, "agent": "vsdd-factory:orchestrator"}`)
+	write(t, opts.ConfigDir, "settings.json", `{`+enableProject+`}`)
+	write(t, opts.RepoDir, ".claude/settings.local.json", `{`+enableProject+`}`)
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := danglingAgentWarns(rep); len(got) != 0 {
+		t.Errorf("an identity re-enabled locally was reported as dangling: %+v", got)
+	}
+}
+
+// The agent namespace is the plugin name, so a second marketplace that
+// serves the same plugin and is enabled here keeps the agent resolvable
+// even while the first identity is suppressed.
+func TestRun_ForeignDefaultAgentDoesNotWarnWhenASecondMarketplaceIsEnabled(t *testing.T) {
+	t.Parallel()
+	opts := baseOptions(t)
+	write(t, opts.ConfigDir, "plugins/installed_plugins.json", `{"version": 2, "plugins": {
+	  "vsdd-factory@claude-mp": [{"scope": "project", "installPath": "/nonexistent", "version": "1.0.0-rc.23", "gitCommitSha": "abc123"}],
+	  "vsdd-factory@other-mp": [{"scope": "project", "installPath": "/nonexistent2", "version": "1.0.0-rc.23", "gitCommitSha": "abc123"}]
+	}}`)
+	write(t, opts.RepoDir, ".claude/settings.json",
+		`{"enabledPlugins": {"vsdd-factory@claude-mp": true, "vsdd-factory@other-mp": true}, "agent": "vsdd-factory:orchestrator"}`)
+	write(t, opts.RepoDir, ".claude/settings.local.json", `{`+suppressLocal+`}`)
+
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := danglingAgentWarns(rep); len(got) != 0 {
+		t.Errorf("a pack identity still enabled via a second marketplace was reported as dangling: %+v", got)
+	}
+}
