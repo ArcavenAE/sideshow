@@ -203,3 +203,51 @@ func TestWriteFileAtomic_LinkLoopIsAnError(t *testing.T) {
 		t.Fatal("a link loop was accepted")
 	}
 }
+
+// A relative link target is resolved from the link's physical directory,
+// not lexically: with the manifest directory itself reached through a
+// symlink, `..` in the target climbs the real directory, as the kernel
+// does. The decoy file that a lexical join would hit must stay untouched
+// (sideshow#173, review of #179).
+func TestWriteFileAtomic_RelativeTargetUsesThePhysicalDirectory(t *testing.T) {
+	for name, existing := range map[string]bool{"existing target": true, "dangling target": false} {
+		t.Run(name, func(t *testing.T) {
+			d := t.TempDir()
+			for _, sub := range []string{"real/ss", "real/dot", "dot"} {
+				if err := os.MkdirAll(filepath.Join(d, sub), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			home := filepath.Join(d, "home") // stands in for SIDESHOW_HOME
+			if err := os.Symlink(filepath.Join(d, "real", "ss"), home); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join("..", "dot", "m.yaml"), filepath.Join(d, "real", "ss", "m.yaml")); err != nil {
+				t.Fatal(err)
+			}
+			real := filepath.Join(d, "real", "dot", "m.yaml")
+			decoy := filepath.Join(d, "dot", "m.yaml")
+			if existing {
+				if err := os.WriteFile(real, []byte("old"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(decoy, []byte("decoy"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := writeFileAtomic(filepath.Join(home, "m.yaml"), []byte("new"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got, _ := os.ReadFile(real); string(got) != "new" {
+				t.Errorf("the real target = %q, want new", got)
+			}
+			if got, _ := os.ReadFile(decoy); string(got) != "decoy" {
+				t.Errorf("the unrelated file was overwritten: %q", got)
+			}
+			if info, err := os.Lstat(filepath.Join(d, "real", "ss", "m.yaml")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+				t.Errorf("the link was replaced: %v, %v", info, err)
+			}
+		})
+	}
+}
