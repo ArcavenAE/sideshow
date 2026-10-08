@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"github.com/ArcavenAE/sideshow/internal/project"
 )
@@ -377,7 +378,7 @@ func distributeHook(repoRoot string, hook HookArtifact, opts Options) Action {
 		return action
 	}
 
-	if err := os.WriteFile(settingsPath, append(data, '\n'), 0o644); err != nil {
+	if err := atomicfile.WriteFile(settingsPath, append(data, '\n'), 0o644); err != nil {
 		action.Status = "error"
 		action.Detail = fmt.Sprintf("write settings: %v", err)
 		return action

@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/bindings"
 )
 
@@ -166,7 +167,7 @@ func restoreOriginalSettings(ledgerPath, settings, ref, beforeSHA string, create
 		canonical("did not match its original content after removal")
 		return
 	}
-	if err := os.WriteFile(settings, original, 0o644); err != nil {
+	if err := atomicfile.WriteFile(settings, original, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: restore %s: %v\n", settings, err)
 		canonical("could not be restored")
 	}
