@@ -227,7 +227,9 @@ sideshow coexist vsdd-factory           # foreign-install census + findings
 sideshow activate vsdd-factory          # default agent -> vsdd-orchestrator
 sideshow deactivate vsdd-factory        # remove the flip only
 
-# Exact reversal: replays the enable record in reverse, byte-exact
+# Exact reversal: replays the enable record in reverse; byte-exact when the
+# settings file is unchanged since enable, otherwise it removes exactly what
+# enable added and rewrites the file in canonical form
 sideshow disable vsdd-factory
 
 # Convert a repo already on the claude plugin channel (reversible,

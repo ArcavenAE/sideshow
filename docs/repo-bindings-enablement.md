@@ -23,7 +23,12 @@ What a consumer gets here that the plugin form cannot give:
   enable on this channel at all; a factory pack never activates in
   repos you did not name.
 - **Exact removal.** Everything enable writes is recorded; disable
-  replays the record in reverse and is byte-exact, proven by test.
+  replays the record in reverse. It is byte-exact when the settings
+  file is unchanged since enable; otherwise disable removes exactly
+  what enable added and rewrites the file in canonical form, and says
+  so. Enable keeps the file's original bytes in a private record in the
+  sideshow store (never in the repo) and deletes it when disable
+  finishes.
 
 Deliberate differences from the plugin form are priced in
 [docs/divergence-register.md](divergence-register.md) — read it once

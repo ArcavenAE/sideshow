@@ -183,6 +183,13 @@ func Enable(opts Options) error {
 	}
 
 	settings := settingsFile(opts.RepoDir, opts.Scope)
+	// The original bytes, read once before the first writer touches the
+	// file (aae-orc-gf80m). Nil means the file did not exist.
+	originalSettings, readOrigErr := os.ReadFile(settings)
+	if readOrigErr != nil && !os.IsNotExist(readOrigErr) {
+		rollback()
+		return fmt.Errorf("read settings %s: %w", settings, readOrigErr)
+	}
 	created, err := bindings.MergeEnvShim(settings, "CLAUDE_PLUGIN_ROOT", storeRoot)
 	if err != nil {
 		rollback()
@@ -227,10 +234,25 @@ func Enable(opts Options) error {
 		Artifacts:     artifactStrings(artifacts, created),
 		Selection:     "full",
 	}
+	sidecar := ""
+	if !created {
+		// Keep the original bytes and the sha of what enable left, so
+		// disable can hand the file back unchanged.
+		enabled, err := os.ReadFile(settings)
+		if err != nil {
+			return fmt.Errorf("read settings %s: %w", settings, err)
+		}
+		sidecar = sidecarName(opts.RepoDir, opts.Pack, string(opts.Scope))
+		if err := writeSidecar(opts.LedgerPath, sidecar, sha256Hex(enabled), originalSettings); err != nil {
+			return err
+		}
+	}
 	if err := led.SetRow(opts.RepoDir, opts.Pack, row); err != nil {
+		removeSidecar(opts.LedgerPath, sidecar)
 		return err
 	}
 	if err := led.Save(opts.LedgerPath); err != nil {
+		removeSidecar(opts.LedgerPath, sidecar)
 		return err
 	}
 
@@ -265,6 +287,12 @@ func Disable(opts Options) error {
 	}
 
 	settings := settingsFile(opts.RepoDir, bindings.RepoScope(row.SettingsScope))
+	// The file as disable found it, hashed before any removal rewrites
+	// it, to compare with the sha enable recorded (aae-orc-gf80m).
+	beforeSHA := ""
+	if data, readErr := os.ReadFile(settings); readErr == nil {
+		beforeSHA = sha256Hex(data)
+	}
 	if _, err := bindings.RemoveHookChain(settings, opts.Pack); err != nil {
 		return err
 	}
@@ -299,6 +327,8 @@ func Disable(opts Options) error {
 			}
 		}
 	}
+
+	restoreOriginalSettings(opts.LedgerPath, settings, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope), beforeSHA, removeSettingsFile)
 
 	led.DeleteRow(opts.RepoDir, opts.Pack)
 	if err := led.Save(opts.LedgerPath); err != nil {
