@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/bindings"
 	"github.com/ArcavenAE/sideshow/internal/ledger"
 )
@@ -184,7 +185,7 @@ func writeSettingsJSON(path string, settings map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("marshal settings: %w", err)
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write settings %s: %w", path, err)
 	}
 	return nil

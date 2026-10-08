@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -131,5 +132,41 @@ func TestNoUnlistedInPlaceWriters(t *testing.T) {
 	}
 	if len(stale) > 0 {
 		t.Errorf("allowlist entries that no longer write in place; delete them:\n  %s", strings.Join(stale, "\n  "))
+	}
+}
+
+// The detector itself: it flags the three in-place forms, ignores an
+// OpenFile without O_TRUNC and test files, and names the enclosing
+// function.
+func TestFindInPlaceWriters_DetectsTheThreeFormsOnly(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, src string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("internal/a/a.go", `package a
+import "os"
+func W() { _ = os.WriteFile("x", nil, 0o644) }
+func C() { _, _ = os.Create("x") }
+func T() { _, _ = os.OpenFile("x", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) }
+func P() { _, _ = os.OpenFile("x", os.O_WRONLY, 0o644) }
+func R() { _, _ = os.ReadFile("x") }
+`)
+	write("cmd/b/b.go", "package b\nimport \"os\"\nfunc M() { _ = os.WriteFile(\"x\", nil, 0o644) }\n")
+	write("internal/a/a_test.go", "package a\nimport \"os\"\nfunc TestX() { _ = os.WriteFile(\"x\", nil, 0o644) }\n")
+	got := findInPlaceWriters(t, root)
+	want := []string{"cmd/b/b.go:M", "internal/a/a.go:C", "internal/a/a.go:T", "internal/a/a.go:W"}
+	var names []string
+	for k := range got {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Errorf("detected %v, want %v", names, want)
 	}
 }
