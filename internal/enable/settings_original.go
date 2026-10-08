@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/ArcavenAE/sideshow/internal/bindings"
 )
 
 // Byte-exact removal of the settings file (aae-orc-gf80m).
@@ -152,11 +154,14 @@ func restoreOriginalSettings(ledgerPath, settings, ref, beforeSHA string, create
 		canonical(fmt.Sprintf("has an unreadable record of its original bytes (%v)", err))
 		return
 	}
-	if beforeSHA != enabledSHA {
+	now, err := os.ReadFile(settings)
+	if beforeSHA != enabledSHA && (err != nil || !isOwnRendering(now, original)) {
+		// The file differs from the enabled bytes. A pass killed after
+		// the rewrite leaves exactly sideshow's rendering of the
+		// original; anything else is a hand edit and keeps its bytes.
 		canonical("changed since enable")
 		return
 	}
-	now, err := os.ReadFile(settings)
 	if err != nil || !sameJSON(now, original) {
 		canonical("did not match its original content after removal")
 		return
@@ -165,4 +170,16 @@ func restoreOriginalSettings(ledgerPath, settings, ref, beforeSHA string, create
 		fmt.Fprintf(os.Stderr, "warning: restore %s: %v\n", settings, err)
 		canonical("could not be restored")
 	}
+}
+
+// isOwnRendering reports whether now is byte-for-byte what sideshow's
+// settings writer renders from the original bytes' content. A hand edit
+// that only reformats the file does not match.
+func isOwnRendering(now, original []byte) bool {
+	var m map[string]any
+	if err := json.Unmarshal(original, &m); err != nil {
+		return false
+	}
+	want, err := bindings.RenderSettings(m)
+	return err == nil && bytes.Equal(now, want)
 }
