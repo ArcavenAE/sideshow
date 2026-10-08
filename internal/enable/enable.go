@@ -317,11 +317,21 @@ func Disable(opts Options) error {
 	if data, readErr := os.ReadFile(settings); readErr == nil {
 		beforeSHA = sha256Hex(data)
 	}
-	if _, err := bindings.RemoveHookChain(settings, opts.Pack); err != nil {
+	hooksRemoved, err := bindings.RemoveHookChain(settings, opts.Pack)
+	if err != nil {
 		return err
 	}
-	if _, err := bindings.RemoveEnvShim(settings, "CLAUDE_PLUGIN_ROOT", row.StorePath); err != nil {
+	shimRemoved, err := bindings.RemoveEnvShim(settings, "CLAUDE_PLUGIN_ROOT", row.StorePath)
+	if err != nil {
 		return err
+	}
+	// Rows of a kind this build does not know are skipped by removal and
+	// stay in the ledger (sideshow#171).
+	var unknown []bindings.RepoArtifact
+	for _, a := range arts {
+		if !bindings.KnownArtifactKind(a.Kind) {
+			unknown = append(unknown, a)
+		}
 	}
 
 	removed, err := bindings.RemoveRepoArtifacts(target, arts)
@@ -350,7 +360,63 @@ func Disable(opts Options) error {
 		}
 	}
 
-	restoreOriginalSettings(opts.LedgerPath, settings, sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope), beforeSHA, removeSettingsFile)
+	sidecar := sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope)
+	if row.SettingsRestoredSHA == "" {
+		restoreOriginalSettings(opts.LedgerPath, settings, sidecar, beforeSHA, removeSettingsFile)
+	} else {
+		// An earlier incomplete pass already restored the file and
+		// recorded what it left. The restore never runs twice; say only
+		// what is true now.
+		removeSidecar(opts.LedgerPath, sidecar)
+		switch {
+		case hooksRemoved > 0 || shimRemoved:
+			fmt.Printf("note: %s has no record of its original bytes (an earlier disable pass used it); disable removed exactly what enable added and rewrote the file in canonical form\n", settings)
+		case beforeSHA != "" && beforeSHA != row.SettingsRestoredSHA:
+			fmt.Printf("note: %s changed since the earlier disable pass; left as it is\n", settings)
+		}
+	}
+
+	if len(unknown) > 0 {
+		// Keep every unknown row, and every known row whose path is still
+		// on disk (a parent dir the unknown path sits in), in ledger order,
+		// so a later disable removes them.
+		kept := *row
+		kept.Artifacts = nil
+		for _, s := range row.Artifacts {
+			kind, path, ok := strings.Cut(s, ":")
+			if !ok {
+				continue
+			}
+			if kind == "settings-file-created" {
+				if _, statErr := os.Lstat(settings); statErr == nil {
+					kept.Artifacts = append(kept.Artifacts, s)
+				}
+				continue
+			}
+			if !bindings.KnownArtifactKind(kind) {
+				kept.Artifacts = append(kept.Artifacts, s)
+				continue
+			}
+			if _, statErr := os.Lstat(filepath.Join(opts.RepoDir, filepath.FromSlash(path))); statErr == nil {
+				kept.Artifacts = append(kept.Artifacts, s)
+			}
+		}
+		kept.SettingsRestoredSHA = ""
+		if data, readErr := os.ReadFile(settings); readErr == nil {
+			kept.SettingsRestoredSHA = sha256Hex(data)
+		}
+		desc := make([]string, 0, len(unknown))
+		for _, a := range unknown {
+			desc = append(desc, a.Kind+" "+a.Path)
+		}
+		if err := led.SetRow(opts.RepoDir, opts.Pack, kept); err != nil {
+			return err
+		}
+		if err := led.Save(opts.LedgerPath); err != nil {
+			return err
+		}
+		return fmt.Errorf("disable incomplete: %d artifacts of kinds this build does not know (%s); upgrade sideshow and run disable again", len(unknown), strings.Join(desc, ", "))
+	}
 
 	led.DeleteRow(opts.RepoDir, opts.Pack)
 	if err := led.Save(opts.LedgerPath); err != nil {
