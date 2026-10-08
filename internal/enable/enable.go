@@ -280,7 +280,23 @@ func Disable(opts Options) error {
 	}
 	if removeSettingsFile {
 		if data, readErr := os.ReadFile(settings); readErr == nil && strings.TrimSpace(string(data)) == "{}" {
-			_ = os.Remove(settings)
+			if rmErr := os.Remove(settings); rmErr == nil {
+				// The settings file was the last thing in a directory
+				// enable created, which the pass above had to skip as
+				// non-empty (aae-orc-iimrw). Offer each recorded
+				// parent dir again; a non-empty one stays.
+				var dirs []bindings.RepoArtifact
+				for _, a := range arts {
+					if a.Kind == bindings.ArtifactParentDir {
+						dirs = append(dirs, a)
+					}
+				}
+				more, rmDirErr := bindings.RemoveRepoArtifacts(target, dirs)
+				if rmDirErr != nil {
+					return rmDirErr
+				}
+				removed += more
+			}
 		}
 	}
 

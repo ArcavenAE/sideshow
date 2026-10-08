@@ -434,3 +434,83 @@ func diffSnapshots(want, got map[string]string) string {
 	sort.Strings(lines)
 	return strings.Join(lines, "\n")
 }
+
+// A repo with no .claude/ gets one from enable (the ledger records it as
+// parent-dir) and disable must take it away again once it is empty
+// (aae-orc-iimrw). The sibling case pins the other half: a .claude/ that
+// was there before enable stays.
+func TestEnableDisable_FreshRepoLeavesNoClaudeDir(t *testing.T) {
+	t.Parallel()
+	store := writeStore(t)
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("user repo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := baseOpts(t, repo, store)
+
+	before := snapshot(t, repo)
+	if err := Enable(opts); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(repo, ".claude")); err != nil {
+		t.Fatalf("enable did not create .claude/ in a fresh repo: %v", err)
+	}
+	if err := Disable(opts); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	after := snapshot(t, repo)
+	for k := range after {
+		if _, ok := before[k]; !ok {
+			t.Errorf("disable left %s behind", k)
+		}
+	}
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			t.Errorf("disable removed %s", k)
+		}
+	}
+}
+
+func TestEnableDisable_PreexistingEmptyClaudeDirStays(t *testing.T) {
+	t.Parallel()
+	store := writeStore(t)
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	opts := baseOpts(t, repo, store)
+
+	if err := Enable(opts); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if err := Disable(opts); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	info, err := os.Lstat(filepath.Join(repo, ".claude"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("pre-existing .claude/ was removed by disable: %v", err)
+	}
+}
+
+// A directory enable created stays when the user put something in it
+// after enable: only an empty recorded parent dir is removed.
+func TestEnableDisable_CreatedClaudeDirWithUserFileStays(t *testing.T) {
+	t.Parallel()
+	store := writeStore(t)
+	repo := t.TempDir()
+	opts := baseOpts(t, repo, store)
+
+	if err := Enable(opts); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	keep := filepath.Join(repo, ".claude", "notes.md")
+	if err := os.WriteFile(keep, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Disable(opts); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("user file under a created .claude/ was lost: %v", err)
+	}
+}
