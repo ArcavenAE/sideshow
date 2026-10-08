@@ -181,3 +181,31 @@ func TestInstallFromLocal_DeclaredNamePrintsNoNotice(t *testing.T) {
 		t.Errorf("a declared name printed the notice:\n%s", out)
 	}
 }
+
+// A later install with --no-activate returns before the activation tail, so
+// the note has to be printed before that return too: the doc comment on
+// ValidateName promises the install is never silent about an unnamed source.
+func TestInstallFromLocal_NoActivateLaterInstallStillSaysNoNameWasDeclared(t *testing.T) {
+	freezeSafeHome(t)
+	first := writeInstallerOutput(t)
+	if err := InstallFromLocal("spectacle", first, true); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	second := writeInstallerOutput(t)
+	if err := os.WriteFile(filepath.Join(second, "_config", "manifest.yaml"), []byte("installation:\n  version: \"6.13.0\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := InstallFromLocal("spectacle", second, false); err != nil {
+			t.Errorf("second install: %v", err)
+		}
+	})
+	want := "the source declares no pack name (installer layout); installed as spectacle as given"
+	if !strings.Contains(out, want) {
+		t.Errorf("later --no-activate install lacks %q:\n%s", want, out)
+	}
+	if !strings.Contains(out, "Not activated") {
+		t.Errorf("later --no-activate install lacks the Not activated line:\n%s", out)
+	}
+}

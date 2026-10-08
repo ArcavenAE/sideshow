@@ -252,6 +252,17 @@ func ValidateName(name, sourcePath string) (undeclared string, err error) {
 	return undeclared, nil
 }
 
+// printUndeclaredNameNote says that the installed name was taken as
+// given because the source declares none. Every install path that prints
+// "Installed N files" calls it, so the note is never skipped by an early
+// return (aae-orc-cv1b6).
+func printUndeclaredNameNote(undeclared, name string) {
+	if undeclared == "" {
+		return
+	}
+	fmt.Printf("note: the source declares no pack name (%s); installed as %s as given.\n", undeclared, name)
+}
+
 func hasFile(root string, parts ...string) bool {
 	info, err := os.Stat(filepath.Join(append([]string{root}, parts...)...))
 	if err != nil {
@@ -653,6 +664,7 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	firstInstall := os.IsNotExist(curErr)
 	if !activate && !firstInstall {
 		fmt.Printf("Installed %d files to %s\n", count, destDir)
+		printUndeclaredNameNote(undeclared, name)
 		fmt.Printf("Not activated: current stays as-is. Run 'sideshow use %s %s' to activate.\n", name, version)
 		activation.PrintInstallNotice()
 		return nil
@@ -688,9 +700,7 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	}
 
 	fmt.Printf("Installed %d files to %s\n", count, destDir)
-	if undeclared != "" {
-		fmt.Printf("note: the source declares no pack name (%s); installed as %s as given.\n", undeclared, name)
-	}
+	printUndeclaredNameNote(undeclared, name)
 	if !activate && firstInstall {
 		fmt.Printf("--no-activate ignored: this is the first install of %s, so %s is activated.\n", name, version)
 	}
