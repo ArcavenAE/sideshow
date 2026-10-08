@@ -22,10 +22,6 @@ import (
 // call has been converted fails the stale check below, so the list can
 // only shrink.
 var inPlaceAllowlist = map[string]string{
-	"cmd/sideshow/project_identity.go:seedIdentity":            "pending: #185 tier 2 (state)",
-	"internal/bindings/custom_sources.go:saveCustomSources":    "pending: #185 tier 2 (state)",
-	"internal/project/project.go:InitIdentity":                 "pending: #185 tier 2 (state)",
-	"internal/init/init.go:Run":                                "pending: #185 tier 2 (state)",
 	"internal/distribute/distribute.go:distributeRule":         "pending: #185 tier 3 (user files)",
 	"internal/distribute/distribute.go:distributeClaudeMD":     "pending: #185 tier 3 (user files)",
 	"internal/distribute/distribute.go:distributeGitignore":    "pending: #185 tier 3 (user files)",
