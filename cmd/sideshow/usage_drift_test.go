@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ArcavenAE/sideshow/internal/enable"
 )
 
 // Usage drift (sideshow#195). Each verb names its flags in a per-command
@@ -17,10 +19,9 @@ import (
 // Known limit: a flag the parser accepts but no usage string names stays
 // unpinned by both checks. Only a flag registry that the parsers, the
 // usage strings and the help lines all read from would close that; a
-// registry is not part of this change.
-//
-// coexist has a usage string too (cmd/sideshow/coexist.go) but is outside
-// the scope this pin was approved for.
+// registry is not part of this change. The project init parser has a
+// second gap: it ignores flags it does not know, so check 2 cannot see a
+// flag dropped from it.
 
 var (
 	flagRE = regexp.MustCompile(`--[a-z][a-z-]*(?:\s+(?:<[^>\s]+>|[a-z]+(?:\|[a-z]+)+))?`)
@@ -128,6 +129,8 @@ func TestUsageDrift_TopLevelHelpNamesEveryFlagOfEachUsageString(t *testing.T) {
 		{"activate", lineFor(t, lines, "  sideshow activate ", anyLine), usageFlags(activateUsage)},
 		{"deactivate", lineFor(t, lines, "  sideshow deactivate ", anyLine), usageFlags(deactivateUsage)},
 		{"coexist-check", lineFor(t, lines, "  sideshow coexist-check ", anyLine), usageFlags(coexistCheckUsage)},
+		{"coexist", lineFor(t, lines, "  sideshow coexist ", anyLine), usageFlags(coexistUsage)},
+		{"project init", lineFor(t, lines, "  sideshow project init ", anyLine), usageFlags(projectInitUsage)},
 		{"adopt conversion", lineFor(t, lines, "  sideshow adopt ", func(l string) bool {
 			return !strings.Contains(l, "--finish") && !strings.Contains(l, "--migrate-user-scope")
 		}), conversion},
@@ -164,46 +167,74 @@ func isolate(t *testing.T) {
 	t.Chdir(t.TempDir())
 }
 
+// How a command's parser is reached. A parse-only verb has a parser that
+// does no work, so any error at all means it rejected the flag. The others
+// run the whole command, whose later steps fail for unrelated reasons in
+// scratch space, so only an error that names the flag counts.
 func TestUsageDrift_EveryParserAcceptsEveryFlagItsUsageNames(t *testing.T) {
 	conversion, migrate, finish := adoptModes(t)
 
-	runArgs := func(t *testing.T, run func([]string) error, f usageFlag) error {
-		t.Helper()
-		args := []string{"demo", f.name}
-		if f.value != "" {
-			args = append(args, dummyValue(t, f.value))
-		}
-		_, err := captureStdout(t, func() error { return run(args) })
-		return err
+	parseOnly := func(parse func([]string) error) func([]string) (bool, error) {
+		return func(args []string) (bool, error) { return true, parse(args) }
 	}
-	parseVerb := func(verb string) func([]string) error {
-		return func(args []string) error { _, err := parseVerbArgs(verb, args); return err }
+	fullRun := func(run func([]string) error) func([]string) (bool, error) {
+		return func(args []string) (bool, error) { return false, run(args) }
 	}
-	parseActivate := func(verb string, allowAgent bool) func([]string) error {
-		return func(args []string) error { _, _, err := parseActivateArgs(verb, args, allowAgent); return err }
+	parseVerb := func(parse func([]string) (*enable.Options, error)) func([]string) error {
+		return func(args []string) error { _, err := parse(args); return err }
+	}
+	parseActivateVerb := func(parse func([]string) (*enable.Options, string, error)) func([]string) error {
+		return func(args []string) error { _, _, err := parse(args); return err }
 	}
 
 	cases := []struct {
-		name  string
-		flags []usageFlag
-		run   func([]string) error
+		name   string
+		flags  []usageFlag
+		prefix func(usageFlag) []string // arguments the mode needs before the flag
+		run    func([]string) (parseOnly bool, err error)
 	}{
-		{"enable", usageFlags(enableUsage), parseVerb("enable")},
-		{"disable", usageFlags(disableUsage), parseVerb("disable")},
-		{"activate", usageFlags(activateUsage), parseActivate("activate", true)},
-		{"deactivate", usageFlags(deactivateUsage), parseActivate("deactivate", false)},
-		{"coexist-check", usageFlags(coexistCheckUsage), runCoexistCheck},
-		{"adopt conversion", conversion, runAdopt},
-		{"adopt migrate", migrate, runAdopt},
-		{"adopt finish", finish, runAdopt},
+		{"enable", usageFlags(enableUsage), nil, parseOnly(parseVerb(parseEnableArgs))},
+		{"disable", usageFlags(disableUsage), nil, parseOnly(parseVerb(parseDisableArgs))},
+		{"activate", usageFlags(activateUsage), nil, parseOnly(parseActivateVerb(parseActivate))},
+		{"deactivate", usageFlags(deactivateUsage), nil, parseOnly(parseActivateVerb(parseDeactivate))},
+		{"coexist-check", usageFlags(coexistCheckUsage), nil, fullRun(runCoexistCheck)},
+		{"coexist", usageFlags(coexistUsage), nil, fullRun(runCoexist)},
+		{"project init", usageFlags(projectInitUsage), nil, fullRun(runProjectInitForPack)},
+		{"adopt conversion", conversion, nil, fullRun(runAdopt)},
+		{"adopt migrate", migrate, func(f usageFlag) []string {
+			// A migrate flag is meaningful, and not an error in its own
+			// right, only beside the mode flag (--yes alone is refused).
+			if f.name == "--migrate-user-scope" {
+				return nil
+			}
+			return []string{"--migrate-user-scope"}
+		}, fullRun(runAdopt)},
+		{"adopt finish", finish, nil, fullRun(runAdopt)},
 	}
 	for _, c := range cases {
 		for _, f := range c.flags {
 			t.Run(c.name+"/"+f.name, func(t *testing.T) {
 				isolate(t)
-				err := runArgs(t, c.run, f)
-				if err != nil && strings.Contains(err.Error(), "unknown flag") {
-					t.Errorf("%s rejects %s, which its usage names: %v", c.name, f.name, err)
+				args := []string{"demo"}
+				if c.prefix != nil {
+					args = append(args, c.prefix(f)...)
+				}
+				args = append(args, f.name)
+				if f.value != "" {
+					args = append(args, dummyValue(t, f.value))
+				}
+				var (
+					only bool
+					err  error
+				)
+				if _, cerr := captureStdout(t, func() error { only, err = c.run(args); return nil }); cerr != nil {
+					t.Fatal(cerr)
+				}
+				switch {
+				case only && err != nil:
+					t.Errorf("%s's parser rejects %s, which its usage names: %v", c.name, f.name, err)
+				case !only && err != nil && strings.Contains(err.Error(), f.name):
+					t.Errorf("%s fails on %s, which its usage names: %v", c.name, f.name, err)
 				}
 			})
 		}
