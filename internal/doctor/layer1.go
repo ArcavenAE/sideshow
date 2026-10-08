@@ -253,6 +253,13 @@ func checkSyncManifest(ctx *Context) []Finding {
 		active[p.Name] = p.Version
 	}
 	var out []Finding
+	if !ctx.Manifest.IsComplete() {
+		out = append(out, Finding{
+			Layer: 1, ID: "sync-manifest", Status: Warn, Class: Structural,
+			Detail: ctx.Manifest.IncompleteNote(),
+			Next:   "fix what the failed binding reported, then run 'sideshow commands sync'",
+		})
+	}
 	entries := 0
 	for _, e := range ctx.Manifest.Entries {
 		if ctx.PackFilter != "" && e.Pack != ctx.PackFilter {

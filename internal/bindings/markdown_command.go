@@ -118,7 +118,7 @@ func (b *MarkdownCommandBinding) Sync() (int, error) {
 
 		destPath := filepath.Join(claudeDir, name)
 		if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
-			return nil // skip on write error
+			return fmt.Errorf("write command %s: %w", destPath, err)
 		}
 		synced++
 		return nil

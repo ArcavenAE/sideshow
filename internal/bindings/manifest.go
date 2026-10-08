@@ -98,10 +98,20 @@ func loadManifest() (*SyncManifest, error) {
 
 // saveManifest writes the sync manifest for the just-completed sync.
 func saveManifest(entries []ManifestEntry) error {
+	complete := true
+	return saveManifestWith(entries, &complete, nil)
+}
+
+// saveManifestWith writes the manifest with its completeness. A sync that
+// finished passes complete true; one that failed part-way passes false and
+// the bindings that failed (sideshow#161).
+func saveManifestWith(entries []ManifestEntry, complete *bool, failed []FailedBinding) error {
 	m := SyncManifest{
-		SchemaVersion: "0.1.0",
+		SchemaVersion: "0.2.0",
 		SyncedAt:      time.Now().UTC().Format(time.RFC3339),
 		Entries:       entries,
+		Complete:      complete,
+		Failed:        failed,
 	}
 	data, err := yaml.Marshal(&m)
 	if err != nil {

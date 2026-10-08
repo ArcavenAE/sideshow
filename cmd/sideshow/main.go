@@ -916,6 +916,12 @@ func runStatus() error {
 		return nil
 	}
 
+	if m, mErr := bindings.LoadManifest(); mErr == nil {
+		if note := m.IncompleteNote(); note != "" {
+			fmt.Println(note)
+		}
+	}
+
 	for _, p := range packs {
 		fmt.Printf("%s %s\n", p.Name, p.Version)
 		act, actErr := pack.LoadActivation(p.Path)

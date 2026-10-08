@@ -283,14 +283,17 @@ func discoverCustomBindings(packs []pack.InstalledPack, packSkillOwners map[stri
 // flip no longer leaves the old version's extra skills behind).
 func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 	var current []ManifestEntry
-	failed := 0
+	var failures []FailedBinding
+	fail := func(b Binding, e error) {
+		failures = append(failures, FailedBinding{Pack: b.PackName(), Version: b.PackVersion(), Kind: b.Kind(), Error: e.Error()})
+	}
 
 	warnCollisions(all)
 
 	for _, b := range all {
 		n, syncErr := b.Sync()
 		if syncErr != nil {
-			failed++
+			fail(b, syncErr)
 			fmt.Fprintf(os.Stderr, "warning: sync %s/%s: %v\n", b.PackName(), b.Kind(), syncErr)
 			continue
 		}
@@ -298,7 +301,7 @@ func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 
 		arts, artErr := b.Artifacts()
 		if artErr != nil {
-			failed++
+			fail(b, artErr)
 			fmt.Fprintf(os.Stderr, "warning: enumerate %s/%s artifacts: %v\n", b.PackName(), b.Kind(), artErr)
 			continue
 		}
@@ -312,16 +315,43 @@ func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 		}
 	}
 
-	if failed > 0 {
+	if len(failures) > 0 {
 		// A failed binding's artifacts are missing from the current
 		// set, so reconcile would remove content that binding still
-		// owns; keep serving what is on disk and fail loudly instead.
-		// A sync that writes 0 of N must not exit 0 (sideshow#108).
-		return synced, nil, fmt.Errorf("%d binding(s) failed to sync; stale reconcile skipped so a failed binding's artifacts are not removed", failed)
+		// owns. Save what the succeeding bindings wrote, plus the
+		// previous record for every path none of them claimed, marked
+		// incomplete; the next completed sync reconciles. A sync that
+		// writes 0 of N must not exit 0 (sideshow#108).
+		complete := false
+		if serr := saveManifestWith(mergePrevious(current), &complete, failures); serr != nil {
+			fmt.Fprintf(os.Stderr, "warning: save incomplete manifest: %v\n", serr)
+		}
+		return synced, nil, fmt.Errorf("%d binding(s) failed to sync; the manifest is saved as incomplete and stale reconcile is skipped so a failed binding's artifacts are not removed", len(failures))
 	}
 
 	removed, err = reconcile(current)
 	return synced, removed, err
+}
+
+// mergePrevious puts the previous manifest's entries for paths that no
+// current entry claims ahead of the current entries, which stay in sync
+// order so the last entry for a path is still the writer on disk.
+func mergePrevious(current []ManifestEntry) []ManifestEntry {
+	prev, err := loadManifest()
+	if err != nil || prev == nil {
+		return current
+	}
+	claimed := map[string]bool{}
+	for _, e := range current {
+		claimed[e.Path] = true
+	}
+	var out []ManifestEntry
+	for _, e := range prev.Entries {
+		if !claimed[e.Path] {
+			out = append(out, e)
+		}
+	}
+	return append(out, current...)
 }
 
 // warnCollisions says, before any write, which destination paths this
@@ -396,9 +426,10 @@ func CountForPack(_, packPath string) (int, error) {
 // tool-config directories for this pack across all binding types.
 // An artifact counts only when the pack ships it at packPath, the sync
 // manifest records packName as its writer, and the file is still at the
-// target. The credit holds as of the last completed sync: a sync that
-// fails part-way returns before it saves the manifest, so the record can
-// trail what is on disk until the next sync completes. Shipping alone is not enough: two packs that ship the same
+// target. A sync that fails part-way saves
+// what its succeeding bindings wrote and marks the manifest incomplete, so
+// the credit reflects those writes; status and doctor say so until a
+// completed sync. Shipping alone is not enough: two packs that ship the same
 // canonical id would otherwise each count the other's copy as their own
 // (aae-orc-zwx4b). Ownership of what is shipped is by canonical id /
 // basename, not a name prefix, so packs that ship multi-prefix bindings
