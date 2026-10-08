@@ -9,14 +9,16 @@ import (
 )
 
 // e1Line returns the E1 line of an equivalence report built over a store
-// and a foreign tree that differ in one skill file.
-func e1Line(t *testing.T, storeVersion, foreignVersion string) string {
+// and a foreign tree that differ in one skill file. rowVersion is the
+// adopted (store) version; treeVersion and registryVersion are the foreign
+// install's tree and registry-recorded versions.
+func e1Line(t *testing.T, rowVersion, treeVersion, registryVersion string) string {
 	t.Helper()
 	opts, _, cache := fixture(t, "project")
 	mustWrite(t, cache, "skills/differs/SKILL.md", "foreign copy\n", 0o644)
 	mustWrite(t, opts.StoreRoot, "skills/differs/SKILL.md", "store copy\n", 0o644)
-	row := &ledger.Row{StorePath: opts.StoreRoot, Platform: platform(t), Version: storeVersion}
-	install := &foreign.Install{InstallPath: cache, TreeVersion: foreignVersion}
+	row := &ledger.Row{StorePath: opts.StoreRoot, Platform: platform(t), Version: rowVersion}
+	install := &foreign.Install{InstallPath: cache, TreeVersion: treeVersion, Version: registryVersion}
 	for _, l := range equivalenceReport(row, install) {
 		if strings.HasPrefix(l, "E1 ") {
 			return l
@@ -26,30 +28,32 @@ func e1Line(t *testing.T, storeVersion, foreignVersion string) string {
 	return ""
 }
 
-// Same versions: differing trees are suspicious, and the report says to
-// verify the store artifact (sideshow#97).
-func TestEquivalenceReport_E1SameVersionDifferenceIsSuspicious(t *testing.T) {
-	line := e1Line(t, "1.0.0-rc.23", "1.0.0-rc.23")
-	for _, want := range []string{"E1 content parity: FAIL", "same-version trees should be identical", "verify the store artifact"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("line lacks %q:\n%s", want, line)
-		}
-	}
-}
+const (
+	e1Fail = "E1 content parity: FAIL \u2014 1 differing paths (first 1: skills/differs/SKILL.md); " +
+		"same-version trees should be identical \u2014 verify the store artifact before trusting the adoption"
+	e1Drift = "E1 content parity: EXPECTED (version drift): 1 differing paths (first 1: skills/differs/SKILL.md) " +
+		"between the running 1.0.0-rc.22 and the adopted 1.0.0-rc.23"
+)
 
-// Version drift the operator consented to makes differences the expected
-// result, so the line says so and does not tell them to distrust the
-// adoption (sideshow#97).
-func TestEquivalenceReport_E1VersionDriftIsExpected(t *testing.T) {
-	line := e1Line(t, "1.0.0-rc.23", "1.0.0-rc.22")
-	for _, want := range []string{"E1 content parity: EXPECTED (version drift)", "1 differing paths", "1.0.0-rc.22", "1.0.0-rc.23"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("line lacks %q:\n%s", want, line)
-		}
-	}
-	for _, bad := range []string{"same-version trees", "verify the store artifact", "FAIL"} {
-		if strings.Contains(line, bad) {
-			t.Errorf("drift line contains %q:\n%s", bad, line)
-		}
+// The whole E1 line is pinned in each case, so the running and adopted
+// versions appear in order and the original wording is untouched where the
+// drift is not provable (sideshow#97).
+func TestEquivalenceReport_E1Line(t *testing.T) {
+	for name, tc := range map[string]struct {
+		row, tree, registry string
+		want                string
+	}{
+		"same version is suspicious":           {"1.0.0-rc.23", "1.0.0-rc.23", "", e1Fail},
+		"tree version differs is drift":        {"1.0.0-rc.23", "1.0.0-rc.22", "", e1Drift},
+		"registry version used when no tree":   {"1.0.0-rc.23", "", "1.0.0-rc.22", e1Drift},
+		"tree version wins over the registry":  {"1.0.0-rc.23", "1.0.0-rc.23", "1.0.0-rc.22", e1Fail},
+		"empty adopted version keeps the FAIL": {"", "1.0.0-rc.22", "", e1Fail},
+		"empty running version keeps the FAIL": {"1.0.0-rc.23", "", "", e1Fail},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := e1Line(t, tc.row, tc.tree, tc.registry); got != tc.want {
+				t.Errorf("E1 line:\n got  %s\n want %s", got, tc.want)
+			}
+		})
 	}
 }
