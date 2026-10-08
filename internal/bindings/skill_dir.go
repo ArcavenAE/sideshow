@@ -78,9 +78,10 @@ func (b *SkillDirBinding) Sync() (int, []string, error) {
 		dst := filepath.Join(skillsDst, skillName)
 
 		wrote, err := b.syncSkillTree(src, dst)
-		if wrote {
+		if wrote || err == nil {
 			// The skill dir is the unit of ownership: once a file in it
 			// has landed, its bytes are on disk even if a later one fails.
+			// A skill with no files is still a synced skill.
 			written = append(written, dst)
 		}
 		if err != nil {

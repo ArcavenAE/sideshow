@@ -62,7 +62,7 @@ func (b *CustomSkillDirBinding) Sync() (int, []string, error) {
 	for _, name := range b.skills {
 		src := filepath.Join(b.skillsSrcDir(), name)
 		wrote, err := copyTree(src, filepath.Join(dst, name))
-		if wrote {
+		if wrote || err == nil {
 			written = append(written, filepath.Join(dst, name))
 		}
 		if err != nil {
