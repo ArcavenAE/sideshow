@@ -121,7 +121,7 @@ func saveManifestWith(entries []ManifestEntry, complete *bool, failed []FailedBi
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create sideshow dir: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("write sync manifest: %w", err)
 	}
 	return nil
