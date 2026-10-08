@@ -290,3 +290,32 @@ func TestRules_AnEditedRuleKeepsItsReceiptWhileAnotherRuleIsWritten(t *testing.T
 		}
 	}
 }
+
+// The receipt holds the old version's sha and the disk holds the new
+// version's exact bytes: a run wrote them and died before the registry
+// saved, or the user applied the update by hand. That is not an edit. The
+// run says "already current", the receipt moves to the new sha, and an edit
+// after it is preserved.
+func TestRules_ALaggingReceiptWithCurrentBytesIsMovedNotReadAsAnEdit(t *testing.T) {
+	t.Parallel()
+	g := newRulesRig(t)
+	g.run(false)
+	old := g.receipt()
+	g.version, g.source = "1.1.0", "# Rule\n\nNew pack content.\n"
+	g.write(g.expected())
+	for _, dry := range []bool{true, false} {
+		a := g.run(dry)
+		wantAction(t, a, "skipped", "already current")
+		if dry && !strings.HasPrefix(a.Detail, "would ") {
+			t.Errorf("dry-run detail = %q", a.Detail)
+		}
+		if dry && g.receipt() != old {
+			t.Fatalf("dry-run moved the receipt")
+		}
+	}
+	if got, want := g.receipt(), sum([]byte(g.expected())); got != want {
+		t.Fatalf("receipt = %q, want the new sha %q", got, want)
+	}
+	g.write(g.read() + "\nEDIT\n")
+	wantAction(t, g.run(false), "skipped", "modified since sideshow wrote it")
+}

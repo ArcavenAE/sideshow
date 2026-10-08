@@ -267,18 +267,7 @@ func distributeRule(repoRoot string, rule RuleArtifact, opts Options) Action {
 		}
 		recorded, known := opts.PriorRuleChecksums[rule.Target]
 		switch {
-		case known && strings.TrimPrefix(recorded, "sha256:") != onDisk:
-			// Edited since sideshow wrote it: keep the edit and the receipt.
-			action = skip("modified since sideshow wrote it (user edit preserved)")
-			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: recorded}
-			action.RecordReceipt = true
-			return action
-		case known && onDisk == wantSum:
-			action = skip("already current")
-			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: receipt}
-			action.RecordReceipt = true
-			return action
-		case !known && onDisk == wantSum:
+		case onDisk == wantSum && !known:
 			// Sideshow's own bytes, no receipt yet: record one.
 			action.Status = "skipped"
 			action.Detail = would + "record receipt (unchanged)"
@@ -287,6 +276,21 @@ func distributeRule(repoRoot string, rule RuleArtifact, opts Options) Action {
 			}
 			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: receipt}
 			action.RecordReceipt = !opts.DryRun
+			return action
+		case onDisk == wantSum:
+			// The bytes are what this run would write, whatever the receipt
+			// says. A receipt that lags (a run wrote the new version and was
+			// killed before the registry saved, or the user applied the update
+			// by hand) is moved to the new sha, not read as an edit.
+			action = skip("already current")
+			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: receipt}
+			action.RecordReceipt = true
+			return action
+		case known && strings.TrimPrefix(recorded, "sha256:") != onDisk:
+			// Edited since sideshow wrote it: keep the edit and the receipt.
+			action = skip("modified since sideshow wrote it (user edit preserved)")
+			action.Artifact = pack.DistributedArtifact{Type: "rules", Path: rule.Target, Checksum: recorded}
+			action.RecordReceipt = true
 			return action
 		case !known:
 			// A marker, no receipt, and bytes this run would not write: sideshow
