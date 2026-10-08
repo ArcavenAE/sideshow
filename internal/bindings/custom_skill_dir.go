@@ -51,21 +51,23 @@ func (b *CustomSkillDirBinding) skillsSrcDir() string {
 
 // Sync copies each listed skill directory verbatim into
 // ~/.claude/skills/<name>/. Returns the number of skills synced.
-func (b *CustomSkillDirBinding) Sync() (int, error) {
+func (b *CustomSkillDirBinding) Sync() (int, []string, error) {
 	dst := claudeSkillsDir()
 	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return 0, fmt.Errorf("create skills dir: %w", err)
+		return 0, nil, fmt.Errorf("create skills dir: %w", err)
 	}
 
 	synced := 0
+	var written []string
 	for _, name := range b.skills {
 		src := filepath.Join(b.skillsSrcDir(), name)
 		if err := copyTree(src, filepath.Join(dst, name)); err != nil {
-			return synced, fmt.Errorf("sync custom skill %s: %w", name, err)
+			return synced, written, fmt.Errorf("sync custom skill %s: %w", name, err)
 		}
+		_ = filepath.Join(dst, name) // red: not yet reported
 		synced++
 	}
-	return synced, nil
+	return synced, written, nil
 }
 
 // Artifacts returns the destination skill directories this binding owns.

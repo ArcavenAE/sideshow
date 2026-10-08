@@ -56,7 +56,7 @@ func TestCustomSkillDirBinding_Sync_CopiesVerbatim(t *testing.T) {
 	writeFile(t, filepath.Join(base, "nested", "helper.md"), "helper\n")
 
 	b := NewCustomSkillDirBinding("bmad", project, []string{"eos-coach"})
-	n, err := b.Sync()
+	n, _, err := b.Sync()
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}

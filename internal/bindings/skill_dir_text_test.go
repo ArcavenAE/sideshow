@@ -53,7 +53,7 @@ func newTextFixture(t *testing.T) textFixture {
 	}
 
 	b := NewSkillDirBinding("bmad", "6.12.1", pack)
-	if _, err := b.Sync(); err != nil {
+	if _, _, err := b.Sync(); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	return textFixture{pack: pack, skills: filepath.Join(home, ".claude", "skills", "demo-skill"), src: src}
@@ -140,7 +140,7 @@ func TestSkillDirBinding_Sync_SymlinkKeepsExtensionRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := NewSkillDirBinding("bmad", "6.12.1", pack).Sync(); err != nil {
+	if _, _, err := NewSkillDirBinding("bmad", "6.12.1", pack).Sync(); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	dst := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "demo-skill")

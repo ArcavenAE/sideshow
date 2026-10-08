@@ -52,7 +52,7 @@ func TestSkillDirBinding_Sync_CopiesTreeAndRewrites(t *testing.T) {
 		"\x00\x01\x02binarycontent\x00") // should NOT be rewritten
 
 	b := NewSkillDirBinding("bmad", "6.3.0", packPath)
-	n, err := b.Sync()
+	n, _, err := b.Sync()
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}

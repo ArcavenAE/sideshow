@@ -33,8 +33,11 @@ type Binding interface {
 	PackVersion() string
 
 	// Sync installs the binding's artifacts into its tool-config target.
-	// Returns the number of artifacts written.
-	Sync() (int, error)
+	// Returns the number of artifacts written and the destination paths
+	// actually written, in write order. A path is listed only after its
+	// write succeeded, so on error the list is what landed before it; the
+	// sync manifest records writers from it (sideshow#161).
+	Sync() (int, []string, error)
 
 	// Artifacts returns the destination paths this binding owns — the
 	// exact set Sync writes. Used for the sync-manifest ownership ledger
@@ -291,27 +294,36 @@ func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 	warnCollisions(all)
 
 	for _, b := range all {
-		n, syncErr := b.Sync()
-		if syncErr != nil {
-			fail(b, syncErr)
-			fmt.Fprintf(os.Stderr, "warning: sync %s/%s: %v\n", b.PackName(), b.Kind(), syncErr)
-			continue
-		}
+		n, written, syncErr := b.Sync()
 		synced += n
-
-		arts, artErr := b.Artifacts()
-		if artErr != nil {
-			fail(b, artErr)
-			fmt.Fprintf(os.Stderr, "warning: enumerate %s/%s artifacts: %v\n", b.PackName(), b.Kind(), artErr)
-			continue
+		if syncErr == nil && len(written) == 0 { // red stub: old behavior
+			written, _ = b.Artifacts()
 		}
-		for _, a := range arts {
+		// Record every path this binding wrote, a failed binding's
+		// included, so the last entry for a path is the writer whose
+		// bytes are on disk.
+		seen := map[string]bool{}
+		for _, a := range written {
+			if seen[a] {
+				continue
+			}
+			seen[a] = true
 			current = append(current, ManifestEntry{
 				Pack:    b.PackName(),
 				Version: b.PackVersion(),
 				Kind:    b.Kind(),
 				Path:    a,
 			})
+		}
+		if syncErr != nil {
+			fail(b, syncErr)
+			fmt.Fprintf(os.Stderr, "warning: sync %s/%s: %v\n", b.PackName(), b.Kind(), syncErr)
+			continue
+		}
+
+		if _, artErr := b.Artifacts(); artErr != nil {
+			fail(b, artErr)
+			fmt.Fprintf(os.Stderr, "warning: enumerate %s/%s artifacts: %v\n", b.PackName(), b.Kind(), artErr)
 		}
 	}
 

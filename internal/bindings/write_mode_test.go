@@ -101,11 +101,11 @@ func (f *fakeBinding) PackName() string             { return f.name }
 func (f *fakeBinding) PackVersion() string          { return "1.0.0" }
 func (f *fakeBinding) Validate() error              { return nil }
 func (f *fakeBinding) Artifacts() ([]string, error) { return f.arts, nil }
-func (f *fakeBinding) Sync() (int, error) {
+func (f *fakeBinding) Sync() (int, []string, error) {
 	if f.syncErr != nil {
-		return 0, f.syncErr
+		return 0, nil, f.syncErr
 	}
-	return len(f.arts), nil
+	return len(f.arts), f.arts, nil
 }
 
 func TestRunSync_FailureSkipsReconcileAndErrors(t *testing.T) {

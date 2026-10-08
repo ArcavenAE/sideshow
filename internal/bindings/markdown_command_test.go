@@ -34,7 +34,7 @@ func TestMarkdownCommandBinding_Sync_RewritesAndFooter(t *testing.T) {
 	writeFile(t, filepath.Join(packPath, "README.md"), "hello")
 
 	b := NewMarkdownCommandBinding("bmad", "6.2.2", packPath)
-	n, err := b.Sync()
+	n, _, err := b.Sync()
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}

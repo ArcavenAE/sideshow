@@ -51,23 +51,24 @@ func (b *SkillDirBinding) PackVersion() string { return b.version }
 // rewritten to the absolute store path; project-state references are left
 // literal. SKILL.md receives the fallback-resolution footer (it is the LLM
 // entry point). Returns the number of skills synced.
-func (b *SkillDirBinding) Sync() (int, error) {
+func (b *SkillDirBinding) Sync() (int, []string, error) {
 	skillsSrc := filepath.Join(b.packPath, ".claude", "skills")
 	skillsDst := claudeSkillsDir()
 
 	if err := os.MkdirAll(skillsDst, 0o755); err != nil {
-		return 0, fmt.Errorf("create skills dir: %w", err)
+		return 0, nil, fmt.Errorf("create skills dir: %w", err)
 	}
 
 	entries, err := os.ReadDir(skillsSrc)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, nil
+			return 0, nil, nil
 		}
-		return 0, fmt.Errorf("read skills source: %w", err)
+		return 0, nil, fmt.Errorf("read skills source: %w", err)
 	}
 
 	synced := 0
+	var written []string
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -77,12 +78,13 @@ func (b *SkillDirBinding) Sync() (int, error) {
 		dst := filepath.Join(skillsDst, skillName)
 
 		if err := b.syncSkillTree(src, dst); err != nil {
-			return synced, fmt.Errorf("sync skill %s: %w", skillName, err)
+			return synced, written, fmt.Errorf("sync skill %s: %w", skillName, err)
 		}
+		_ = dst // red: not yet reported
 		synced++
 	}
 
-	return synced, nil
+	return synced, written, nil
 }
 
 // syncSkillTree recursively copies a single skill directory from src into
