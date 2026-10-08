@@ -88,8 +88,7 @@ func TestDisable_RestoresSettingsBytesWhenUnchangedSinceEnable(t *testing.T) {
 			if got := sidecarFiles(t, opts); len(got) != 1 {
 				t.Fatalf("sidecar after enable = %v, want one file", got)
 			}
-			var out string
-			out = captureOut(t, func() {
+			out := captureOut(t, func() {
 				if err := Disable(opts); err != nil {
 					t.Errorf("Disable: %v", err)
 				}
