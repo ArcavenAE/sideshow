@@ -1,6 +1,7 @@
 package enable
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,6 +48,29 @@ func replaceCompatSymlink(t *testing.T, repo string) {
 	}
 }
 
+// breakSettingsKey rewrites one top-level key of the repo's settings file
+// to a string, keeping the rest, as a hand edit would.
+func breakSettingsKey(t *testing.T, repo, key string) {
+	t.Helper()
+	path := filepath.Join(repo, ".claude", "settings.local.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	m[key] = "not-an-object"
+	out, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A ledger row disable would refuse must be refused before disable touches
 // anything: the settings file keeps its enable-written bytes, the bound
 // artifacts stay, the sidecar stays, and the row stays, so a retry after
@@ -61,6 +85,10 @@ func TestDisable_RefusedRowChangesNothing(t *testing.T) {
 		// The removal loop's own refusal, which the plan must also make:
 		// the recorded compat symlink was replaced by a real directory.
 		"compat symlink replaced by a directory": {setup: replaceCompatSymlink},
+		// RemoveHookChain writes before RemoveEnvShim refuses a settings
+		// env that is not an object, so the plan must read the shape.
+		"settings env is not an object":   {setup: func(t *testing.T, repo string) { breakSettingsKey(t, repo, "env") }},
+		"settings hooks is not an object": {setup: func(t *testing.T, repo string) { breakSettingsKey(t, repo, "hooks") }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
