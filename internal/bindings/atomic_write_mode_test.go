@@ -268,6 +268,13 @@ func TestWriteFileAtomic_DanglingTargetThroughASymlinkedDirUsesThePhysicalParent
 	if err := os.Symlink(filepath.Join(d, "far", "x"), filepath.Join(d, "lnk")); err != nil {
 		t.Fatal(err)
 	}
+	// The lexical parent cannot take a new file, so a temp file created
+	// there (the cleaned path) fails where one beside the real target works.
+	lexical := filepath.Join(d, "dot")
+	if err := os.Chmod(lexical, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lexical, 0o755) })
 	link := filepath.Join(d, "m.yaml")
 	// A literal: filepath.Join would clean the ".." away.
 	if err := os.Symlink("lnk/../dot/m.yaml", link); err != nil {
