@@ -859,7 +859,11 @@ func runProjectInitForPack(args []string) error {
 	}
 
 	if conflicts > 0 {
-		fmt.Printf("Done: %d wrote, %d already present, %d conflicts (left untouched; the repo is partly linked into the store)\n", wrote, skipped, conflicts)
+		noun := "conflicts"
+		if conflicts == 1 {
+			noun = "conflict"
+		}
+		fmt.Printf("Done: %d wrote, %d already present, %d %s (left untouched; the repo is partly linked into the store)\n", wrote, skipped, conflicts, noun)
 	} else {
 		fmt.Printf("Done: %d wrote, %d already present\n", wrote, skipped)
 	}
