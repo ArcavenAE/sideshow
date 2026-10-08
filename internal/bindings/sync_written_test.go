@@ -146,3 +146,58 @@ func assertPaths(t *testing.T, got, want []string) {
 		}
 	}
 }
+
+// A skill directory is the unit of ownership: once one file in it has
+// been written its bytes are on disk, so it is reported and recorded even
+// when a later file in the same skill fails. A skill whose first file
+// fails wrote nothing and gets no entry (sideshow#161).
+func TestSync_PartialSkillDirIsReportedAndRecorded(t *testing.T) {
+	t.Run("skill-dir", func(t *testing.T) {
+		home := collisionEnv(t)
+		p := t.TempDir()
+		writeFile(t, filepath.Join(p, ".claude", "skills", "a-part", "SKILL.md"), "ok")
+		unreadable(t, filepath.Join(p, ".claude", "skills", "a-part", "zz.md"))
+		q := t.TempDir()
+		unreadable(t, filepath.Join(q, ".claude", "skills", "z-none", "AAA.md"))
+		writeFile(t, filepath.Join(q, ".claude", "skills", "z-none", "SKILL.md"), "never")
+
+		var err error
+		captureStderr(t, func() {
+			_, _, err = runSync([]Binding{NewSkillDirBinding("beta", "1", p), NewSkillDirBinding("gamma", "1", q)})
+		})
+		if err == nil {
+			t.Fatal("no error")
+		}
+		got := recordedPacks(t)
+		if len(got["a-part"]) != 1 || got["a-part"][0] != "beta" {
+			t.Errorf("a-part recorded for %v, want beta (SKILL.md landed)", got["a-part"])
+		}
+		if _, ok := got["z-none"]; ok {
+			t.Error("a skill whose first file failed has an entry")
+		}
+		_, written, _ := NewSkillDirBinding("beta", "1", p).Sync()
+		assertPaths(t, written, []string{filepath.Join(home, ".claude", "skills", "a-part")})
+	})
+	t.Run("custom-skill-dir", func(t *testing.T) {
+		home := collisionEnv(t)
+		project := t.TempDir()
+		base := filepath.Join(project, "_p-custom", "skills")
+		writeFile(t, filepath.Join(base, "part", "SKILL.md"), "ok")
+		unreadable(t, filepath.Join(base, "part", "zz.md"))
+		unreadable(t, filepath.Join(base, "none", "AAA.md"))
+		writeFile(t, filepath.Join(base, "none", "SKILL.md"), "never")
+
+		_, written, err := NewCustomSkillDirBinding("p", project, []string{"part", "none"}).Sync()
+		if err == nil {
+			t.Fatal("no error")
+		}
+		assertPaths(t, written, []string{filepath.Join(home, ".claude", "skills", "part")})
+
+		// "none" fails first in its own tree and gets no entry.
+		_, written, err = NewCustomSkillDirBinding("p", project, []string{"none"}).Sync()
+		if err == nil {
+			t.Fatal("no error")
+		}
+		assertPaths(t, written, nil)
+	})
+}
