@@ -217,31 +217,50 @@ func ValidateShape(sourcePath string) error {
 // Sources that declare no name (installer output without pack.yaml, or
 // a pack.yaml with no name field) keep the caller-supplied name, so
 // this check is not a gate on packs built before pack.yaml carried one.
-func ValidateName(name, sourcePath string) error {
+// That case is by design, since nothing in such a source can contradict
+// the name, but it is not silent: undeclared says why the source named
+// nothing ("installer layout" or "pack.yaml has no name"), and install
+// prints it. A declared name returns "". Signed sideshow-packs tarballs
+// carry a pack.yaml name, so the verified-release flow always lands in
+// the checked case.
+func ValidateName(name, sourcePath string) (undeclared string, err error) {
+	undeclared = "installer layout"
 	for _, rel := range []string{"pack.yaml", filepath.Join("_bmad", "pack.yaml")} {
-		data, err := os.ReadFile(filepath.Join(sourcePath, rel))
-		if err != nil {
+		data, readErr := os.ReadFile(filepath.Join(sourcePath, rel))
+		if readErr != nil {
 			continue
 		}
 		var m struct {
 			Name string `yaml:"name"`
 		}
 		if err := yaml.Unmarshal(data, &m); err != nil {
-			return fmt.Errorf("cannot read the pack's identity from %s: %w", filepath.Join(sourcePath, rel), err)
+			return "", fmt.Errorf("cannot read the pack's identity from %s: %w", filepath.Join(sourcePath, rel), err)
 		}
 		if m.Name == "" {
+			undeclared = "pack.yaml has no name"
 			continue
 		}
 		if m.Name != name {
-			return fmt.Errorf(
+			return "", fmt.Errorf(
 				"pack name mismatch: asked to install %q, but %s declares name %q; "+
 					"install it as %q (sideshow install %s --from %s)",
 				name, filepath.Join(sourcePath, rel), m.Name, m.Name, m.Name, sourcePath,
 			)
 		}
-		return nil
+		return "", nil
 	}
-	return nil
+	return undeclared, nil
+}
+
+// printUndeclaredNameNote says that the installed name was taken as
+// given because the source declares none. Every install path that prints
+// "Installed N files" calls it, so the note is never skipped by an early
+// return (aae-orc-cv1b6).
+func printUndeclaredNameNote(undeclared, name string) {
+	if undeclared == "" {
+		return
+	}
+	fmt.Printf("note: the source declares no pack name (%s); installed as %s as given.\n", undeclared, name)
 }
 
 func hasFile(root string, parts ...string) bool {
@@ -504,7 +523,8 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	}
 
 	// The pack names itself; the caller's label must agree (aae-orc-oihza).
-	if err := ValidateName(name, sourcePath); err != nil {
+	undeclared, err := ValidateName(name, sourcePath)
+	if err != nil {
 		return err
 	}
 
@@ -644,6 +664,7 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	firstInstall := os.IsNotExist(curErr)
 	if !activate && !firstInstall {
 		fmt.Printf("Installed %d files to %s\n", count, destDir)
+		printUndeclaredNameNote(undeclared, name)
 		fmt.Printf("Not activated: current stays as-is. Run 'sideshow use %s %s' to activate.\n", name, version)
 		activation.PrintInstallNotice()
 		return nil
@@ -679,6 +700,7 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	}
 
 	fmt.Printf("Installed %d files to %s\n", count, destDir)
+	printUndeclaredNameNote(undeclared, name)
 	if !activate && firstInstall {
 		fmt.Printf("--no-activate ignored: this is the first install of %s, so %s is activated.\n", name, version)
 	}
