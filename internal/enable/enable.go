@@ -361,12 +361,19 @@ func Disable(opts Options) error {
 	}
 
 	sidecar := sidecarName(opts.RepoDir, opts.Pack, row.SettingsScope)
-	if len(unknown) > 0 && hooksRemoved == 0 && !shimRemoved && !sidecarExists(opts.LedgerPath, sidecar) {
-		// A rerun over a row an earlier pass already took apart: nothing
-		// of ours was in the settings file, and its record was consumed,
-		// so there is nothing to restore and nothing false to say.
-	} else {
+	if row.SettingsRestoredSHA == "" {
 		restoreOriginalSettings(opts.LedgerPath, settings, sidecar, beforeSHA, removeSettingsFile)
+	} else {
+		// An earlier incomplete pass already restored the file and
+		// recorded what it left. The restore never runs twice; say only
+		// what is true now.
+		removeSidecar(opts.LedgerPath, sidecar)
+		switch {
+		case hooksRemoved > 0 || shimRemoved:
+			fmt.Printf("note: %s has no record of its original bytes (an earlier disable pass used it); disable removed exactly what enable added and rewrote the file in canonical form\n", settings)
+		case beforeSHA != "" && beforeSHA != row.SettingsRestoredSHA:
+			fmt.Printf("note: %s changed since the earlier disable pass; left as it is\n", settings)
+		}
 	}
 
 	if len(unknown) > 0 {
@@ -393,6 +400,10 @@ func Disable(opts Options) error {
 			if _, statErr := os.Lstat(filepath.Join(opts.RepoDir, filepath.FromSlash(path))); statErr == nil {
 				kept.Artifacts = append(kept.Artifacts, s)
 			}
+		}
+		kept.SettingsRestoredSHA = ""
+		if data, readErr := os.ReadFile(settings); readErr == nil {
+			kept.SettingsRestoredSHA = sha256Hex(data)
 		}
 		desc := make([]string, 0, len(unknown))
 		for _, a := range unknown {

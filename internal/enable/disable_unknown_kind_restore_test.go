@@ -179,3 +179,31 @@ func TestDisable_UnknownKindKeepsKnownRowsStillOnDisk(t *testing.T) {
 		t.Errorf("ledger row dropped the parent dir that is still on disk: %v", rowArtifacts(t, opts, repo))
 	}
 }
+
+// If a rerun finds sideshow's entries back in the settings file, it
+// removes them and says the file is in canonical form, as the restore
+// would, without running the restore a second time.
+func TestDisable_RerunThatRemovesEntriesAgainPrintsTheCanonicalNote(t *testing.T) {
+	opts, repo, settings := unknownRowScene(t, ".claude/notes.txt")
+	captureOut(t, func() { _ = Disable(opts) })
+	led, err := ledger.Load(opts.LedgerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := led.RepoRow(repo, "vsdd-factory")
+	if row == nil {
+		t.Fatal("no kept row")
+	}
+	readded := `{"env": {"CLAUDE_PLUGIN_ROOT": "` + row.StorePath + `", "MINE": "1"}}` + "\n"
+	if err := os.WriteFile(settings, []byte(readded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := captureOut(t, func() { _ = Disable(opts) })
+	if !strings.Contains(out, "canonical form") {
+		t.Errorf("missing the canonical-form note:\n%s", out)
+	}
+	got, _ := os.ReadFile(settings)
+	if strings.Contains(string(got), "CLAUDE_PLUGIN_ROOT") || !strings.Contains(string(got), "MINE") {
+		t.Errorf("settings after rerun: %q", got)
+	}
+}
