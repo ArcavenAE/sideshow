@@ -54,7 +54,7 @@ Usage:
   sideshow doctor [<pack>] [--layer <n,...>] [--repo <path>] [--json] [--strict]
                                           Read-only health report over store, receipts,
                                           and ledger (layers 1,3,4,5; docs/doctor-spec.md)
-  sideshow adopt <pack> [--repo <path>] [--rewrite-agent] [--dry-run]  Convert a repo from the foreign (claude-mp) channel
+  sideshow adopt <pack> [--repo <path>] [--rewrite-agent] [--dry-run] [--override-stale-lock]  Convert a repo from the foreign (claude-mp) channel
   sideshow adopt <pack> --finish          Report remaining foreign residue (print-only)
   sideshow adopt <pack> --migrate-user-scope [--also-repo <path>] [--sweep-root <dir>] [--yes]
                                           Move a machine-wide foreign enable to per-repo enables
