@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 )
 
 // The runtime env shim is route (a) of the CLAUDE_PLUGIN_ROOT
@@ -191,7 +193,7 @@ func writeSettings(path string, settings map[string]any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create settings dir: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write settings %s: %w", path, err)
 	}
 	return nil
