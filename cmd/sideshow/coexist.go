@@ -8,6 +8,9 @@ import (
 	"github.com/ArcavenAE/sideshow/internal/pack"
 )
 
+// coexistUsage is the per-command usage string, read by usage_drift_test.go.
+const coexistUsage = "usage: sideshow coexist <pack> [--repo <path>] [--sideshow-active]"
+
 // runCoexist is the read-only coexistence census:
 //
 //	sideshow coexist <pack> [--repo <path>] [--sideshow-active]
@@ -20,7 +23,7 @@ import (
 // that signal is read from the ledger instead.
 func runCoexist(args []string) error {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
-		return fmt.Errorf("usage: sideshow coexist <pack> [--repo <path>] [--sideshow-active]")
+		return fmt.Errorf("%s", coexistUsage)
 	}
 	packName := args[0]
 	repoDir, err := os.Getwd()

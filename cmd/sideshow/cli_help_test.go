@@ -99,8 +99,8 @@ func TestCLI_TopLevelHelpAdoptLineNamesTheStaleLockOverride(t *testing.T) {
 		t.Fatalf("--help: code=%d", code)
 	}
 	var line string
-	for _, l := range strings.Split(se, "\n") {
-		if strings.Contains(l, "sideshow adopt <pack> [--repo <path>]") {
+	for _, l := range topLevelLine.FindAllString(se, -1) {
+		if strings.HasPrefix(l, "  sideshow adopt <pack>[@<ver>]") {
 			line = l
 		}
 	}

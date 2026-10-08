@@ -12,6 +12,9 @@ import (
 	"github.com/ArcavenAE/sideshow/internal/pack"
 )
 
+// coexistCheckUsage is the per-command usage string, read by usage_drift_test.go.
+const coexistCheckUsage = "usage: sideshow coexist-check <pack> [--repo <path>]"
+
 // runCoexistCheck is the read-only per-repo preflight:
 //
 //	sideshow coexist-check <pack> [--repo <path>]
@@ -21,7 +24,7 @@ import (
 // here, and why" without touching anything.
 func runCoexistCheck(args []string) error {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
-		return fmt.Errorf("usage: sideshow coexist-check <pack> [--repo <path>]")
+		return fmt.Errorf("%s", coexistCheckUsage)
 	}
 	packName := args[0]
 	repoDir, err := os.Getwd()
