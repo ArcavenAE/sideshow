@@ -335,7 +335,9 @@ func CountForPack(_, packPath string) (int, error) {
 // tool-config directories for this pack across all binding types.
 // An artifact counts only when the pack ships it at packPath, the sync
 // manifest records packName as its writer, and the file is still at the
-// target. Shipping alone is not enough: two packs that ship the same
+// target. The credit holds as of the last completed sync: a sync that
+// fails part-way returns before it saves the manifest, so the record can
+// trail what is on disk until the next sync completes. Shipping alone is not enough: two packs that ship the same
 // canonical id would otherwise each count the other's copy as their own
 // (aae-orc-zwx4b). Ownership of what is shipped is by canonical id /
 // basename, not a name prefix, so packs that ship multi-prefix bindings
