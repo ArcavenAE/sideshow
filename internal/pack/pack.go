@@ -679,6 +679,9 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	}
 
 	fmt.Printf("Installed %d files to %s\n", count, destDir)
+	if !activate && firstInstall {
+		fmt.Printf("--no-activate ignored: this is the first install of %s, so %s is activated.\n", name, version)
+	}
 	if activation.PluginClass() {
 		activation.PrintInstallNotice()
 	} else {
