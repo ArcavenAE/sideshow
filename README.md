@@ -220,8 +220,9 @@ Two variables isolate a scratch run, and each moves a different thing:
 
 Set both for a run that must not touch your real setup. With
 `SIDESHOW_HOME` alone, `sync` and `use` still write skills and commands
-under `$HOME/.claude`. `install` skips Claude Code permission
-configuration whenever `SIDESHOW_HOME` is set, unless you pass `--scope`.
+under `$HOME/.claude`, and sync prints a line saying so. `install`
+skips Claude Code permission configuration whenever `SIDESHOW_HOME` is
+set, unless you pass `--scope`.
 
 ## Plugin-shaped packs (repo bindings)
 

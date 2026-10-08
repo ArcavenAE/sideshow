@@ -90,6 +90,12 @@ func Sync() error {
 		return nil
 	}
 
+	// A scratch store with the default config dir still writes skills and
+	// commands where a real setup keeps them; say where (aae-orc-c07dl).
+	if os.Getenv("SIDESHOW_HOME") != "" && os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+		fmt.Printf("SIDESHOW_HOME is set but CLAUDE_CONFIG_DIR is not; skills and commands are written under %s\n", foreign.ConfigDir())
+	}
+
 	var all []Binding
 	packSkillOwners := make(map[string]string)
 	for _, p := range packs {
