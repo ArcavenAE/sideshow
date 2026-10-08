@@ -57,14 +57,16 @@ var inPlaceAllowlist = map[string]string{
 //     bit with or without O_TRUNC, is flagged;
 //   - function bodies and package-level initializers alike.
 //
-// What it does not see, so a reader knows the limit: a write through any
-// other package (syscall, golang.org/x/sys, a vendored writer), a shell-out
-// to cp or tee, a write through an *os.File opened elsewhere (the open is
-// what it flags), and a writer reached by reflection or a plugin.
-// Two read-only forms are flagged although harmless, and appear nowhere in
-// the tree: an OpenFile flag held in a const (const ro = os.O_RDONLY), and a
-// bare O_RDONLY under a dot import. os.CreateTemp
-// and os.Rename are not in-place writes and are not flagged.
+// Known limits:
+//   - Not seen: a write through another package (syscall, x/sys, a
+//     vendored writer), a shell-out to cp or tee, a write through an
+//     *os.File opened elsewhere (the open is what it flags), and a writer
+//     reached by reflection or a plugin. os.CreateTemp and os.Rename are not
+//     in-place writes and are not flagged.
+//   - Flagged though harmless, and in the tree nowhere: an OpenFile flag
+//     held in a const (const ro = os.O_RDONLY), and a bare O_RDONLY under a
+//     dot import. Each is satisfied by an allowlist entry with a reason; see
+//     TestFindInPlaceWriters_FalsePositivesCanBeAllowlisted.
 func findInPlaceWriters(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	found := map[string]bool{}
@@ -306,5 +308,38 @@ func Temp() { _, _ = os.CreateTemp("", "x") }
 	sort.Strings(names)
 	if strings.Join(names, "\n") != strings.Join(want, "\n") {
 		t.Errorf("detected:\n  %s\nwant:\n  %s", strings.Join(names, "\n  "), strings.Join(want, "\n  "))
+	}
+}
+
+// Each documented false positive is flagged, and an allowlist entry with a
+// reason satisfies it: correct code that trips the guard is never stuck.
+func TestFindInPlaceWriters_FalsePositivesCanBeAllowlisted(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, src string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cmd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write("internal/a/a.go", "package a\nimport \"os\"\nconst ro = os.O_RDONLY\nfunc ConstFlag() { _, _ = os.OpenFile(\"x\", ro, 0) }\n")
+	write("internal/b/b.go", "package b\nimport . \"os\"\nfunc DotFlag() { _, _ = OpenFile(\"x\", O_RDONLY, 0) }\n")
+	found := findInPlaceWriters(t, root)
+	for _, k := range []string{"internal/a/a.go:ConstFlag", "internal/b/b.go:DotFlag"} {
+		if !found[k] {
+			t.Errorf("%s was not flagged; it is a documented false positive", k)
+		}
+	}
+	allow := map[string]string{
+		"internal/a/a.go:ConstFlag": "out: opens read-only through a const flag",
+		"internal/b/b.go:DotFlag":   "out: opens read-only, dot-imported O_RDONLY",
+	}
+	if unlisted, stale, noReason := checkAllowlist(found, allow); len(unlisted)+len(stale)+len(noReason) != 0 {
+		t.Errorf("an allowlist entry does not satisfy the guard: unlisted %v stale %v noReason %v", unlisted, stale, noReason)
 	}
 }
