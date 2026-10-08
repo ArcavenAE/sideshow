@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"gopkg.in/yaml.v3"
 )
@@ -64,7 +65,7 @@ func saveCustomSources(sources []CustomSource) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create sideshow dir: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write custom sources: %w", err)
 	}
 	return nil

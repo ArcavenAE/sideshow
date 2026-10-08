@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 )
 
 // seedsIdentity names the packs whose runtime reads core.user_name and
@@ -72,7 +74,7 @@ func seedIdentity(repoDir, customDir, flagName string, dryRun bool) error {
 		fmt.Printf("  would seed %s in %s\n", strings.Join(added, " and "), rel)
 		return nil
 	}
-	if err := os.WriteFile(layer, []byte(updated), 0o644); err != nil {
+	if err := atomicfile.WriteFile(layer, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", rel, err)
 	}
 	fmt.Printf("  identity: seeded %s in %s\n", strings.Join(added, " and "), rel)

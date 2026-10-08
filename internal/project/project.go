@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ArcavenAE/sideshow/internal/atomicfile"
 )
 
 // Identity is the content of .sideshow/project.yaml.
@@ -76,7 +78,7 @@ func InitIdentity(root, name, manifest string) (*Identity, error) {
 		return nil, fmt.Errorf("marshal project identity: %w", err)
 	}
 
-	if err := os.WriteFile(IdentityPath(root), data, 0o644); err != nil {
+	if err := atomicfile.WriteFile(IdentityPath(root), data, 0o644); err != nil {
 		return nil, fmt.Errorf("write project identity: %w", err)
 	}
 
