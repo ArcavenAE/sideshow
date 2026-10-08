@@ -291,3 +291,46 @@ func sha256Hex(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }
+
+// A files: artifact has no marker, so equal bytes with no receipt prove
+// equality and not authorship, and are never adopted. A file created through
+// one path (subrepo or cwd) is user-authored to the other; only the creating
+// path refreshes it.
+func TestProjectInit_AFilesArtifactCreatedByOnePathIsUserAuthoredToTheOther(t *testing.T) {
+	r := newRcptRig(t)
+	orch := filepath.Join(filepath.Dir(r.repo), "orch")
+	sub := filepath.Join(orch, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orch, "repos.yaml"), []byte("repos:\n  sub:\n    path: sub\n    type: service\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.repo = sub
+	t.Chdir(sub)
+	orchInit := func() {
+		t.Helper()
+		if _, err := captureStdout(t, func() error { return runInitProject(orch, "", rcptPack, false) }); err != nil {
+			t.Fatalf("init --scope project: %v", err)
+		}
+	}
+
+	r.install("0.2.0")
+	orchInit()
+	if got := r.read(rcptFile); got != "a 0.2.0\n" {
+		t.Fatalf("the subrepo path did not create the file: %q", got)
+	}
+	out := r.init()
+	if want := "files: skipped " + rcptFile + ": exists and sideshow has no record of writing it (user-authored)"; !strings.Contains(out, want) {
+		t.Errorf("the cwd run did not print the reason %q:\n%s", want, out)
+	}
+	if files, _ := r.receipts(); files[rcptFile] != "" {
+		t.Errorf("the cwd run recorded a receipt for a file it did not create: %q", files[rcptFile])
+	}
+
+	r.install("0.3.0")
+	orchInit()
+	if got := r.read(rcptFile); got != "a 0.3.0\n" {
+		t.Errorf("the creating path did not refresh the file: %q", got)
+	}
+}
