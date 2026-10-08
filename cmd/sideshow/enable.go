@@ -14,7 +14,7 @@ import (
 //	sideshow enable <pack>[@<version>] [--repo <path>] [--scope local|project] [--override-stale-lock]
 //	sideshow disable <pack> [--repo <path>] [--override-stale-lock]
 func runEnable(args []string) error {
-	opts, err := parseVerbArgs("enable", args)
+	opts, err := parseEnableArgs(args)
 	if err != nil {
 		return err
 	}
@@ -22,7 +22,7 @@ func runEnable(args []string) error {
 }
 
 func runDisable(args []string) error {
-	opts, err := parseVerbArgs("disable", args)
+	opts, err := parseDisableArgs(args)
 	if err != nil {
 		return err
 	}
@@ -35,6 +35,11 @@ const (
 	enableUsage  = "usage: sideshow enable <pack>[@<version>] [--repo <path>] [--scope local|project] [--override-stale-lock]"
 	disableUsage = "usage: sideshow disable <pack> [--repo <path>] [--override-stale-lock]"
 )
+
+// parseEnableArgs and parseDisableArgs are the parsers the two runners call.
+func parseEnableArgs(args []string) (*enable.Options, error) { return parseVerbArgs("enable", args) }
+
+func parseDisableArgs(args []string) (*enable.Options, error) { return parseVerbArgs("disable", args) }
 
 func parseVerbArgs(verb string, args []string) (*enable.Options, error) {
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {

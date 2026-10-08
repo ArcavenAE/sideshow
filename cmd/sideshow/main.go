@@ -782,9 +782,12 @@ func runProjectUnregister(args []string) error {
 	return nil
 }
 
+// projectInitUsage is the per-command usage string, read by usage_drift_test.go.
+const projectInitUsage = "usage: sideshow project init <pack> [--user-name <name>] [--dry-run]"
+
 func runProjectInitForPack(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sideshow project init <pack> [--user-name <name>] [--dry-run]")
+		return fmt.Errorf("%s", projectInitUsage)
 	}
 	packName := args[0]
 	dryRun := false

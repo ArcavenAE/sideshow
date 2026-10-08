@@ -14,7 +14,7 @@ import (
 //	sideshow activate <pack> [--repo <path>] [--agent <name>]
 //	sideshow deactivate <pack> [--repo <path>]
 func runActivate(args []string) error {
-	opts, agent, err := parseActivateArgs("activate", args, true)
+	opts, agent, err := parseActivate(args)
 	if err != nil {
 		return err
 	}
@@ -22,7 +22,7 @@ func runActivate(args []string) error {
 }
 
 func runDeactivate(args []string) error {
-	opts, _, err := parseActivateArgs("deactivate", args, false)
+	opts, _, err := parseDeactivate(args)
 	if err != nil {
 		return err
 	}
@@ -35,7 +35,20 @@ const (
 	deactivateUsage = "usage: sideshow deactivate <pack> [--repo <path>]"
 )
 
-func parseActivateArgs(verb string, args []string, allowAgent bool) (*enable.Options, string, error) {
+// parseActivate and parseDeactivate are the parsers the two runners call,
+// so usage_drift_test.go reaches each verb through the code path it runs.
+func parseActivate(args []string) (*enable.Options, string, error) {
+	return parseActivateArgs("activate", args)
+}
+
+func parseDeactivate(args []string) (*enable.Options, string, error) {
+	return parseActivateArgs("deactivate", args)
+}
+
+// --agent belongs to activate only; the verb decides, so no caller can
+// pass a different answer.
+func parseActivateArgs(verb string, args []string) (*enable.Options, string, error) {
+	allowAgent := verb == "activate"
 	if len(args) < 1 || len(args[0]) == 0 || args[0][0] == '-' {
 		if verb == "activate" {
 			return nil, "", fmt.Errorf("%s", activateUsage)
