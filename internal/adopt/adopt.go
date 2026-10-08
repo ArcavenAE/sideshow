@@ -190,7 +190,7 @@ func Adopt(opts Options) (*Outcome, error) {
 		// The one finding filtered out is same-repo-dual-enable for the
 		// identity being adopted: step 1's suppression silences it
 		// before enable's own preflight sees the repo.
-		refused, err := dryRunPreflight(opts, identity)
+		refused, warns, err := dryRunPreflight(opts, identity)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +212,7 @@ func Adopt(opts Options) (*Outcome, error) {
 		if refused || storeErr != nil {
 			return &Outcome{Identity: identity, Version: adoptVersion}, fmt.Errorf("the real run would REFUSE: the plan above reports the errors; resolve them before adopting")
 		}
-		fmt.Println("preflight clean and every plan step resolves: the real run would proceed")
+		fmt.Printf("%s and every plan step resolves: the real run would proceed\n", coexistcheck.PassVerdict(warns))
 		return &Outcome{Identity: identity, Version: adoptVersion}, nil
 	}
 
@@ -409,7 +409,7 @@ func checkStoreHasVersion(packName, version string, defaulted bool) error {
 // printing every finding except same-repo-dual-enable for the
 // adoption identity (which step 1's suppression resolves before
 // enable runs). Reports whether the real run would refuse.
-func dryRunPreflight(opts Options, identity string) (refused bool, err error) {
+func dryRunPreflight(opts Options, identity string) (refused bool, warns int, err error) {
 	rep, err := coexistcheck.Run(coexistcheck.Options{
 		RepoDir:         opts.RepoDir,
 		Pack:            opts.Pack,
@@ -420,18 +420,21 @@ func dryRunPreflight(opts Options, identity string) (refused bool, err error) {
 		Now:             opts.Now,
 	})
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	for _, r := range rep.Results {
 		if r.Name == "same-repo-dual-enable" && strings.Contains(r.Detail, identity) {
 			continue
 		}
 		fmt.Printf("  %s [%d %s]: %s\n", r.Severity, r.Check, r.Name, r.Detail)
-		if r.Severity == foreign.Error {
+		switch r.Severity {
+		case foreign.Error:
 			refused = true
+		case foreign.Warn:
+			warns++
 		}
 	}
-	return refused, nil
+	return refused, warns, nil
 }
 
 func findInstall(c *foreign.Census, identity string) *foreign.Install {
