@@ -61,10 +61,13 @@ func (b *CustomSkillDirBinding) Sync() (int, []string, error) {
 	var written []string
 	for _, name := range b.skills {
 		src := filepath.Join(b.skillsSrcDir(), name)
-		if err := copyTree(src, filepath.Join(dst, name)); err != nil {
+		wrote, err := copyTree(src, filepath.Join(dst, name))
+		if wrote {
+			written = append(written, filepath.Join(dst, name))
+		}
+		if err != nil {
 			return synced, written, fmt.Errorf("sync custom skill %s: %w", name, err)
 		}
-		written = append(written, filepath.Join(dst, name))
 		synced++
 	}
 	return synced, written, nil
@@ -98,8 +101,10 @@ func (b *CustomSkillDirBinding) Validate() error {
 }
 
 // copyTree recursively copies src into dst with no content transforms.
-func copyTree(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, werr error) error {
+// wrote reports whether at least one file was written, including when a
+// later file fails.
+func copyTree(src, dst string) (wrote bool, err error) {
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
 		}
@@ -119,8 +124,10 @@ func copyTree(src, dst string) error {
 		if err := writeWithSourceMode(target, data, path); err != nil {
 			return fmt.Errorf("write %s: %w", target, err)
 		}
+		wrote = true
 		return nil
 	})
+	return wrote, err
 }
 
 // customSkillsDir returns the custom skills directory for a consumer

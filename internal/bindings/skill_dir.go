@@ -77,10 +77,15 @@ func (b *SkillDirBinding) Sync() (int, []string, error) {
 		src := filepath.Join(skillsSrc, skillName)
 		dst := filepath.Join(skillsDst, skillName)
 
-		if err := b.syncSkillTree(src, dst); err != nil {
+		wrote, err := b.syncSkillTree(src, dst)
+		if wrote {
+			// The skill dir is the unit of ownership: once a file in it
+			// has landed, its bytes are on disk even if a later one fails.
+			written = append(written, dst)
+		}
+		if err != nil {
 			return synced, written, fmt.Errorf("sync skill %s: %w", skillName, err)
 		}
-		written = append(written, dst)
 		synced++
 	}
 
@@ -89,9 +94,10 @@ func (b *SkillDirBinding) Sync() (int, []string, error) {
 
 // syncSkillTree recursively copies a single skill directory from src into
 // dst, applying path rewrites to text files and appending the
-// fallback-resolution footer to SKILL.md.
-func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, werr error) error {
+// fallback-resolution footer to SKILL.md. wrote reports whether at least
+// one file was written, including when a later file fails.
+func (b *SkillDirBinding) syncSkillTree(src, dst string) (wrote bool, err error) {
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
 		}
@@ -125,8 +131,10 @@ func (b *SkillDirBinding) syncSkillTree(src, dst string) error {
 		if err := writeWithSourceMode(target, data, path); err != nil {
 			return fmt.Errorf("write %s: %w", target, err)
 		}
+		wrote = true
 		return nil
 	})
+	return wrote, err
 }
 
 // rewritableSkillFile reports whether a file under a bound skill passes
