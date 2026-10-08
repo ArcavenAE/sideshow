@@ -88,3 +88,26 @@ func TestCLI_TopLevelHelpStillPrintsFullUsage(t *testing.T) {
 		}
 	}
 }
+
+// The top-level help line for the adopt conversion names every flag the
+// verb takes for that mode, including the stale-lock override the refusal
+// hint tells the user to pass (sideshow#95).
+func TestCLI_TopLevelHelpAdoptLineNamesTheStaleLockOverride(t *testing.T) {
+	bin := buildBinary(t)
+	_, se, code := runBinary(t, bin, "--help")
+	if code != 0 {
+		t.Fatalf("--help: code=%d", code)
+	}
+	var line string
+	for _, l := range strings.Split(se, "\n") {
+		if strings.Contains(l, "sideshow adopt <pack> [--repo <path>]") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatalf("no adopt conversion line in the top-level help:\n%s", se)
+	}
+	if !strings.Contains(line, "--override-stale-lock") {
+		t.Errorf("adopt line omits --override-stale-lock: %q", line)
+	}
+}
