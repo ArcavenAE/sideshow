@@ -64,7 +64,7 @@ func (b *CustomSkillDirBinding) Sync() (int, []string, error) {
 		if err := copyTree(src, filepath.Join(dst, name)); err != nil {
 			return synced, written, fmt.Errorf("sync custom skill %s: %w", name, err)
 		}
-		_ = filepath.Join(dst, name) // red: not yet reported
+		written = append(written, filepath.Join(dst, name))
 		synced++
 	}
 	return synced, written, nil

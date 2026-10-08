@@ -296,9 +296,6 @@ func runSync(all []Binding) (synced int, removed []ManifestEntry, err error) {
 	for _, b := range all {
 		n, written, syncErr := b.Sync()
 		synced += n
-		if syncErr == nil && len(written) == 0 { // red stub: old behavior
-			written, _ = b.Artifacts()
-		}
 		// Record every path this binding wrote, a failed binding's
 		// included, so the last entry for a path is the writer whose
 		// bytes are on disk.

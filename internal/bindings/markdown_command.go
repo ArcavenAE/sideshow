@@ -77,7 +77,7 @@ func (b *MarkdownCommandBinding) Sync() (int, []string, error) {
 			if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
 				return fmt.Errorf("write command %s: %w", destPath, err)
 			}
-			_ = destPath // red: not yet reported
+			written = append(written, destPath)
 			synced++
 			return nil
 		})
@@ -122,7 +122,7 @@ func (b *MarkdownCommandBinding) Sync() (int, []string, error) {
 		if err := writeWithSourceMode(destPath, []byte(content), path); err != nil {
 			return fmt.Errorf("write command %s: %w", destPath, err)
 		}
-		_ = destPath // red: not yet reported
+		written = append(written, destPath)
 		synced++
 		return nil
 	})

@@ -80,7 +80,7 @@ func (b *SkillDirBinding) Sync() (int, []string, error) {
 		if err := b.syncSkillTree(src, dst); err != nil {
 			return synced, written, fmt.Errorf("sync skill %s: %w", skillName, err)
 		}
-		_ = dst // red: not yet reported
+		written = append(written, dst)
 		synced++
 	}
 
