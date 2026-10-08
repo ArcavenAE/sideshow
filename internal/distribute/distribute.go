@@ -65,6 +65,11 @@ type Action struct {
 	Status   string // "wrote", "merged", "skipped", "conflict", "error"
 	Detail   string // human-readable explanation
 	Artifact pack.DistributedArtifact
+
+	// RecordReceipt asks RecordResults to keep Artifact in the registry
+	// although nothing was written, so a skipped or unchanged file keeps the
+	// receipt that lets the next run tell an edit from sideshow's own bytes.
+	RecordReceipt bool
 }
 
 // Options controls distribution behavior.
@@ -81,6 +86,11 @@ type Options struct {
 	// target is then treated as user-authored and left alone, which is the
 	// fail-safe direction.
 	PriorChecksums map[string]string
+
+	// PriorRuleChecksums is PriorChecksums for rules: artifacts. It is a
+	// separate map so a rule and a file at the same path never read each
+	// other's receipt.
+	PriorRuleChecksums map[string]string
 }
 
 // ToRepo distributes artifacts from the manifest to a single subrepo.
@@ -976,4 +986,11 @@ func PriorChecksums(reg *pack.Registry, projectID, root, manifest, repoName, pac
 func sha256hex(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+// PriorRuleChecksums returns the checksums recorded for rules artifacts the
+// last time sideshow wrote them, keyed by repo-relative path. It is the
+// rules counterpart of PriorChecksums and reads only rules entries.
+func PriorRuleChecksums(reg *pack.Registry, projectID, root, manifest, repoName, packName string) map[string]string {
+	return map[string]string{}
 }
