@@ -351,10 +351,17 @@ func SyncedCount(packName, packPath string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Manifest order is sync order, so when two packs recorded the same
+	// path the later entry wrote the bytes now on disk. Only that last
+	// writer counts the path as synced.
+	lastWriter := make(map[string]string, len(m.Entries))
+	for _, e := range m.Entries {
+		lastWriter[e.Path] = e.Pack
+	}
 	skills := map[string]struct{}{}
 	commands := map[string]struct{}{}
 	for _, e := range m.Entries {
-		if e.Pack != packName {
+		if e.Pack != packName || lastWriter[e.Path] != packName {
 			continue
 		}
 		switch e.Kind {
