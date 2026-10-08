@@ -416,6 +416,14 @@ func planRepoRemoval(t RepoTarget, artifacts []RepoArtifact) ([]string, error) {
 		if err := preserve.Check(p); err != nil {
 			return nil, err
 		}
+		// A compat symlink row whose path is now a real directory is
+		// the vendored engine; removal refuses it, so the plan must
+		// too, or a caller that preflights changes other state first.
+		if a.Kind == ArtifactCompatSymlink {
+			if info, statErr := os.Lstat(p); statErr == nil && info.Mode()&os.ModeSymlink == 0 {
+				return nil, fmt.Errorf("refusing removal: %s is recorded as a compat symlink but is not a symlink on disk", a.Path)
+			}
+		}
 		abs[i] = p
 	}
 	return abs, nil
