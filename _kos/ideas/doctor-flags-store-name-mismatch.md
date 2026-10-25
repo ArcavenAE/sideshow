@@ -1,3 +1,5 @@
+Closed 2026-10-25: pointers closed
+
 # idea: doctor flags store entries whose name contradicts their pack.yaml
 
 **Date:** 2026-09-27
