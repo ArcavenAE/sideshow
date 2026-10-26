@@ -1,3 +1,5 @@
+Closed 2026-10-25: pointers closed
+
 # idea: doctor warns when a pinned pack trails upstream
 
 **Date:** 2026-09-27
