@@ -28,15 +28,26 @@ The marvel-aware parts are listed under "Gated" below, as one operator call. Not
 
 The git source uses the user's own git credential helper. sideshow refuses a URL that carries userinfo (`https://user:secret@host/...` or `https://token@host/...`), because recording that URL in its ledger would put a credential at rest. It keeps one bare mirror per URL in its cache. The mirror is a cache: mutable, never read by marvel, safe to delete.
 
-## Master, mirror and installed copies
+## Master, reference and working copies
 
-- **Master:** the source repository, edited by its owner's review flow. sideshow never writes it.
-- **Mirror:** sideshow's cache of the master; fetched, never edited, never read by marvel.
-- **Installed version:** `git archive <commit>` of the mirror (no `.git`), or the unpacked tarball, in sideshow's store. Immutable.
+marvel's design defines three tiers; sideshow handles the first two.
+
+- **Master:** the library's git repository, edited by its owner's review flow. It stays the source. sideshow never writes it.
+- **Mirror:** sideshow's cache of the master; fetched, never edited, never read by marvel. Not a tier: it is a cache.
+- **Reference copy:** one installed version, `git archive <commit>` of the mirror (no `.git`), or the unpacked tarball, in sideshow's store. Immutable. **Only sideshow writes its store.**
+- **Working copy:** what a session runs from. marvel derives it at launch, with a digest back to the reference copy. sideshow never installs from one: `install` refuses a source that contains a file named `origin.json` at any depth, and a source inside its own store. It reads no marvel config to do so, which keeps it inside the current phase.
+
+### How "only sideshow writes its store" is enforced
+
+- **Against seats:** every session marvel launches runs under marvel's write-deny profile for every company root (marvel design, E1), and sideshow's store is one, so a seat's write fails with the sandbox's own error.
+- **Against people and other tools (opt-in):** the owner can give the store to a dedicated user and run sideshow's writing verbs as that user (`sudo -u`), with the store readable by everyone else and writable by no one else. That takes elevated rights once per host. `sideshow doctor` reports the store's owner, and warns when it is the invoking user's (E2 not in use).
+- **Detection, always:** read-only modes and the ledger's tree hash, re-checked by `sideshow doctor`. These detect a change; they do not prevent one.
 
 ## Install
 
 All steps run under a per-name lock, `<store>/<name>/.lock` (`flock`, non-blocking). A second install or update of the same name refuses while the lock is held.
+
+**The install ledger is per name,** `<store>/<name>/.ledger`: one row per installed version (version, commit, ref, source URL, tree hash, install time) and the `--track` flag. It is not sideshow's shared `repo-bindings.yaml`, which one per-name lock could not protect, since two names would write it at once. Only a holder of that name's lock writes it, by writing `.ledger.tmp` and renaming it over `.ledger`, so a reader sees the old file or the new one. The dot name keeps it out of marvel's listing, and the version listings already skip files. Every verb that writes it (install, update, activate, remove) takes the lock first; `doctor` and `list` only read it and take no lock.
 
 1. **Sweep:** remove any `<store>/<name>/.*.partial` left by an earlier run, restoring the owner's write bits first, since a run killed after step 4 leaves a read-only partial that cannot otherwise be removed. The lock makes this safe: no other writer can own one.
 2. Resolve the ref to a commit and verify it (git source), or verify the tarball.
@@ -66,10 +77,10 @@ Because update is idempotent and changes nothing on a no-op, a user-owned schedu
 | verb | does |
 |---|---|
 | `sideshow install <name> ...` | the install steps |
-| `sideshow activate <name> <version>` | flips `current` |
+| `sideshow activate <name> <version>` | flips `current`, under the same per-name lock as install and update, so it cannot interleave with a scheduled update |
 | `sideshow update <name>` | as above |
 | `sideshow list <name>` | installed versions, `*` on current |
-| `sideshow remove <name> <version>` | refuses the current version. A marvel team pinned to an exact version may still use another; the command prints that `marvel get companies` shows which |
+| `sideshow remove <name> <version>` | under the same per-name lock; refuses the current version. A marvel team pinned to an exact version may still use another; the command prints that `marvel get companies` shows which |
 | `sideshow doctor` | re-hashes installed versions against the ledger; lists stale partials and held locks |
 
 marvel owns reading, pinning, refusing a changed tree and recording a cast. The contract between the two is a directory layout (`<name>/<version>/`, `current`, dot entries skipped) and the tree hash definition. Neither calls the other.
@@ -92,7 +103,11 @@ Today's version listing does not skip dot entries. `InstalledVersions` (`interna
 - Given a URL with userinfo, then `install` refuses before any fetch.
 - Given an install killed after step 3, and again after step 4 (a read-only partial), then the only entry it left is dot-prefixed (so a reader that skips dot entries, as marvel does, sees nothing), `sideshow list` does not show it, and the next `install` sweeps it and completes.
 - Given versions 1 and 2 installed with `--track` and `current` at 2, when the operator activates 1 and a scheduled `update` then runs with no new commit, then `current` stays at 1 and the output says tracking is off. Given a new descendant 3 then arrives, `update` installs 3 and `current` still stays at 1.
-- Given a ref naming a commit absent from the mirror, so that `--is-ancestor` exits 128, then `update` refuses and writes nothing.
+- Given an installed commit C, a source repository whose history is then rewritten so that no ref reaches C, and the mirror deleted and re-created from it (so C is absent from the mirror, not merely unreferenced), when `update` runs, then `--is-ancestor` exits 128, `update` refuses, and nothing is written. Re-creating the mirror from an unchanged source would fetch C again and test nothing.
+- Given installs of two different names started together, then each name's `.ledger` holds its own row and neither run lost the other's.
+- Given a `remove` holding a name's lock, when `update` of that name runs, then `update` refuses on the lock; `doctor` run at the same time reads the old or the new `.ledger`, never a partial one.
+- Given an `update` holding the lock, when `activate` runs, then `activate` refuses on the lock and `current` is unchanged.
+- Given a source directory holding an `origin.json`, or inside sideshow's own store, then `install` refuses it.
 - Given two installs of one name started together, then the second refuses on the lock and the first completes.
 - Given an empty directory already at `<version>`, then step 5 refuses and the directory is unchanged.
 - Given an installed commit C and a ref that now names a commit that is not a descendant of C, when `update` runs, then nothing is written and the output names the descendant rule.
@@ -104,5 +119,6 @@ Today's version listing does not skip dot entries. `InstalledVersions` (`interna
 
 1. **The workspace-VFS gate:** whether to lift it for the items under "Gated". I recommend keeping it, since this design works without them.
 2. **`--track` default:** opt-in, so a first install never moves a running fleet's `current` by surprise. I recommend opt-in.
+3. **A dedicated store owner (E2)** per host, the owner's choice. Without it, people and tools marvel does not launch are held back by detection only.
 
 This recommendation is valid until 2026-11-08; the architect re-checks it then.
