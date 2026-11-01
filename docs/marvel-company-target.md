@@ -38,7 +38,7 @@ The git source uses the user's own git credential helper. sideshow refuses a URL
 
 All steps run under a per-name lock, `<store>/<name>/.lock` (`flock`, non-blocking). A second install or update of the same name refuses while the lock is held.
 
-1. **Sweep:** remove any `<store>/<name>/.*.partial` left by an earlier run. The lock makes this safe: no other writer can own one.
+1. **Sweep:** remove any `<store>/<name>/.*.partial` left by an earlier run, restoring the owner's write bits first, since a run killed after step 4 leaves a read-only partial that cannot otherwise be removed. The lock makes this safe: no other writer can own one.
 2. Resolve the ref to a commit and verify it (git source), or verify the tarball.
 3. Write the tree to `<store>/<name>/.<version>.partial`. The leading dot keeps it out of marvel's listing, which skips dot entries. The version string is `<commit date>-<short sha>` for a git source, or the release version.
 4. Compute the tree hash (v1, as marvel's design defines it, so the two recorders agree) and record it with the commit in sideshow's ledger. Clear every write bit on every file and directory. Mode bits only detect a change, since an owner can set them back; `sideshow doctor` re-hashes against the ledger.
@@ -52,12 +52,14 @@ A kill at any step leaves the previous `current` live. A partial left by a kill 
 `sideshow update <name>` re-resolves the ref recorded at install (for example `main`). It installs the result only when all of these hold:
 
 - it verifies, as in Sources;
-- it is a **descendant** of the installed commit (`git merge-base --is-ancestor <installed> <new>`), so an unattended update never moves sideways or backwards, whatever the ref now names;
+- it is a **descendant** of the installed commit (`git merge-base --is-ancestor <installed> <new>`), so an unattended update never moves sideways or backwards, whatever the ref now names. Exit 0 passes. Exit 1 (not an ancestor) and exit 128 (a commit missing from the mirror, or any git error) both refuse;
 - it differs from the installed commit.
 
-Otherwise it writes nothing and says which rule stopped it. With `--track` recorded at install, it also activates. Rollback stays explicit: `sideshow activate <name> <previous>`, or a revert in the master, whose merge is a descendant and installs normally.
+**The installed commit** is the commit of the newest installed version, by install order in the ledger, not the commit `current` points at.
 
-Because update is idempotent and changes nothing on a no-op, a user-owned scheduled job can run it. Under launchd or cron, `XDG_DATA_HOME` is often unset, and sideshow's store then resolves to `$HOME/.local/share/sideshow`. A job should set `SIDESHOW_HOME` explicitly, and `sideshow doctor` prints the path it resolved. marvel reads its roots from its own config, not the environment, so it is unaffected.
+Otherwise it writes nothing and says which rule stopped it. With `--track` recorded at install, it also activates. Rollback stays explicit: `sideshow activate <name> <previous>`, or a revert in the master, whose merge is a descendant and installs normally. **Activating any version older than the newest clears `--track`** and says so, so the next scheduled update cannot undo the rollback. With `--track` cleared, update still installs a new descendant but leaves `current` where the operator put it. `sideshow activate <name> <newest> --track` restores tracking.
+
+Because update is idempotent and changes nothing on a no-op, a user-owned scheduled job can run it. sideshow reads no XDG variable: its store is `SIDESHOW_HOME`, else `$HOME/.local/share/sideshow` (`internal/pack/pack.go`, `SideshowDir`). Under launchd or cron the risk is a different `HOME` or a missing `SIDESHOW_HOME`, so a job should set `SIDESHOW_HOME` explicitly, and `sideshow doctor` prints the path it resolved. marvel reads its roots from its own config, not the environment, so it is unaffected.
 
 ## Verbs
 
@@ -80,11 +82,17 @@ These wait on the operator lifting the workspace-VFS gate, and are not part of t
 - validating `company.toml` against marvel's schema at install;
 - `remove` asking marvel which versions are in use, and refusing them.
 
+## Build note
+
+Today's version listing does not skip dot entries. `InstalledVersions` (`internal/pack/pack.go`) and doctor's layer 1 version walk (`internal/doctor/layer1.go`) take every directory except `current`, so they would list a `.<version>.partial` directory as a version. (`.lock` is a file, and both already skip files.) Both need the dot-skip rule in the same PR that adds staging.
+
 ## Tests
 
 - Given a git source whose ref resolves to an unsigned commit, or to one signed by a key of undefined trust, when `install` runs without `--allow-unsigned`, then it refuses and the store is unchanged.
 - Given a URL with userinfo, then `install` refuses before any fetch.
-- Given an install killed after step 3, then the only entry it left is dot-prefixed (so a reader that skips dot entries, as marvel does, sees nothing), `sideshow list` does not show it, and the next `install` sweeps it and completes.
+- Given an install killed after step 3, and again after step 4 (a read-only partial), then the only entry it left is dot-prefixed (so a reader that skips dot entries, as marvel does, sees nothing), `sideshow list` does not show it, and the next `install` sweeps it and completes.
+- Given versions 1 and 2 installed with `--track` and `current` at 2, when the operator activates 1 and a scheduled `update` then runs with no new commit, then `current` stays at 1 and the output says tracking is off. Given a new descendant 3 then arrives, `update` installs 3 and `current` still stays at 1.
+- Given a ref naming a commit absent from the mirror, so that `--is-ancestor` exits 128, then `update` refuses and writes nothing.
 - Given two installs of one name started together, then the second refuses on the lock and the first completes.
 - Given an empty directory already at `<version>`, then step 5 refuses and the directory is unchanged.
 - Given an installed commit C and a ref that now names a commit that is not a descendant of C, when `update` runs, then nothing is written and the output names the descendant rule.
