@@ -41,6 +41,17 @@ edges:
     type: derives
   - target: question-frozen-composition-pipeline
     type: supports
+notes: |
+  2026-11-02 harvest (period from 2026-10-25). docs/marvel-company-target.md
+  (1a519ce, sideshow#206; one line added in 56c8433, sideshow#207) gives the
+  git-clone-at-sha backend a concrete verify step: `git verify-commit` on the
+  resolved commit with the trust level pinned, SSH allowed-signers for SSH
+  signatures, unsigned refused unless `--allow-unsigned`. It also gives a
+  credential rule: the user's own credential helper, and a URL carrying
+  userinfo is refused so no credential is recorded at rest. That answers part
+  of the sub-question on how a backend authenticates private repos, for one
+  backend only, as a design awaiting an operator ruling. Not a promotion; the
+  node stays frontier.
 provenance:
   created_by: human
   session: session-049
