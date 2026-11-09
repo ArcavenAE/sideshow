@@ -145,6 +145,20 @@ to be the single source of truth. If you need offline: cache the
 sideshow user-scope pack store (`~/.local/share/sideshow/packs/`) on
 the offline machine via rsync or similar.
 
+**Q: An agent says "The output folder is `_bmad-output`, because
+`_bmad/config.toml` is missing." What does that mean?**
+The repo is not bound to the installed pack, or the `_bmad/config.toml`
+link points at a pack version that is no longer there (a dangling link
+after a version switch). The bmad skills read their settings through
+`_bmad/scripts/resolve_config.py`, which needs that file. Without it the
+skills carry on with neutral defaults, so `user_name`, language and module
+settings are not applied. In a repo with no `_bmad/scripts` at all, party
+mode also finds no installed roster and casts its seats inline with memory
+off. Run `sideshow project init bmad` in the repo to bind it; output still
+lands in `_bmad-output/`. `sideshow project init` and `sideshow commands
+sync` print one warning when `_bmad/config.toml` does not resolve, and the
+warning names the same command.
+
 ## Related
 
 - `aae-orc-794h` — this doc (shipped).

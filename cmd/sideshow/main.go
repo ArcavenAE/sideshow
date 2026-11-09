@@ -727,7 +727,11 @@ func runList() error {
 }
 
 func runCommandsSync() error {
-	return bindings.Sync()
+	if err := bindings.Sync(); err != nil {
+		return err
+	}
+	warnIfCurrentRepoUnbound()
+	return nil
 }
 
 // runProjectInitForPack applies a pack's distribute manifest to the
@@ -950,6 +954,10 @@ func runProjectInitForPack(args []string) error {
 		fmt.Printf("Done: %d wrote, %d already present, %d %s (left untouched; the repo is partly linked into the store)\n", wrote, skipped, conflicts, noun)
 	} else {
 		fmt.Printf("Done: %d wrote, %d already present\n", wrote, skipped)
+	}
+
+	if !dryRun {
+		warnIfConfigUnresolved(cwd, packName, packYAML)
 	}
 
 	// Weaving runs last, because it operates on the tree the steps above
