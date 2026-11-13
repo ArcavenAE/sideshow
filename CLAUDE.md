@@ -4,6 +4,10 @@
 
 PR and issue bodies open with why: the first one or two sentences say why to read it and why merging is worth the risk. See aae-orc `.claude/rules/lead-with-why.md`.
 
+## Vocabulary
+
+"Pack" is sideshow's term only (operator, 2026-10-15). Marvel's own bundle is a marvel company (operator, 2026-10-16), and a cast is the teams marvel runs on a cluster (operator, 2026-10-19). Neither is a pack, so the words are not swapped.
+
 ## How to Work Here (kos Process)
 
 ### Re-introduction
