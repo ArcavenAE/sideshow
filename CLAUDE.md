@@ -6,7 +6,7 @@ PR and issue bodies open with why: the first one or two sentences say why to rea
 
 ## Vocabulary
 
-"Pack" is sideshow's term only (operator, 2026-10-15). A seat's application of later rulings, taken from the review of this change and not the operator's words: marvel's own bundle is a marvel company (ruled 2026-10-16), and a cast is the teams marvel runs on a cluster (2026-10-19). Neither is a pack, so the words are not swapped.
+"Pack" is sideshow's term only (operator, 2026-10-15). Marvel's own bundle is a marvel company (operator, 2026-10-16), and a cast is the teams marvel runs on a cluster (operator, 2026-10-19). Neither is a pack, so the words are not swapped.
 
 ## How to Work Here (kos Process)
 
