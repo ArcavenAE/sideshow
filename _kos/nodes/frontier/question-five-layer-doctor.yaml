@@ -38,6 +38,22 @@ content: |
   install never deletes, so a store version holds the union of every
   source installed at that version.
 
+  Layer 1 progress (2026-11-17): sideshow-packs finding-004 recorded
+  that the identity neutralization edits nine bmad config files after
+  bmad records their hashes, so `sideshow doctor` reported a structural
+  FAIL on every clean r2 install ("9 of 74 census entries differ from
+  the store tree"). The fix has two halves. The build half merged as
+  sideshow-packs#46 (e30e4a1, 2026-10-05): the build refreshes the
+  census after the neutralizer, fails closed, and writes the rewrite
+  record into the in-store `pack.yaml`; its own control is that an edit
+  after the refresh still fails. The doctor half merged as sideshow#153
+  (ce23d54e, 2026-10-07): check store-declared-rewrites reports that
+  record as info and never as an exemption, and
+  TestDeclaredRewrites_NeverExemptsAFileFromTheCensus keeps the
+  negative control (an edit to a rewritten file still fails
+  store-content-census). This cites a finding in the sideshow-packs
+  graph.
+
   Open sub-questions:
   - Layer 2 spec separately or fold into the weaving engine?
   - When should layer 3 escalate from warn to error?
