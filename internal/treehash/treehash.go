@@ -16,7 +16,8 @@ import (
 
 type record struct{ path, text string }
 
-// Hash returns the tree hash v1 of dir. Every file, directory and
+// Hash returns the tree hash v1 of dir, which must be a real directory,
+// not a link to one. Every file, directory and
 // symbolic link under dir is an entry and nothing is followed. A record is
 // <type> NUL <path> NUL <value> NUL, with type f, d or l, the path relative
 // to dir with components joined by "/", and the value the hex sha256 of a
@@ -25,8 +26,15 @@ type record struct{ path, text string }
 // bits, owners and times are not part of it. An entry that is not a file, a
 // directory or a link is an error, since no record describes it.
 func Hash(dir string) (string, error) {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", fmt.Errorf("tree hash: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("tree hash: %q is not a directory (a link or a file is refused)", dir)
+	}
 	var recs []record
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
