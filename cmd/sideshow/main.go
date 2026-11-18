@@ -386,6 +386,7 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 
 	// Distribute to each repo
 	var allResults []distribute.Result
+	var recorded []func(*pack.Registry)
 
 	for _, p := range packs {
 		fmt.Printf("Pack: %s %s\n", p.name, p.version)
@@ -427,6 +428,10 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 		// Record results to registry (even in dry-run, for tracking)
 		if !dryRun {
 			distribute.RecordResults(reg, id.ID, projectRoot, filepath.Base(manifestPath), allResults, opts)
+			results, recordOpts := allResults, opts
+			recorded = append(recorded, func(r *pack.Registry) {
+				distribute.RecordResults(r, id.ID, projectRoot, filepath.Base(manifestPath), results, recordOpts)
+			})
 		}
 
 		fmt.Println()
@@ -434,12 +439,21 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 
 	// Save registry
 	if !dryRun {
-		// Update project last_seen
-		proj := reg.FindOrCreateProject(id.ID)
-		inst := proj.FindOrCreateInstallation(projectRoot, filepath.Base(manifestPath))
-		inst.LastSeen = time.Now().UTC().Format(time.RFC3339)
-
-		if err := reg.Save(); err != nil {
+		// Replay this run's results and update project last_seen on a
+		// registry read under the store lock, so a concurrent install or
+		// run does not lose either update. The lock covers this registry
+		// write, not the file distribution above: two runs on one project
+		// can still both write the same files, and the second ends in a
+		// reported skip.
+		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
+			for _, record := range recorded {
+				record(r)
+			}
+			proj := r.FindOrCreateProject(id.ID)
+			inst := proj.FindOrCreateInstallation(projectRoot, filepath.Base(manifestPath))
+			inst.LastSeen = time.Now().UTC().Format(time.RFC3339)
+			return nil
+		}); err != nil {
 			return fmt.Errorf("save registry: %w", err)
 		}
 	}
@@ -940,8 +954,13 @@ func runProjectInitForPack(args []string) error {
 	}
 
 	if !dryRun {
-		distribute.RecordResults(reg, projectID, root, project.SingleRepoManifest, []distribute.Result{result}, distOpts)
-		if err := reg.Save(); err != nil {
+		// The lock covers this registry write, not the file distribution
+		// above. Two runs on one project can still both write the same
+		// files, and the second ends in a reported skip.
+		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
+			distribute.RecordResults(r, projectID, root, project.SingleRepoManifest, []distribute.Result{result}, distOpts)
+			return nil
+		}); err != nil {
 			return fmt.Errorf("save registry: %w", err)
 		}
 	}

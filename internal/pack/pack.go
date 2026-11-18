@@ -430,26 +430,24 @@ func Activate(name, version string) error {
 		return fmt.Errorf("update current symlink: %w", err)
 	}
 
-	reg, err := LoadRegistry()
-	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
-	}
-	found := false
-	for i := range reg.Packs {
-		if reg.Packs[i].Name == name {
-			reg.Packs[i].Version = version
-			found = true
+	return UpdateRegistry(func(reg *Registry) error {
+		found := false
+		for i := range reg.Packs {
+			if reg.Packs[i].Name == name {
+				reg.Packs[i].Version = version
+				found = true
+			}
 		}
-	}
-	if !found {
-		reg.Packs = append(reg.Packs, InstalledPack{
-			Name:        name,
-			Version:     version,
-			Path:        currentLink,
-			InstalledAt: time.Now().UTC().Format(time.RFC3339),
-		})
-	}
-	return reg.Save()
+		if !found {
+			reg.Packs = append(reg.Packs, InstalledPack{
+				Name:        name,
+				Version:     version,
+				Path:        currentLink,
+				InstalledAt: time.Now().UTC().Format(time.RFC3339),
+			})
+		}
+		return nil
+	})
 }
 
 // InstalledVersions returns every version directory installed for a pack
@@ -693,28 +691,24 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	}
 
 	// Update registry
-	reg, err := LoadRegistry()
-	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
-	}
-
-	// Remove existing entry for this pack
-	var filtered []InstalledPack
-	for _, p := range reg.Packs {
-		if p.Name != name {
-			filtered = append(filtered, p)
+	if err := UpdateRegistry(func(reg *Registry) error {
+		// Remove existing entry for this pack
+		var filtered []InstalledPack
+		for _, p := range reg.Packs {
+			if p.Name != name {
+				filtered = append(filtered, p)
+			}
 		}
-	}
-	filtered = append(filtered, InstalledPack{
-		Name:        name,
-		Version:     version,
-		Path:        filepath.Join(PacksDir(), name, "current"),
-		InstalledAt: time.Now().UTC().Format(time.RFC3339),
-	})
-	reg.Packs = filtered
-
-	if err := reg.Save(); err != nil {
-		return fmt.Errorf("save registry: %w", err)
+		filtered = append(filtered, InstalledPack{
+			Name:        name,
+			Version:     version,
+			Path:        filepath.Join(PacksDir(), name, "current"),
+			InstalledAt: time.Now().UTC().Format(time.RFC3339),
+		})
+		reg.Packs = filtered
+		return nil
+	}); err != nil {
+		return fmt.Errorf("update registry: %w", err)
 	}
 
 	fmt.Printf("Installed %d files to %s\n", count, destDir)
