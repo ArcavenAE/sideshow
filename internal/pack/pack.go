@@ -423,8 +423,7 @@ func Activate(name, version string) error {
 	}
 
 	currentLink := filepath.Join(PacksDir(), name, "current")
-	_ = os.Remove(currentLink)
-	if err := os.Symlink(version, currentLink); err != nil {
+	if err := flipCurrent(currentLink, version); err != nil {
 		return fmt.Errorf("update current symlink: %w", err)
 	}
 
@@ -686,8 +685,7 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 		activation.PrintInstallNotice()
 		return nil
 	}
-	_ = os.Remove(currentLink) // remove old symlink if exists
-	if err := os.Symlink(version, currentLink); err != nil {
+	if err := flipCurrent(currentLink, version); err != nil {
 		return fmt.Errorf("create current symlink: %w", err)
 	}
 
