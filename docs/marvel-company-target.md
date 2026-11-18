@@ -125,4 +125,4 @@ The version listing skips dot entries, so a `.<version>.partial` directory is no
 ## Open for the ruling
 
 1. **The workspace-VFS gate:** whether to lift it for the items under "Gated". I recommend keeping it, since this design works without them.
-2. **The developer install copies rather than links.** If a live link to the checkout is what was wanted, that is a separate question, since a link would let an edit change what running seats read.
+2. **The developer install copies rather than links.** Ruled by the operator 2026-11-18 (I-567): the developer install copies; a live link is a separate question, since a link would let an edit change what running seats read.
