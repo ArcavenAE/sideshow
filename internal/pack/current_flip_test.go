@@ -133,3 +133,28 @@ func TestInstall_CurrentIsNeverMissingDuringAnActivatingInstall(t *testing.T) {
 		}
 	}
 }
+
+// A temp link left by a crashed process whose pid this process now holds
+// does not make the next flip fail: the sequence restarts at 1 in every
+// process, so the leftover can carry exactly the name the flip picks.
+func TestFlipCurrent_ReplacesALeftoverTempLinkOfTheSameName(t *testing.T) {
+	freezeSafeHome(t)
+	for _, v := range []string{"1.0.0", "2.0.0"} {
+		writePackYAML(t, filepath.Join(PacksDir(), "testpack", v), v)
+	}
+	if err := Activate("testpack", "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(PacksDir(), "testpack")
+	leftover := filepath.Join(dir, fmt.Sprintf(".current.%d.%d", os.Getpid(), flipSeq.Load()+1))
+	if err := os.Symlink("1.0.0", leftover); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Activate("testpack", "2.0.0"); err != nil {
+		t.Fatalf("Activate with a leftover temp link of the same name: %v", err)
+	}
+	if got, err := os.Readlink(filepath.Join(dir, "current")); err != nil || got != "2.0.0" {
+		t.Errorf("current = %q (err %v), want 2.0.0", got, err)
+	}
+}
