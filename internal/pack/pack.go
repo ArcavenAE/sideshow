@@ -416,6 +416,9 @@ func detectPackYamlVersion(packPath string) string {
 // updates the registry to match. The version must already be installed.
 // Bindings are NOT synced here — callers run bindings.Sync after.
 func Activate(name, version string) error {
+	if strings.HasPrefix(version, ".") {
+		return fmt.Errorf("pack %s version %q starts with a dot: dot entries are staging leftovers, not installed versions", name, version)
+	}
 	versionDir := filepath.Join(PacksDir(), name, version)
 	info, err := os.Stat(versionDir)
 	if err != nil || !info.IsDir() {
