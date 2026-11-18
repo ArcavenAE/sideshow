@@ -88,3 +88,22 @@ func TestHash_RefusesAnEntryWithNoRecord(t *testing.T) {
 		t.Fatalf("hash %q err %v, want an error and no hash for a fifo", got, err)
 	}
 }
+
+// The root must be a real directory. A link to a directory, or a regular
+// file, is refused instead of hashing as an empty tree.
+func TestHash_RefusesARootThatIsNotARealDirectory(t *testing.T) {
+	real := buildWorkedVector(t)
+	link := filepath.Join(t.TempDir(), "root-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "plain")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, root := range map[string]string{"symlink to a directory": link, "regular file": file} {
+		if got, err := Hash(root); err == nil || got != "" {
+			t.Errorf("%s: hash %q err %v, want an error and no hash", name, got, err)
+		}
+	}
+}
