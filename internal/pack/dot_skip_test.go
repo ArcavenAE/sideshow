@@ -29,3 +29,21 @@ func TestInstalledVersions_SkipsDotEntries(t *testing.T) {
 		t.Errorf("active = %q, want 1.0.0", active)
 	}
 }
+
+// Activate refuses a version name that starts with a dot, since such a
+// name is a staging entry that the version listings skip.
+func TestActivate_RefusesADotVersion(t *testing.T) {
+	freezeSafeHome(t)
+	writePackYAML(t, filepath.Join(PacksDir(), "testpack", "1.0.0"), "1.0.0")
+	writePackYAML(t, filepath.Join(PacksDir(), "testpack", ".2.0.0.partial"), "2.0.0")
+	if err := Activate("testpack", "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Activate("testpack", ".2.0.0.partial"); err == nil {
+		t.Fatal("Activate accepted a dot-prefixed version, want an error")
+	}
+	if got, err := os.Readlink(filepath.Join(PacksDir(), "testpack", "current")); err != nil || got != "1.0.0" {
+		t.Errorf("current = %q (err %v), want it left at 1.0.0", got, err)
+	}
+}
