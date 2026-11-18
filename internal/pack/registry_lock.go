@@ -24,7 +24,7 @@ func UpdateRegistry(fn func(*Registry) error) error {
 	if err := os.MkdirAll(SideshowDir(), 0o755); err != nil {
 		return fmt.Errorf("create sideshow dir: %w", err)
 	}
-	f, err := os.OpenFile(registryLockPath(), os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(registryLockPath(), os.O_CREATE|os.O_RDONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open registry lock: %w", err)
 	}

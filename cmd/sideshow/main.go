@@ -441,7 +441,10 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 	if !dryRun {
 		// Replay this run's results and update project last_seen on a
 		// registry read under the store lock, so a concurrent install or
-		// run does not lose either update.
+		// run does not lose either update. The lock covers this registry
+		// write, not the file distribution above: two runs on one project
+		// can still both write the same files, and the second ends in a
+		// reported conflict.
 		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
 			for _, record := range recorded {
 				record(r)
@@ -951,6 +954,9 @@ func runProjectInitForPack(args []string) error {
 	}
 
 	if !dryRun {
+		// The lock covers this registry write, not the file distribution
+		// above. Two runs on one project can still both write the same
+		// files, and the second ends in a reported conflict.
 		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
 			distribute.RecordResults(r, projectID, root, project.SingleRepoManifest, []distribute.Result{result}, distOpts)
 			return nil
