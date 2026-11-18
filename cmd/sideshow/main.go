@@ -444,7 +444,7 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 		// run does not lose either update. The lock covers this registry
 		// write, not the file distribution above: two runs on one project
 		// can still both write the same files, and the second ends in a
-		// reported conflict.
+		// reported skip.
 		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
 			for _, record := range recorded {
 				record(r)
@@ -956,7 +956,7 @@ func runProjectInitForPack(args []string) error {
 	if !dryRun {
 		// The lock covers this registry write, not the file distribution
 		// above. Two runs on one project can still both write the same
-		// files, and the second ends in a reported conflict.
+		// files, and the second ends in a reported skip.
 		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
 			distribute.RecordResults(r, projectID, root, project.SingleRepoManifest, []distribute.Result{result}, distOpts)
 			return nil
