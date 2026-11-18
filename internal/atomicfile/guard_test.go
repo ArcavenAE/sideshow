@@ -29,6 +29,7 @@ var inPlaceAllowlist = map[string]string{
 	"internal/foreign/enables.go:CanWriteSettings":             "out: opens O_WRONLY to check writability, writes and truncates nothing",
 	"internal/atomicfile/atomicfile.go:createTempBeside":       "out: the helper itself; creates a fresh temp file with O_EXCL",
 	"internal/pack/pack.go:Install":                            "out: install-level staging, its own issue if wanted (#185 ruling)",
+	"internal/pack/registry_lock.go:UpdateRegistry":            "out: opens the empty .registry.lock file only to hold flock; writes no bytes",
 }
 
 // findInPlaceWriters returns "<path>:<function>" (or "<path>:var <name>"
