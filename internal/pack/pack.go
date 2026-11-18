@@ -450,7 +450,7 @@ func Activate(name, version string) error {
 }
 
 // InstalledVersions returns every version directory installed for a pack
-// (sorted) plus the version the current symlink points at ("" if none).
+// (sorted; a dot-prefixed directory is a staging leftover and is skipped) plus the version the current symlink points at ("" if none).
 func InstalledVersions(name string) (versions []string, active string, err error) {
 	dir := filepath.Join(PacksDir(), name)
 	entries, err := os.ReadDir(dir)
@@ -458,7 +458,7 @@ func InstalledVersions(name string) (versions []string, active string, err error
 		return nil, "", err
 	}
 	for _, e := range entries {
-		if e.IsDir() && e.Name() != "current" {
+		if e.IsDir() && e.Name() != "current" && !strings.HasPrefix(e.Name(), ".") {
 			versions = append(versions, e.Name())
 		}
 	}
