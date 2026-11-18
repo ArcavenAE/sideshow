@@ -1,6 +1,6 @@
 id: question-frozen-composition-pipeline
 type: question
-confidence: frontier
+confidence: bedrock
 title: "How does the frozen-composition publishing pipeline produce signed multi-source pack tarballs?"
 tags:
   - sideshow
@@ -52,11 +52,18 @@ content: |
   pack-support register + check-support.sh gate refuse versions
   outside the validated bracket (orc elem-pack-support-register).
 
-  Why frontier rather than bedrock: the shape is shipped but the
+  Before 2026-11-18 (superseded by the promotion below): why frontier
+  rather than bedrock: the shape is shipped but the
   *generality* across packs is not. bmad is the proof. VSDD ecosystem
   is the next test (`aae-orc-amet`, draft register + skippy
   validation in flight). Promotion to bedrock pending a second pack
   going end-to-end through the same pipeline.
+
+  Promoted to bedrock on the operator's ruling of 2026-11-17, applied
+  2026-11-18 (Desk card d1117b-1, option 1, I-532). The pipeline builds vsdd-factory as well
+  as bmad (`build-pack.yml` options bmad and vsdd-factory; releases
+  vsdd-factory-v1.0.0-rc.22 to rc.25 are published). The signature on
+  a vsdd-factory release was not independently verified in the harvest.
 
   **Artifact-correctness gates (findings 004 and 005, 2026-09):** two
   defect classes shipped past every transport-fidelity gate, because each
