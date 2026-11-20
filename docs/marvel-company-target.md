@@ -4,7 +4,7 @@ Status: design, for a ruling. Nothing here is built.
 
 ## Why
 
-marvel now has a native object for a library of team, workflow and agent definitions: the company, read from roots marvel never writes (marvel `docs/design/companies.md`). Something has to put versions on disk, check them, and move the active one forward or back. That is a package manager's job, and sideshow already has the model: several versions side by side, one `current`, a flip that rolls back. This design lets sideshow install a company library the way it installs any pack, into its own store, and lets marvel read that store. marvel does not need sideshow; sideshow is one way to fill a root.
+marvel now has a native object for a library of team, workflow and agent definitions: the company, read from roots marvel never writes (marvel `docs/design/companies.md`). Something has to put versions on disk, check them, and move the active one forward or back. That is a package manager's job, and sideshow already has the model: several versions side by side, one `current`, a switch that rolls back. This design lets sideshow install a company library the way it installs any pack, into its own store, and lets marvel read that store. marvel does not need sideshow; sideshow is one way to fill a root.
 
 ## Within the current phase
 
@@ -18,70 +18,78 @@ So this design stays in the Now phase:
 
 The marvel-aware parts are listed under "Gated" below, as one operator call. Nothing here argues past the gate.
 
-## Sources
+## Versions
 
-| source | for | how it is checked |
-|---|---|---|
-| `--from <dir>` | a local tree, as today | tree hash recorded at install |
-| a signed release tarball | public libraries, through the existing signed-release path | cosign and attestation, as for other packs, plus the tree hash |
-| `--from-git <url> --ref <ref>` | a library kept in a private repository | `git verify-commit` on the resolved commit, run with `gpg.minTrustLevel=fully` (an OpenPGP key of undefined trust otherwise passes) or, for SSH signatures, the user's `gpg.ssh.allowedSignersFile`. Refused unverified unless `--allow-unsigned` |
+A library's versions are semantic versions. A release is `1.2.0`: the first number changes when a change can break a team that uses it, the second when roles are added, the third for fixes. An early build for testing is a prerelease, `1.3.0-alpha.1`, the form vsdd-factory already uses (`1.0.0-rc.23`). A prerelease is never picked unless asked for.
 
-The git source uses the user's own git credential helper. sideshow refuses a URL that carries userinfo (`https://user:secret@host/...` or `https://token@host/...`), because recording that URL in its ledger would put a credential at rest. It keeps one bare mirror per URL in its cache. The mirror is a cache: mutable, never read by marvel, safe to delete.
+## Install kinds
+
+There are three, and each records what it came from.
+
+| kind | command | for | how it is checked |
+|---|---|---|---|
+| release | `sideshow install <name>@<version>` (or `@latest`, the newest release) | a published release of a public library | the checksum and the cosign signature of the release tarball, plus the tree hash |
+| alpha | `sideshow install <name>@alpha` | the newest prerelease; still a built, signed release, marked early | the same checks as a release |
+| developer | `sideshow install <name> --dev <checkout>` | a library's author testing a change with no release, no tag and no network | none beyond the tree hash; it is the operator's own checkout |
+
+**Release and alpha.** The release build makes a tarball of the pack, signs it with a short-lived certificate tied to the build job (cosign keyless signing), publishes the tarball's checksum and attaches both to a release, as the bmad releases already do. sideshow downloads the tarball and its checksum file, checks both, and refuses a tarball that fails either. Today a person downloads and checks it, then runs `sideshow install <name> --from <folder>`; the `@` forms make that one command. A prerelease is chosen only by `@alpha` or by its exact version.
+
+**Developer.** `--dev <checkout>` copies the checkout's `company/` folder into the store as its own version, named `<next version>-dev.<date and time>.<short commit id>`, for example `1.3.0-dev.20261118193000.90e8904`. It refuses a checkout with uncommitted changes. sideshow marks it as a developer install, update never picks it, and `sideshow use` moves back to a release. It copies; it does not link to the live checkout, since a link would let an edit change what running seats read, which the "never changed in place" rule below forbids.
+
+**`--from <dir>`** stays as today: a local tree, with the tree hash recorded at install. It is also what the installs above run through once their checks pass.
+
+**What an install records:** the version, the full commit id the version was built from, and the source: the release download address and the tarball's checksum, or the local checkout path for a developer install. Before installing, sideshow refuses a source that holds a file named `origin.json` at any depth, and a source inside its own store.
 
 ## Master, reference and working copies
 
 marvel's design defines three tiers; sideshow handles the first two.
 
 - **Master:** the library's git repository, edited by its owner's review flow. It stays the source. sideshow never writes it.
-- **Mirror:** sideshow's cache of the master; fetched, never edited, never read by marvel. Not a tier: it is a cache.
-- **Reference copy:** one installed version, `git archive <commit>` of the mirror (no `.git`), or the unpacked tarball, in sideshow's store. Immutable. **Only sideshow writes its store.**
+- **Reference copy:** one installed version, the unpacked release tarball or the copied developer folder, in sideshow's store. Immutable. **Only sideshow writes its store.**
 - **Working copy:** what a session runs from. marvel derives it at launch, with a digest back to the reference copy. sideshow never installs from one: `install` refuses a source that contains a file named `origin.json` at any depth, and a source inside its own store. It reads no marvel config to do so, which keeps it inside the current phase.
 
 ### How "only sideshow writes its store" is enforced
 
 - **Against seats:** every session marvel launches runs under marvel's write-deny profile for every company root (marvel design, E1), and sideshow's store is one, so a seat's write fails with the sandbox's own error.
-- **Against people and other tools (opt-in):** the owner can give the store to a dedicated user and run sideshow's writing verbs as that user (`sudo -u`), with the store readable by everyone else and writable by no one else. That takes elevated rights once per host. `sideshow doctor` reports the store's owner, and warns when it is the invoking user's (E2 not in use).
-- **Detection, always:** read-only modes and the ledger's tree hash, re-checked by `sideshow doctor`. These detect a change; they do not prevent one.
+- **Detection, always:** read-only modes and the recorded tree hash, re-checked by `sideshow doctor`. These detect a change; they do not prevent one.
 
-## Install
+Nothing installed is ever changed in place: a running seat keeps the copy it loaded, and a new version is a new directory.
 
-All steps run under a per-name lock, `<store>/<name>/.lock` (`flock`, non-blocking). A second install or update of the same name refuses while the lock is held.
+## Install steps
 
-**The install ledger is per name,** `<store>/<name>/.ledger`: one row per installed version (version, commit, ref, source URL, tree hash, install time) and the `--track` flag. It is not sideshow's shared `repo-bindings.yaml`, which one per-name lock could not protect, since two names would write it at once. Only a holder of that name's lock writes it, by writing `.ledger.tmp` and renaming it over `.ledger`, so a reader sees the old file or the new one. The dot name keeps it out of marvel's listing, and the version listings already skip files. Every verb that writes it (install, update, activate, remove) takes the lock first; `doctor` and `list` only read it and take no lock.
+All steps run under a per-name lock, `<store>/<name>/.lock` (`flock`, non-blocking). A second install of the same name refuses while the lock is held. Writes to the shared `registry.yaml` take the store-wide registry lock as well.
+
+**The install record is per name,** `<store>/<name>/.ledger`: one row per installed version (version, commit, kind, source, tree hash, install time). It is not sideshow's shared `repo-bindings.yaml`, which one per-name lock could not protect, since two names would write it at once. Only a holder of that name's lock writes it, by writing `.ledger.tmp` and renaming it over `.ledger`, so a reader sees the old file or the new one. The dot name keeps it out of marvel's listing, and the version listings already skip files. Every verb that writes it (install, use, remove) takes the lock first; `doctor` and `list` only read it and take no lock.
 
 1. **Sweep:** remove any `<store>/<name>/.*.partial` left by an earlier run, restoring the owner's write bits first, since a run killed after step 4 leaves a read-only partial that cannot otherwise be removed. The lock makes this safe: no other writer can own one.
-2. Resolve the ref to a commit and verify it (git source), or verify the tarball.
-3. Write the tree to `<store>/<name>/.<version>.partial`. The leading dot keeps it out of marvel's listing, which skips dot entries. The version string is `<commit date>-<short sha>` for a git source, or the release version.
-4. Compute the tree hash (v1, as marvel's design defines it, so the two recorders agree) and record it with the commit in sideshow's ledger. Clear every write bit on every file and directory. Mode bits only detect a change, since an owner can set them back; `sideshow doctor` re-hashes against the ledger.
+2. Check the source as its kind requires (see Install kinds).
+3. Write the tree to `<store>/<name>/.<version>.partial`. The leading dot keeps it out of marvel's listing, which skips dot entries. The version string is the release version, or the developer version above.
+4. Compute the tree hash (v1, as marvel's design defines it, so the two recorders agree) and record it in the install record. Clear every write bit on every file and directory. Mode bits only detect a change, since an owner can set them back; `sideshow doctor` re-hashes against the record.
 5. Move `.<version>.partial` to `<version>` with a rename that refuses an existing target: `renameat2(RENAME_NOREPLACE)` on Linux, `renamex_np(RENAME_EXCL)` on macOS. Plain `rename(2)` would replace an empty directory. A version that exists is never overwritten, and `--force` does not apply to this kind.
-6. With `--activate`, point `current` at the new version by renaming a new symlink over the old one.
+6. The first install of a name becomes the active version, since marvel refuses a name with no `current`. A later install activates too, unless `--no-activate` is given; activating points `current` at the new version by renaming a new symlink over the old one.
 
 A kill at any step leaves the previous `current` live. A partial left by a kill is invisible to marvel (dot name) and removed by the next run's sweep.
 
 ## Update
 
-`sideshow update <name>` re-resolves the ref recorded at install (for example `main`). It installs the result only when all of these hold:
+`sideshow update <name>` installs the newest release in the channel the install chose: `@latest` follows releases, `@alpha` follows prereleases, and an exact version never moves. It never picks a developer install. It writes nothing when the newest release is already installed, so a user-owned scheduled job can run it.
 
-- it verifies, as in Sources;
-- it is a **descendant** of the installed commit (`git merge-base --is-ancestor <installed> <new>`), so an unattended update never moves sideways or backwards, whatever the ref now names. Exit 0 passes. Exit 1 (not an ancestor) and exit 128 (a commit missing from the mirror, or any git error) both refuse;
-- it differs from the installed commit.
+Moving the active version is always `sideshow use <name> <version>`. It flips `current` under the same per-name lock as install, so it cannot interleave with an update, re-syncs bindings, and is how a rollback is done: `sideshow use <name> <previous>`. (`sideshow activate` is a different command: it flips a pack's persona per repo and does not move `current`.) On a fleet host every `use` is a host step that director approves, because every seat restart takes the active version.
 
-**The installed commit** is the commit of the newest installed version, by install order in the ledger, not the commit `current` points at.
-
-Otherwise it writes nothing and says which rule stopped it. With `--track` recorded at install, it also activates. Rollback stays explicit: `sideshow activate <name> <previous>`, or a revert in the master, whose merge is a descendant and installs normally. **Activating any version older than the newest clears `--track`** and says so, so the next scheduled update cannot undo the rollback. With `--track` cleared, update still installs a new descendant but leaves `current` where the operator put it. `sideshow activate <name> <newest> --track` restores tracking.
-
-Because update is idempotent and changes nothing on a no-op, a user-owned scheduled job can run it. sideshow reads no XDG variable: its store is `SIDESHOW_HOME`, else `$HOME/.local/share/sideshow` (`internal/pack/pack.go`, `SideshowDir`). Under launchd or cron the risk is a different `HOME` or a missing `SIDESHOW_HOME`, so a job should set `SIDESHOW_HOME` explicitly, and `sideshow doctor` prints the path it resolved. A job that registers the store with marvel registers `"$SIDESHOW_HOME/packs"` from that same value, so the root marvel reads is the store sideshow writes; it never names a literal path. marvel reads its roots from its own config, not the environment, so it is unaffected.
+sideshow reads no XDG variable: its store is `SIDESHOW_HOME`, else `$HOME/.local/share/sideshow` (`internal/pack/pack.go`, `SideshowDir`). Under launchd or cron the risk is a different `HOME` or a missing `SIDESHOW_HOME`, so a job should set `SIDESHOW_HOME` explicitly, and `sideshow doctor` prints the path it resolved. A job that registers the store with marvel registers `"$SIDESHOW_HOME/packs"` from that same value, so the root marvel reads is the store sideshow writes; it never names a literal path. marvel reads its roots from its own config, not the environment, so it is unaffected.
 
 ## Verbs
 
 | verb | does |
 |---|---|
-| `sideshow install <name> ...` | the install steps |
-| `sideshow activate <name> <version>` | flips `current`, under the same per-name lock as install and update, so it cannot interleave with a scheduled update |
+| `sideshow install <name>@<version>` | release install (also `@latest`, `@alpha`) |
+| `sideshow install <name> --dev <checkout>` | developer install |
+| `sideshow install <name> --from <dir>` | install from a local tree |
+| `sideshow use <name> <version>` | flips `current`, under the same per-name lock as install, so it cannot interleave with an update |
 | `sideshow update <name>` | as above |
 | `sideshow list <name>` | installed versions, `*` on current |
 | `sideshow remove <name> <version>` | under the same per-name lock; refuses the current version. A marvel team pinned to an exact version may still use another; the command prints that `marvel get companies` shows which |
-| `sideshow doctor` | re-hashes installed versions against the ledger; lists stale partials and held locks |
+| `sideshow doctor` | re-hashes installed versions against the record; lists stale partials and held locks |
 
 marvel owns reading, pinning, refusing a changed tree and recording a cast. The contract between the two is a directory layout (`<name>/<version>/`, `current`, dot entries skipped) and the tree hash definition. Neither calls the other.
 
@@ -95,30 +103,26 @@ These wait on the operator lifting the workspace-VFS gate, and are not part of t
 
 ## Build note
 
-Today's version listing does not skip dot entries. `InstalledVersions` (`internal/pack/pack.go`) and doctor's layer 1 version walk (`internal/doctor/layer1.go`) take every directory except `current`, so they would list a `.<version>.partial` directory as a version. (`.lock` is a file, and both already skip files.) Both need the dot-skip rule in the same PR that adds staging.
+The version listing skips dot entries, so a `.<version>.partial` directory is not listed as a version: `InstalledVersions` (`internal/pack/pack.go`) and doctor's layer 1 version walk (`internal/doctor/layer1.go`) both skip them. (`.lock` is a file, and both already skip files.)
 
 ## Tests
 
-- Given a git source whose ref resolves to an unsigned commit, or to one signed by a key of undefined trust, when `install` runs without `--allow-unsigned`, then it refuses and the store is unchanged.
-- Given a URL with userinfo, then `install` refuses before any fetch.
+- Given a release tarball with a wrong checksum, or a signature that does not verify, or a signer other than the release build job, when `install` runs, then it refuses and the store is unchanged.
+- Given releases 1.2.0 and 1.3.0-alpha.1, then `@latest` installs 1.2.0 and `@alpha` installs 1.3.0-alpha.1, and no other form picks the prerelease.
+- Given a checkout, then `--dev` installs `<next>-dev.<time>.<sha7>`, records the checkout path, and refuses a checkout with uncommitted changes; `update` skips that version, and `use` moves back to a release.
 - Given an install killed after step 3, and again after step 4 (a read-only partial), then the only entry it left is dot-prefixed (so a reader that skips dot entries, as marvel does, sees nothing), `sideshow list` does not show it, and the next `install` sweeps it and completes.
-- Given versions 1 and 2 installed with `--track` and `current` at 2, when the operator activates 1 and a scheduled `update` then runs with no new commit, then `current` stays at 1 and the output says tracking is off. Given a new descendant 3 then arrives, `update` installs 3 and `current` still stays at 1.
-- Given an installed commit C, a source repository whose history is then rewritten so that no ref reaches C, and the mirror deleted and re-created from it (so C is absent from the mirror, not merely unreferenced), when `update` runs, then `--is-ancestor` exits 128, `update` refuses, and nothing is written. Re-creating the mirror from an unchanged source would fetch C again and test nothing.
-- Given installs of two different names started together, then each name's `.ledger` holds its own row and neither run lost the other's.
-- Given a `remove` holding a name's lock, when `update` of that name runs, then `update` refuses on the lock; `doctor` run at the same time reads the old or the new `.ledger`, never a partial one.
-- Given an `update` holding the lock, when `activate` runs, then `activate` refuses on the lock and `current` is unchanged.
+- Given installs of two different names started together, then each name's record holds its own row, `registry.yaml` lists both, and neither run lost the other's.
+- Given a `remove` holding a name's lock, when `update` of that name runs, then `update` refuses on the lock; `doctor` run at the same time reads the old or the new record, never a partial one.
+- Given an `update` holding the lock, when `use` runs, then `use` refuses on the lock and `current` is unchanged.
 - Given a source directory holding an `origin.json`, or inside sideshow's own store, then `install` refuses it.
 - Given two installs of one name started together, then the second refuses on the lock and the first completes.
 - Given an empty directory already at `<version>`, then step 5 refuses and the directory is unchanged.
-- Given an installed commit C and a ref that now names a commit that is not a descendant of C, when `update` runs, then nothing is written and the output names the descendant rule.
-- Given `update` with no new commit, then nothing is written (store metadata hash equal before and after).
+- Given `update` with no new release, then nothing is written (store metadata hash equal before and after).
+- Given a reader that reads `current` while `use` runs, then it never finds the link missing.
 - Given an installed version with one directory made writable, then `doctor` reports it; given one file changed, then `doctor` reports the hash mismatch.
 - All of the above in a scratch `SIDESHOW_HOME`.
 
 ## Open for the ruling
 
 1. **The workspace-VFS gate:** whether to lift it for the items under "Gated". I recommend keeping it, since this design works without them.
-2. **`--track` default:** opt-in, so a first install never moves a running fleet's `current` by surprise. I recommend opt-in.
-3. **A dedicated store owner (E2)** per host, the owner's choice. Without it, people and tools marvel does not launch are held back by detection only.
-
-This recommendation is valid until 2026-11-08; the architect re-checks it then.
+2. **The developer install copies rather than links.** Ruled by the operator 2026-11-18 (I-567): the developer install copies; a live link is a separate question, since a link would let an edit change what running seats read.
