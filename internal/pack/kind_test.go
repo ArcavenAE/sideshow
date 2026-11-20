@@ -80,3 +80,63 @@ func TestInstall_OverlayUnderTheNameWardrobeIsRefused(t *testing.T) {
 		t.Error("the store holds wardrobe after a refused install")
 	}
 }
+
+// writeBmadKindPack writes the installer layout: the pack identity sits in
+// _bmad/pack.yaml and the manifest in _bmad/_config, so install strips _bmad/.
+func writeBmadKindPack(t *testing.T, name, kind string) string {
+	t.Helper()
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "_bmad", "_config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "_bmad", "_config", "manifest.yaml"), []byte("installation:\n  version: 0.1.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	content := "name: " + name + "\nversion: 0.1.0\nkind: " + kind + "\n"
+	if err := os.WriteFile(filepath.Join(src, "_bmad", "pack.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return src
+}
+
+// The installer layout declares its identity in _bmad/pack.yaml, the second
+// place ValidateName reads, so the kind there is checked too.
+func TestInstall_KindInBmadPackYamlIsChecked(t *testing.T) {
+	freezeSafeHome(t)
+	err := InstallFromLocal("arcaven-site", writeBmadKindPack(t, "arcaven-site", "widget"), true)
+	if err == nil || !strings.Contains(err.Error(), "widget") {
+		t.Errorf("kind: widget in _bmad/pack.yaml: err = %v; want a refusal naming widget", err)
+	}
+	if storeHolds("arcaven-site") {
+		t.Error("the store holds the pack after a refused install")
+	}
+	freezeSafeHome(t)
+	err = InstallFromLocal("wardrobe", writeBmadKindPack(t, "wardrobe", "overlay"), true)
+	if err == nil || !strings.Contains(err.Error(), "overlay") {
+		t.Errorf("overlay under wardrobe in _bmad/pack.yaml: err = %v; want a refusal", err)
+	}
+	if storeHolds("wardrobe") {
+		t.Error("the store holds wardrobe after a refused install")
+	}
+}
+
+// A kind that does not decode as a string is refused, naming the file; it is
+// never read as an absent kind.
+func TestInstall_NonStringKindIsRefused(t *testing.T) {
+	freezeSafeHome(t)
+	src := t.TempDir()
+	body := "name: arcaven-site\nversion: 0.1.0\nkind: [overlay]\n"
+	if err := os.WriteFile(filepath.Join(src, "pack.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := InstallFromLocal("arcaven-site", src, true)
+	if err == nil {
+		t.Fatal("a pack with kind: [overlay] installed; want a refusal")
+	}
+	if !strings.Contains(err.Error(), "pack.yaml") {
+		t.Errorf("refusal %q does not name the file", err.Error())
+	}
+	if storeHolds("arcaven-site") {
+		t.Error("the store holds the pack after a refused install")
+	}
+}
