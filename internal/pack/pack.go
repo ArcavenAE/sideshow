@@ -269,6 +269,49 @@ func ValidateName(name, sourcePath string) (undeclared string, err error) {
 	return "", nil
 }
 
+// Kinds a pack.yaml may declare. An absent kind means an ordinary pack, as
+// every pack did before the field existed.
+const (
+	KindPack    = "pack"
+	KindOverlay = "overlay"
+)
+
+// ValidateKind checks the kind a pack declares in pack.yaml at the source
+// root. The kind is optional; when present it must be "pack" or "overlay",
+// and an overlay is never installed under the name "wardrobe", which is the
+// wardrobe contents and not a site overlay. Nothing is copied before this
+// runs, so a refusal leaves the store untouched. A pack.yaml that does not
+// parse is left to ValidateName, which refuses it with its own message.
+func ValidateKind(name, sourcePath string) error {
+	data, err := os.ReadFile(filepath.Join(sourcePath, "pack.yaml"))
+	if err != nil {
+		return nil
+	}
+	var m struct {
+		Kind string `yaml:"kind"`
+	}
+	if yaml.Unmarshal(data, &m) != nil || m.Kind == "" {
+		return nil
+	}
+	switch m.Kind {
+	case KindPack:
+		return nil
+	case KindOverlay:
+		if name == "wardrobe" {
+			return fmt.Errorf(
+				"pack kind mismatch: %s declares kind %q, and an overlay is never installed under the name %q "+
+					"(the wardrobe is the contents, an overlay sits beside it); install it under its own name",
+				filepath.Join(sourcePath, "pack.yaml"), KindOverlay, name,
+			)
+		}
+		return nil
+	}
+	return fmt.Errorf(
+		"unknown pack kind %q in %s: kind is %q or %q, or absent for an ordinary pack",
+		m.Kind, filepath.Join(sourcePath, "pack.yaml"), KindPack, KindOverlay,
+	)
+}
+
 // printUndeclaredNameNote says that the installed name was taken as
 // given because the source declares none. Every install path that prints
 // "Installed N files" calls it, so the note is never skipped by an early
@@ -542,6 +585,11 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	// The pack names itself; the caller's label must agree (aae-orc-oihza).
 	undeclared, err := ValidateName(name, sourcePath)
 	if err != nil {
+		return err
+	}
+
+	// The kind, if declared, must be one sideshow knows (aae-orc-i0evz).
+	if err := ValidateKind(name, sourcePath); err != nil {
 		return err
 	}
 
