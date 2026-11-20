@@ -140,3 +140,29 @@ func TestInstall_NonStringKindIsRefused(t *testing.T) {
 		t.Error("the store holds the pack after a refused install")
 	}
 }
+
+// A pack.yaml that exists but cannot be read is refused, naming the file. Only
+// a not-exist error means there is no kind to check.
+func TestInstall_UnreadablePackYamlIsRefused(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a mode 000 file is still readable")
+	}
+	freezeSafeHome(t)
+	src := writeKindPack(t, "arcaven-site", "overlay")
+	packYAML := filepath.Join(src, "pack.yaml")
+	if err := os.Chmod(packYAML, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(packYAML, 0o644) })
+
+	err := InstallFromLocal("arcaven-site", src, true)
+	if err == nil {
+		t.Fatal("a pack with an unreadable pack.yaml installed; want a refusal")
+	}
+	if !strings.Contains(err.Error(), "pack.yaml") {
+		t.Errorf("refusal %q does not name the file", err.Error())
+	}
+	if storeHolds("arcaven-site") {
+		t.Error("the store holds the pack after a refused install")
+	}
+}
