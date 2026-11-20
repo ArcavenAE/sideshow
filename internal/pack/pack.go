@@ -276,40 +276,45 @@ const (
 	KindOverlay = "overlay"
 )
 
-// ValidateKind checks the kind a pack declares in pack.yaml at the source
-// root. The kind is optional; when present it must be "pack" or "overlay",
-// and an overlay is never installed under the name "wardrobe", which is the
-// wardrobe contents and not a site overlay. Nothing is copied before this
-// runs, so a refusal leaves the store untouched. A pack.yaml that does not
-// parse is left to ValidateName, which refuses it with its own message.
+// ValidateKind checks the kind a pack declares in pack.yaml, at the two
+// places ValidateName reads: the source root and _bmad/ (the installer
+// layout, whose _bmad/ prefix install strips). The kind is optional; when
+// present it must be "pack" or "overlay", and an overlay is never installed
+// under the name "wardrobe", which is the wardrobe contents and not a site
+// overlay. A pack.yaml that does not decode, or whose kind is not a string,
+// is refused and named, never read as an absent kind. Nothing is copied
+// before this runs, so a refusal leaves the store untouched.
 func ValidateKind(name, sourcePath string) error {
-	data, err := os.ReadFile(filepath.Join(sourcePath, "pack.yaml"))
-	if err != nil {
-		return nil
-	}
-	var m struct {
-		Kind string `yaml:"kind"`
-	}
-	if yaml.Unmarshal(data, &m) != nil || m.Kind == "" {
-		return nil
-	}
-	switch m.Kind {
-	case KindPack:
-		return nil
-	case KindOverlay:
-		if name == "wardrobe" {
+	for _, rel := range []string{"pack.yaml", filepath.Join("_bmad", "pack.yaml")} {
+		path := filepath.Join(sourcePath, rel)
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			continue
+		}
+		var m struct {
+			Kind string `yaml:"kind"`
+		}
+		if err := yaml.Unmarshal(data, &m); err != nil {
+			return fmt.Errorf("cannot read the pack kind from %s: %w", path, err)
+		}
+		switch m.Kind {
+		case "", KindPack:
+		case KindOverlay:
+			if name == "wardrobe" {
+				return fmt.Errorf(
+					"pack kind mismatch: %s declares kind %q, and an overlay is never installed under the name %q "+
+						"(the wardrobe is the contents, an overlay sits beside it); install it under its own name",
+					path, KindOverlay, name,
+				)
+			}
+		default:
 			return fmt.Errorf(
-				"pack kind mismatch: %s declares kind %q, and an overlay is never installed under the name %q "+
-					"(the wardrobe is the contents, an overlay sits beside it); install it under its own name",
-				filepath.Join(sourcePath, "pack.yaml"), KindOverlay, name,
+				"unknown pack kind %q in %s: kind is %q or %q, or absent for an ordinary pack",
+				m.Kind, path, KindPack, KindOverlay,
 			)
 		}
-		return nil
 	}
-	return fmt.Errorf(
-		"unknown pack kind %q in %s: kind is %q or %q, or absent for an ordinary pack",
-		m.Kind, filepath.Join(sourcePath, "pack.yaml"), KindPack, KindOverlay,
-	)
+	return nil
 }
 
 // printUndeclaredNameNote says that the installed name was taken as
