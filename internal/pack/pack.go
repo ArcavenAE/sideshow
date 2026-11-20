@@ -282,14 +282,17 @@ const (
 // present it must be "pack" or "overlay", and an overlay is never installed
 // under the name "wardrobe", which is the wardrobe contents and not a site
 // overlay. A pack.yaml that does not decode, or whose kind is not a string,
-// is refused and named, never read as an absent kind. Nothing is copied
+// is refused and named, never read as an absent kind; only a missing file means there is none. Nothing is copied
 // before this runs, so a refusal leaves the store untouched.
 func ValidateKind(name, sourcePath string) error {
 	for _, rel := range []string{"pack.yaml", filepath.Join("_bmad", "pack.yaml")} {
 		path := filepath.Join(sourcePath, rel)
 		data, readErr := os.ReadFile(path)
-		if readErr != nil {
+		if errors.Is(readErr, fs.ErrNotExist) {
 			continue
+		}
+		if readErr != nil {
+			return fmt.Errorf("cannot read the pack kind from %s: %w", path, readErr)
 		}
 		var m struct {
 			Kind string `yaml:"kind"`
