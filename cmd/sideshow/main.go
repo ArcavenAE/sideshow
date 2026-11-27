@@ -16,6 +16,7 @@ import (
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"github.com/ArcavenAE/sideshow/internal/permissions"
 	"github.com/ArcavenAE/sideshow/internal/project"
+	"github.com/ArcavenAE/sideshow/internal/release"
 	"github.com/ArcavenAE/sideshow/internal/weave"
 )
 
@@ -572,6 +573,12 @@ func runInstall(args []string) error {
 
 	if fromPath == "" {
 		return fmt.Errorf("--from <path> is required (git install not yet implemented)")
+	}
+
+	if _, _, ok := release.Locate(fromPath); ok {
+		if _, err := installVerifier(); err != nil {
+			return err
+		}
 	}
 
 	if err := pack.Install(name, fromPath, pack.InstallOptions{Activate: !noActivate, Force: force}); err != nil {

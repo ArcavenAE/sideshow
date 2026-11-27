@@ -47,8 +47,7 @@ func hexSHA(b []byte) string {
 type fixture struct {
 	dir     string
 	tarball string
-	// pieces the tests tamper with
-	tarSHA, fileManifest, execManifest string
+	tarSHA  string
 }
 
 type buildOpts struct {
