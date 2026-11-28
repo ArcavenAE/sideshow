@@ -17,6 +17,7 @@ on:
       - 'cmd/sideshow/install_release.go'
       - 'internal/pack/pack.go'
       - 'scripts/live-verify-r3.sh'
+      - 'scripts/test-live-verify-inputs.sh'
       - '.github/workflows/live-verify.yml'
   workflow_dispatch:
 
@@ -47,6 +48,9 @@ jobs:
         uses: step-security/cosign-installer@7d5ca7d0ecba292387fa6f81cde2c05e53a2a6d7 # v4.1.2
         with:
           cosign-release: 'v3.1.2'
+
+      - name: Check how the script reads its inputs (offline)
+        run: bash scripts/test-live-verify-inputs.sh
 
       - name: Fetch the published release assets (read only)
         env:
