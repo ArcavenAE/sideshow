@@ -102,9 +102,9 @@ else
     fail "G3 job name" "no 'name: Live Verify of \${{ inputs.tag || ...}}' in ${WORKFLOW}"
 fi
 
-# 2e. G4: a custom tag or tarball with no sha is refused. The sha is never
+# 2e. G4: a custom tag, pack or tarball with no sha is refused. The sha is never
 #     taken from r3 and never read from the release.
-for v in "LIVE_VERIFY_TAG=${CUSTOM_TAG}" "LIVE_VERIFY_TARBALL=${CUSTOM_TARBALL}"; do
+for v in "LIVE_VERIFY_TAG=${CUSTOM_TAG}" "LIVE_VERIFY_PACK=${CUSTOM_PACK}" "LIVE_VERIFY_TARBALL=${CUSTOM_TARBALL}"; do
     run_script "${d}" "${v}"
     if [[ "${RC}" -ne 0 ]] && grep -Fq "invalid LIVE_VERIFY_SHA" <<< "${OUT}"; then
         pass "G4: ${v%%=*} without LIVE_VERIFY_SHA is refused"
