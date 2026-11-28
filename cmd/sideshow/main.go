@@ -549,10 +549,11 @@ func runInstall(args []string) error {
 				i++
 			}
 		case "--sha256":
-			if i+1 < len(args) {
-				sha256Pin = args[i+1]
-				i++
+			if i+1 >= len(args) {
+				return fmt.Errorf("--sha256 needs a value: the tarball digest to pin")
 			}
+			sha256Pin = args[i+1]
+			i++
 		case "--yes", "-y":
 			autoYes = true
 		case "--no-activate":

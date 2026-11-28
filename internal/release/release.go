@@ -102,7 +102,7 @@ func Verify(from, pack string, v Verifier, opts Options) (*Result, error) {
 	attBundle := tarball + ".attest.bundle"
 	for _, b := range []string{sigBundle, attBundle} {
 		if _, err := os.Stat(b); err != nil {
-			return nil, fmt.Errorf("signature bundle missing for %s: %w", filepath.Base(tarball), err)
+			return nil, fmt.Errorf("%s is missing from the release: %w", filepath.Base(b), err)
 		}
 	}
 
@@ -296,6 +296,7 @@ func extract(tarball, dest string) (string, error) {
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return "", err
 			}
+			// Each file is read whole, bounded by maxExtractBytes for the tarball.
 			data, err := io.ReadAll(io.LimitReader(tr, maxExtractBytes-written+1))
 			if err != nil {
 				return "", fmt.Errorf("read %q from %s: %w", h.Name, filepath.Base(tarball), err)
@@ -325,9 +326,10 @@ func extract(tarball, dest string) (string, error) {
 	return dest, nil
 }
 
-// checkTree verifies the extracted tree against the manifests: sha256 and
-// size per file from file-manifest.csv, and the exec bit on each path in
-// exec-manifest.txt. A nil manifest is skipped (its hash was not attested).
+// checkTree verifies the extracted tree against the manifests: the sha256
+// of each file in file-manifest.csv (its size column is not read, since the
+// digest covers it), and the exec bit on each path in exec-manifest.txt. A
+// nil manifest is skipped (its hash was not attested).
 func checkTree(root string, fileManifest, execManifest []byte) error {
 	for _, line := range strings.Split(string(fileManifest), "\n") {
 		line = strings.TrimSpace(line)
