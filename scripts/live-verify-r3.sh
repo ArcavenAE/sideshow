@@ -4,7 +4,7 @@
 #   bash scripts/live-verify-r3.sh <release-dir> <sideshow-binary> <scratch-dir>
 #
 # <release-dir> holds the assets of bmad-v6.12.4-r3 (tarball, .bundle,
-# .attest.bundle, .attest.v2.bundle). The binary is the build under test and the
+# .attest.bundle, .attest.v2.bundle, file-manifest.csv, exec-manifest.txt). The binary is the build under test and the
 # real cosign must be on PATH. Four installs, each with its own HOME,
 # SIDESHOW_HOME and TMPDIR under <scratch-dir>. Run in CI, where the Sigstore
 # connects happen; do not run it on a fleet host.
@@ -27,7 +27,7 @@ note() { echo "[live-verify] $*"; }
 ok() { results+=("PASS $1"); note "PASS $1"; }
 bad() { results+=("FAIL $1: $2"); note "FAIL $1: $2"; failures=$((failures + 1)); }
 
-for f in "${TARBALL}" "${TARBALL}.bundle" "${TARBALL}.attest.bundle" "${TARBALL}.attest.v2.bundle"; do
+for f in "${TARBALL}" "${TARBALL}.bundle" "${TARBALL}.attest.bundle" "${TARBALL}.attest.v2.bundle" file-manifest.csv exec-manifest.txt; do
     [[ -f "${REL}/${f}" ]] || { echo "missing ${REL}/${f}" >&2; exit 1; }
 done
 command -v cosign > /dev/null || { echo "cosign is not on PATH" >&2; exit 1; }
@@ -70,7 +70,7 @@ check_positive "a. install ${TAG} with --sha256 ${SHA:0:8}..."
 #    which carries no provenance, so only the v2 bundle can satisfy Verify.
 B="${SCRATCH}/rel-b"
 mkdir -p "${B}"
-cp "${REL}/${TARBALL}" "${REL}/${TARBALL}.bundle" "${REL}/${TARBALL}.attest.v2.bundle" "${B}/"
+cp "${REL}"/* "${B}/"
 echo '{}' > "${B}/${TARBALL}.attest.bundle"
 install_case b-v2-used "${B}" --sha256 "${SHA}"
 check_positive "b. install with the older attest bundle replaced by {} (the v2 bundle is the one used)"
@@ -87,17 +87,21 @@ else
     ok "c. zeroed --sha256 refused with the pin message, store empty"
 fi
 
-# d. The v2 bundle removed: the older bundle has no dsseEnvelope, so refuse.
+# d. The v2 bundle left out: the older attest bundle was signed by build-pack.yml
+#    at a tag, which the attestation pin (main only) does not accept, so the
+#    install is refused at the cosign check.
 D="${SCRATCH}/rel-d"
 mkdir -p "${D}"
-cp "${REL}/${TARBALL}" "${REL}/${TARBALL}.bundle" "${REL}/${TARBALL}.attest.bundle" "${D}/"
+for f in "${REL}"/*; do
+    [[ "${f}" == *.attest.v2.bundle ]] || cp "${f}" "${D}/"
+done
 install_case d-no-v2 "${D}" --sha256 "${SHA}"
 if [[ "${RC}" -eq 0 ]]; then
     bad "d. v2 bundle removed" "install succeeded"
-elif ! grep -Fq "no dsseEnvelope payload" "${OUT_FILE}"; then
-    bad "d. v2 bundle removed" "refused, but not with the dsseEnvelope message"
+elif ! grep -Fq "none of the expected identities matched" "${OUT_FILE}"; then
+    bad "d. v2 bundle removed" "refused, but not by the attestation identity pin"
 else
-    ok "d. v2 bundle removed: refused, no dsseEnvelope payload in the older bundle"
+    ok "d. v2 bundle removed: refused by the attestation identity pin (the older bundle is signed from a tag)"
 fi
 
 # The v2 SAN, read from the bundle's own certificate.

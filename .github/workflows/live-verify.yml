@@ -3,16 +3,19 @@ name: Live Verify
 # Installs a published signed release (bmad-v6.12.4-r3) with the build under
 # test and the real cosign, so the Sigstore connects happen here and not on a
 # fleet host (aae-orc-hti53). It reads public release assets and writes nothing.
-# Remove this file and scripts/live-verify-r3.sh together to drop the check.
+# It stays as a structural check of the install verify path, so the trigger is
+# limited to the files that decide verification and the PRs that touch them do
+# not depend on unrelated release downloads. Removing the check is deleting this
+# file and scripts/live-verify-r3.sh together.
 
 on:
   pull_request:
     branches: [main]
     paths:
       - 'internal/release/**'
-      - 'cmd/sideshow/**'
-      - 'internal/pack/**'
-      - 'go.mod'
+      - 'cmd/sideshow/main.go'
+      - 'cmd/sideshow/install_release.go'
+      - 'internal/pack/pack.go'
       - 'scripts/live-verify-r3.sh'
       - '.github/workflows/live-verify.yml'
   workflow_dispatch:
@@ -55,7 +58,9 @@ jobs:
             --pattern 'bmad-6.12.4-r3-arcaven.tar.gz' \
             --pattern 'bmad-6.12.4-r3-arcaven.tar.gz.bundle' \
             --pattern 'bmad-6.12.4-r3-arcaven.tar.gz.attest.bundle' \
-            --pattern 'bmad-6.12.4-r3-arcaven.tar.gz.attest.v2.bundle'
+            --pattern 'bmad-6.12.4-r3-arcaven.tar.gz.attest.v2.bundle' \
+            --pattern 'file-manifest.csv' \
+            --pattern 'exec-manifest.txt'
           ls -l "${RUNNER_TEMP}/r3"
 
       - name: Build the sideshow under test
