@@ -21,6 +21,11 @@ type InstalledPack struct {
 	Version     string `yaml:"version"`
 	Path        string `yaml:"path"`
 	InstalledAt string `yaml:"installed_at,omitempty"`
+	// TarballSHA256 is the digest of the signed tarball this version was
+	// installed from; empty for a plain-directory install.
+	TarballSHA256 string `yaml:"tarball_sha256,omitempty"`
+	// Verified is true when the signature and attestation were checked at install.
+	Verified bool `yaml:"verified,omitempty"`
 }
 
 // Registry tracks installed packs and project distributions.
@@ -532,6 +537,9 @@ type InstallOptions struct {
 	// Force allows the install to write over a version already in the
 	// store (aae-orc-mobz8).
 	Force bool
+	// TarballSHA256 and Verified record a signed-release install in the registry.
+	TarballSHA256 string
+	Verified      bool
 }
 
 // InstallFromLocal installs a pack from a local path and refuses to
@@ -760,6 +768,9 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 			Version:     version,
 			Path:        filepath.Join(PacksDir(), name, "current"),
 			InstalledAt: time.Now().UTC().Format(time.RFC3339),
+
+			TarballSHA256: opts.TarballSHA256,
+			Verified:      opts.Verified,
 		})
 		reg.Packs = filtered
 		return nil
