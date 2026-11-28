@@ -1,0 +1,99 @@
+name: Live Verify
+
+# Installs a published signed release (bmad-v6.12.4-r3 by default; a dispatch
+# names any other tag, pack, tarball and pinned sha256) with the build under
+# test and the real cosign, so the Sigstore connects happen here and not on a
+# fleet host (aae-orc-hti53). It reads public release assets and writes nothing.
+# It stays as a structural check of the install verify path, so the trigger is
+# limited to the files that decide verification and the PRs that touch them do
+# not depend on unrelated release downloads. Removing the check is deleting this
+# file and scripts/live-verify-r3.sh together.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'internal/release/**'
+      - 'cmd/sideshow/main.go'
+      - 'cmd/sideshow/install_release.go'
+      - 'internal/pack/pack.go'
+      - 'scripts/live-verify-r3.sh'
+      - 'scripts/test-live-verify-inputs.sh'
+      - '.github/workflows/live-verify.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag in ArcavenAE/sideshow-packs
+        default: bmad-v6.12.4-r3
+      pack:
+        description: Pack name
+        default: bmad
+      tarball:
+        description: Tarball asset name
+        default: bmad-6.12.4-r3-arcaven.tar.gz
+      sha256:
+        description: The dispatcher's pinned sha256 for the tarball named above (never read from the release)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  live-verify:
+    name: Live Verify of ${{ inputs.tag || 'bmad-v6.12.4-r3' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: go.sum
+
+      - name: Install cosign
+        uses: step-security/cosign-installer@7d5ca7d0ecba292387fa6f81cde2c05e53a2a6d7 # v4.1.2
+        with:
+          cosign-release: 'v3.1.2'
+
+      - name: Check how the script reads its inputs (offline)
+        run: bash scripts/test-live-verify-inputs.sh
+
+      - name: Fetch the published release assets (read only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIVE_VERIFY_TAG: ${{ inputs.tag }}
+          LIVE_VERIFY_TARBALL: ${{ inputs.tarball }}
+        run: |
+          set -euo pipefail
+          tag="${LIVE_VERIFY_TAG:-bmad-v6.12.4-r3}"
+          tarball="${LIVE_VERIFY_TARBALL:-bmad-6.12.4-r3-arcaven.tar.gz}"
+          [[ "${tag}" =~ ^[a-z0-9][a-z0-9-]*-v[0-9][A-Za-z0-9._-]*$ ]] || { echo "invalid LIVE_VERIFY_TAG: ${tag}" >&2; exit 1; }
+          [[ "${tarball}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$ ]] || { echo "invalid LIVE_VERIFY_TARBALL: ${tarball}" >&2; exit 1; }
+          mkdir -p "${RUNNER_TEMP}/r3"
+          gh release download "${tag}" --repo ArcavenAE/sideshow-packs --dir "${RUNNER_TEMP}/r3" \
+            --pattern "${tarball}" \
+            --pattern "${tarball}.bundle" \
+            --pattern "${tarball}.attest.bundle" \
+            --pattern "${tarball}.attest.v2.bundle" \
+            --pattern 'file-manifest.csv' \
+            --pattern 'exec-manifest.txt'
+          ls -l "${RUNNER_TEMP}/r3"
+
+      - name: Build the sideshow under test
+        run: go build -o "${RUNNER_TEMP}/bin/sideshow" ./cmd/sideshow
+
+      - name: Verify the release live
+        env:
+          LIVE_VERIFY_TAG: ${{ inputs.tag }}
+          LIVE_VERIFY_PACK: ${{ inputs.pack }}
+          LIVE_VERIFY_TARBALL: ${{ inputs.tarball }}
+          LIVE_VERIFY_SHA: ${{ inputs.sha256 }}
+        run: bash scripts/live-verify-r3.sh "${RUNNER_TEMP}/r3" "${RUNNER_TEMP}/bin/sideshow" "${RUNNER_TEMP}/live"

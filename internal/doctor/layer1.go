@@ -432,7 +432,7 @@ func installedVersionDirs(name string) []string {
 	}
 	var versions []string
 	for _, e := range entries {
-		if e.Name() == "current" || !e.IsDir() {
+		if e.Name() == "current" || !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		versions = append(versions, e.Name())

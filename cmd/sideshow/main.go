@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/ArcavenAE/sideshow/internal/pack"
 	"github.com/ArcavenAE/sideshow/internal/permissions"
 	"github.com/ArcavenAE/sideshow/internal/project"
+	"github.com/ArcavenAE/sideshow/internal/release"
 	"github.com/ArcavenAE/sideshow/internal/weave"
 )
 
@@ -386,6 +388,7 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 
 	// Distribute to each repo
 	var allResults []distribute.Result
+	var recorded []func(*pack.Registry)
 
 	for _, p := range packs {
 		fmt.Printf("Pack: %s %s\n", p.name, p.version)
@@ -427,6 +430,10 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 		// Record results to registry (even in dry-run, for tracking)
 		if !dryRun {
 			distribute.RecordResults(reg, id.ID, projectRoot, filepath.Base(manifestPath), allResults, opts)
+			results, recordOpts := allResults, opts
+			recorded = append(recorded, func(r *pack.Registry) {
+				distribute.RecordResults(r, id.ID, projectRoot, filepath.Base(manifestPath), results, recordOpts)
+			})
 		}
 
 		fmt.Println()
@@ -434,12 +441,21 @@ func runInitProject(projectRoot, manifestPath, packFilter string, dryRun bool) e
 
 	// Save registry
 	if !dryRun {
-		// Update project last_seen
-		proj := reg.FindOrCreateProject(id.ID)
-		inst := proj.FindOrCreateInstallation(projectRoot, filepath.Base(manifestPath))
-		inst.LastSeen = time.Now().UTC().Format(time.RFC3339)
-
-		if err := reg.Save(); err != nil {
+		// Replay this run's results and update project last_seen on a
+		// registry read under the store lock, so a concurrent install or
+		// run does not lose either update. The lock covers this registry
+		// write, not the file distribution above: two runs on one project
+		// can still both write the same files, and the second ends in a
+		// reported skip.
+		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
+			for _, record := range recorded {
+				record(r)
+			}
+			proj := r.FindOrCreateProject(id.ID)
+			inst := proj.FindOrCreateInstallation(projectRoot, filepath.Base(manifestPath))
+			inst.LastSeen = time.Now().UTC().Format(time.RFC3339)
+			return nil
+		}); err != nil {
 			return fmt.Errorf("save registry: %w", err)
 		}
 	}
@@ -511,13 +527,17 @@ func statusIcon(status string) string {
 	}
 }
 
+// sha256DigestRE is the shape --sha256 takes: a hex sha256 digest.
+var sha256DigestRE = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
 func runInstall(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--yes] [--force] [--no-permissions] [--scope user|project]")
+		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--sha256 <digest>] [--yes] [--force] [--no-activate] [--no-permissions] [--scope user|project]")
 	}
 
 	name := args[0]
 	var fromPath string
+	var sha256Pin string
 	autoYes := false
 	noPerms := false
 	noActivate := false
@@ -532,6 +552,15 @@ func runInstall(args []string) error {
 				fromPath = args[i+1]
 				i++
 			}
+		case "--sha256":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--sha256 needs a value: the tarball digest to pin")
+			}
+			if !sha256DigestRE.MatchString(args[i+1]) {
+				return fmt.Errorf("--sha256 needs a 64-character hex digest, got %q", args[i+1])
+			}
+			sha256Pin = args[i+1]
+			i++
 		case "--yes", "-y":
 			autoYes = true
 		case "--no-activate":
@@ -553,6 +582,8 @@ func runInstall(args []string) error {
 				scopeExplicit = true
 				i++
 			}
+		default:
+			return fmt.Errorf("unknown flag for install: %s (see 'sideshow --help')", args[i])
 		}
 	}
 
@@ -560,7 +591,30 @@ func runInstall(args []string) error {
 		return fmt.Errorf("--from <path> is required (git install not yet implemented)")
 	}
 
-	if err := pack.Install(name, fromPath, pack.InstallOptions{Activate: !noActivate, Force: force}); err != nil {
+	installOpts := pack.InstallOptions{Activate: !noActivate, Force: force}
+	installFrom := fromPath
+	if _, _, ok := release.Locate(fromPath); ok {
+		verifier, err := installVerifier()
+		if err != nil {
+			return err
+		}
+		res, err := release.Verify(fromPath, name, verifier, release.Options{SHA256: sha256Pin})
+		if err != nil {
+			return fmt.Errorf("refusing %s: %w", fromPath, err)
+		}
+		defer res.Cleanup()
+		for _, w := range res.Warnings {
+			fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+		}
+		fmt.Printf("Verified %s (sha256 %s).\n", fromPath, res.TarballSHA256)
+		installFrom = res.Root
+		installOpts.TarballSHA256 = res.TarballSHA256
+		installOpts.Verified = true
+	} else if sha256Pin != "" {
+		return fmt.Errorf("--sha256 pins a signed release tarball; %s is not one", fromPath)
+	}
+
+	if err := pack.Install(name, installFrom, installOpts); err != nil {
 		return err
 	}
 
@@ -940,8 +994,13 @@ func runProjectInitForPack(args []string) error {
 	}
 
 	if !dryRun {
-		distribute.RecordResults(reg, projectID, root, project.SingleRepoManifest, []distribute.Result{result}, distOpts)
-		if err := reg.Save(); err != nil {
+		// The lock covers this registry write, not the file distribution
+		// above. Two runs on one project can still both write the same
+		// files, and the second ends in a reported skip.
+		if err := pack.UpdateRegistry(func(r *pack.Registry) error {
+			distribute.RecordResults(r, projectID, root, project.SingleRepoManifest, []distribute.Result{result}, distOpts)
+			return nil
+		}); err != nil {
 			return fmt.Errorf("save registry: %w", err)
 		}
 	}
