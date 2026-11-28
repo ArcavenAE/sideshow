@@ -1,0 +1,65 @@
+name: Live Verify
+
+# Installs a published signed release (bmad-v6.12.4-r3) with the build under
+# test and the real cosign, so the Sigstore connects happen here and not on a
+# fleet host (aae-orc-hti53). It reads public release assets and writes nothing.
+# Remove this file and scripts/live-verify-r3.sh together to drop the check.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'internal/release/**'
+      - 'cmd/sideshow/**'
+      - 'internal/pack/**'
+      - 'go.mod'
+      - 'scripts/live-verify-r3.sh'
+      - '.github/workflows/live-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-verify:
+    name: Live Verify of bmad-v6.12.4-r3
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: go.sum
+
+      - name: Install cosign
+        uses: step-security/cosign-installer@7d5ca7d0ecba292387fa6f81cde2c05e53a2a6d7 # v4.1.2
+        with:
+          cosign-release: 'v3.1.2'
+
+      - name: Fetch the published release assets (read only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/r3"
+          gh release download bmad-v6.12.4-r3 --repo ArcavenAE/sideshow-packs --dir "${RUNNER_TEMP}/r3" \
+            --pattern 'bmad-6.12.4-r3-arcaven.tar.gz' \
+            --pattern 'bmad-6.12.4-r3-arcaven.tar.gz.bundle' \
+            --pattern 'bmad-6.12.4-r3-arcaven.tar.gz.attest.bundle' \
+            --pattern 'bmad-6.12.4-r3-arcaven.tar.gz.attest.v2.bundle'
+          ls -l "${RUNNER_TEMP}/r3"
+
+      - name: Build the sideshow under test
+        run: go build -o "${RUNNER_TEMP}/bin/sideshow" ./cmd/sideshow
+
+      - name: Verify the release live
+        run: bash scripts/live-verify-r3.sh "${RUNNER_TEMP}/r3" "${RUNNER_TEMP}/bin/sideshow" "${RUNNER_TEMP}/live"
