@@ -37,6 +37,11 @@ const (
 	certIdentityRegexp = `^https://github\.com/ArcavenAE/sideshow-packs/\.github/workflows/build-pack\.yml@refs/(heads/main|tags/.+)$`
 	certOIDCIssuer     = "https://token.actions.githubusercontent.com"
 
+	// AttestIdentityRegexp and BlobIdentityRegexp are the signer pins for the
+	// attestation and for the tarball signature. Stubs: not written yet.
+	AttestIdentityRegexp = ""
+	BlobIdentityRegexp   = ""
+
 	// maxExtractBytes caps the bytes written while extracting one tarball.
 	maxExtractBytes = 1 << 30
 )

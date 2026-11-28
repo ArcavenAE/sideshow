@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -62,6 +63,12 @@ type buildOpts struct {
 	traversal       bool   // tarball holds a ../ entry
 	omitBundle      bool
 	omitAttBundle   bool
+	// v2Schema, when set, also writes <tarball>.attest.v2.bundle carrying that
+	// schema_version, and makes the plain .attest.bundle an older-format one
+	// with no dsseEnvelope (what the published releases carry).
+	v2Schema string
+	// v2Only writes the v2 bundle and no plain .attest.bundle at all.
+	v2Only bool
 }
 
 // buildRelease writes a release folder for pack "demo" 1.0.0 into a temp dir.
@@ -131,9 +138,13 @@ func buildRelease(t *testing.T, o buildOpts) *fixture {
 		art["file_manifest_sha256"] = hexSHA(files["file-manifest.csv"])
 		art["exec_manifest_sha256"] = hexSHA(files["exec-manifest.txt"])
 	}
-	meta := map[string]any{"schema_version": o.schema, "pack": map[string]any{"name": "demo", "version": "1.0.0"}, "artifact": art}
-	stmt, _ := json.Marshal(map[string]any{"_type": "https://in-toto.io/Statement/v0.1", "predicate": meta})
-	bundle, _ := json.Marshal(map[string]any{"dsseEnvelope": map[string]any{"payload": base64.StdEncoding.EncodeToString(stmt)}})
+	mkBundle := func(schema string) []byte {
+		meta := map[string]any{"schema_version": schema, "pack": map[string]any{"name": "demo", "version": "1.0.0"}, "artifact": art}
+		stmt, _ := json.Marshal(map[string]any{"_type": "https://in-toto.io/Statement/v0.1", "predicate": meta})
+		b, _ := json.Marshal(map[string]any{"dsseEnvelope": map[string]any{"payload": base64.StdEncoding.EncodeToString(stmt)}})
+		return b
+	}
+	bundle := mkBundle(o.schema)
 
 	write := func(name string, b []byte) {
 		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
@@ -143,7 +154,16 @@ func buildRelease(t *testing.T, o buildOpts) *fixture {
 	if !o.omitBundle {
 		write("demo-1.0.0-arcaven.tar.gz.bundle", []byte("{}"))
 	}
-	if !o.omitAttBundle {
+	if o.v2Schema != "" || o.v2Only {
+		schema := o.v2Schema
+		if schema == "" {
+			schema = o.schema
+		}
+		write("demo-1.0.0-arcaven.tar.gz.attest.v2.bundle", mkBundle(schema))
+		if !o.v2Only {
+			write("demo-1.0.0-arcaven.tar.gz.attest.bundle", []byte(`{"base64Signature":"x","cert":"y","rekorBundle":{}}`))
+		}
+	} else if !o.omitAttBundle {
 		write("demo-1.0.0-arcaven.tar.gz.attest.bundle", bundle)
 	}
 	write("file-manifest.csv", files["file-manifest.csv"])
@@ -443,5 +463,89 @@ func TestNewCosign_RefusesWhenTheBinaryIsAbsent(t *testing.T) {
 	_, err := NewCosign(filepath.Join(t.TempDir(), "no-such-cosign"))
 	if err == nil || !strings.Contains(err.Error(), "cosign") {
 		t.Fatalf("NewCosign(absent) error = %v, want one naming cosign", err)
+	}
+}
+
+func TestVerify_PrefersTheV2AttestationBundle(t *testing.T) {
+	fx := buildRelease(t, buildOpts{v2Schema: "0.2.0"})
+	v := &fakeVerifier{}
+	res, err := Verify(fx.dir, "demo", v, Options{})
+	if err != nil {
+		t.Fatalf("a release with a v2 attestation bundle was refused: %v", err)
+	}
+	res.Cleanup()
+	want := filepath.Join(fx.dir, "demo-1.0.0-arcaven.tar.gz.attest.v2.bundle")
+	if len(v.attArgs) != 1 || v.attArgs[0][0] != want {
+		t.Errorf("VerifyAttestation bundle args = %v, want the v2 bundle %s", v.attArgs, want)
+	}
+}
+
+func TestVerify_ReadsTheProvenanceFromTheV2Bundle(t *testing.T) {
+	// The v2 bundle carries a schema the policy refuses; the older bundle has
+	// no payload at all. Only the v2 payload can be the one that is read.
+	fx := buildRelease(t, buildOpts{v2Schema: "1.2.0"})
+	res, err := Verify(fx.dir, "demo", &fakeVerifier{}, Options{})
+	mustFail(t, res, err, "schema_version")
+}
+
+func TestVerify_AcceptsAReleaseWithOnlyAV2Bundle(t *testing.T) {
+	fx := buildRelease(t, buildOpts{v2Only: true})
+	v := &fakeVerifier{}
+	res, err := Verify(fx.dir, "demo", v, Options{})
+	if err != nil {
+		t.Fatalf("a release with only a v2 attestation bundle was refused: %v", err)
+	}
+	res.Cleanup()
+	if len(v.attArgs) != 1 || !strings.HasSuffix(v.attArgs[0][0], ".attest.v2.bundle") {
+		t.Errorf("VerifyAttestation bundle args = %v, want the v2 bundle", v.attArgs)
+	}
+}
+
+const (
+	sanBuild     = "https://github.com/ArcavenAE/sideshow-packs/.github/workflows/build-pack.yml"
+	sanReattest  = "https://github.com/ArcavenAE/sideshow-packs/.github/workflows/reattest-release.yml"
+	sanOtherFile = "https://github.com/ArcavenAE/sideshow-packs/.github/workflows/intake-tests.yml"
+	sanOtherRepo = "https://github.com/ArcavenAE/sideshow/.github/workflows/build-pack.yml"
+	sanForkOwner = "https://github.com/someone/sideshow-packs/.github/workflows/build-pack.yml"
+)
+
+func TestIdentityPins(t *testing.T) {
+	cases := []struct {
+		name        string
+		san         string
+		wantAttest  bool
+		wantBlobSig bool
+	}{
+		{"build-pack on main", sanBuild + "@refs/heads/main", true, true},
+		{"reattest on main", sanReattest + "@refs/heads/main", true, false},
+		{"build-pack at a pack version tag", sanBuild + "@refs/tags/bmad-v6.12.4-r3", false, true},
+		{"build-pack at a vsdd-factory version tag", sanBuild + "@refs/tags/vsdd-factory-v1.0.0-rc.23", false, true},
+		{"build-pack at a non-version tag", sanBuild + "@refs/tags/latest", false, false},
+		{"build-pack at a tag with no pack", sanBuild + "@refs/tags/v6.12.4", false, false},
+		{"build-pack on another branch", sanBuild + "@refs/heads/feature", false, false},
+		{"build-pack on a main-prefixed branch", sanBuild + "@refs/heads/main-2", false, false},
+		{"build-pack on a pull request ref", sanBuild + "@refs/pull/7/merge", false, false},
+		{"reattest at a tag", sanReattest + "@refs/tags/bmad-v6.12.4-r3", false, false},
+		{"reattest on another branch", sanReattest + "@refs/heads/feature", false, false},
+		{"another workflow file on main", sanOtherFile + "@refs/heads/main", false, false},
+		{"another repository on main", sanOtherRepo + "@refs/heads/main", false, false},
+		{"a fork owner on main", sanForkOwner + "@refs/heads/main", false, false},
+		{"an unanchored suffix on the SAN", sanBuild + "@refs/heads/main/../x", false, false},
+		{"a prefix before the SAN", "x" + sanBuild + "@refs/heads/main", false, false},
+	}
+	attest := regexp.MustCompile(AttestIdentityRegexp)
+	blob := regexp.MustCompile(BlobIdentityRegexp)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if AttestIdentityRegexp == "" || BlobIdentityRegexp == "" {
+				t.Fatal("an identity pin is empty")
+			}
+			if got := attest.MatchString(c.san); got != c.wantAttest {
+				t.Errorf("attestation pin on %q = %v, want %v", c.san, got, c.wantAttest)
+			}
+			if got := blob.MatchString(c.san); got != c.wantBlobSig {
+				t.Errorf("blob signature pin on %q = %v, want %v", c.san, got, c.wantBlobSig)
+			}
+		})
 	}
 }
