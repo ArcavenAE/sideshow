@@ -143,3 +143,15 @@ func TestRunInstall_PlainDirectoryStillInstallsUnverified(t *testing.T) {
 		}
 	}
 }
+
+func TestRunInstall_ShaPinFlagWithoutAValueIsAnError(t *testing.T) {
+	setupHome(t)
+	dir, _ := writeRelease(t, false)
+	err := runInstall([]string{"demo", "--from", dir, "--yes", "--sha256"})
+	if err == nil || !strings.Contains(err.Error(), "--sha256") {
+		t.Fatalf("install with --sha256 and no value: err = %v, want one naming --sha256", err)
+	}
+	if _, serr := os.Stat(filepath.Join(pack.PacksDir(), "demo")); !os.IsNotExist(serr) {
+		t.Errorf("an install with a dangling --sha256 reached the store (stat err %v)", serr)
+	}
+}
