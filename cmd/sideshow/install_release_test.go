@@ -155,3 +155,41 @@ func TestRunInstall_ShaPinFlagWithoutAValueIsAnError(t *testing.T) {
 		t.Errorf("an install with a dangling --sha256 reached the store (stat err %v)", serr)
 	}
 }
+
+func TestRunInstall_ShaPinFlagRefusesAnyValueThatIsNotADigest(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"empty value, as an unset variable gives", ""},
+		{"too short", strings.Repeat("a", 63)},
+		{"too long", strings.Repeat("a", 65)},
+		{"not hex", strings.Repeat("g", 64)},
+		{"a flag taken as the value", "--yes"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			setupHome(t)
+			dir, _ := writeRelease(t, false)
+			err := runInstall([]string{"demo", "--from", dir, "--yes", "--sha256", c.value})
+			if err == nil || !strings.Contains(err.Error(), "--sha256") {
+				t.Fatalf("install with --sha256 %q: err = %v, want one naming --sha256", c.value, err)
+			}
+			if _, serr := os.Stat(filepath.Join(pack.PacksDir(), "demo")); !os.IsNotExist(serr) {
+				t.Errorf("an install with --sha256 %q reached the store (stat err %v)", c.value, serr)
+			}
+		})
+	}
+}
+
+func TestRunInstall_UnknownFlagIsAnErrorThatNamesIt(t *testing.T) {
+	setupHome(t)
+	dir, sha := writeRelease(t, false)
+	err := runInstall([]string{"demo", "--from", dir, "--yes", "--sha265", sha})
+	if err == nil || !strings.Contains(err.Error(), "--sha265") {
+		t.Fatalf("install with a misspelled flag: err = %v, want one naming --sha265", err)
+	}
+	if _, serr := os.Stat(filepath.Join(pack.PacksDir(), "demo")); !os.IsNotExist(serr) {
+		t.Errorf("an install with an unknown flag reached the store (stat err %v)", serr)
+	}
+}
