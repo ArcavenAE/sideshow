@@ -1,6 +1,6 @@
 # Installing marvel companies
 
-Status: design, for a ruling. Nothing here is built.
+Status: design, for a ruling. Parts of it are on main: the version listings skip dot entries, writes to `registry.yaml` take the store-wide registry lock, a package computes tree hash v1 (nothing records or checks it yet), `sideshow use` moves `current` in one step, and `install --from` verifies a signed release. The main pieces still unbuilt: the `@` install forms and `--dev`, the per-name lock and install record, staging under a dot name with the no-replace rename, recording the tree hash at install and re-checking it in `doctor`, the `update` and `remove` verbs, and the refusal of a source that holds `origin.json` or sits inside the store.
 
 ## Why
 
@@ -32,11 +32,11 @@ There are three, and each records what it came from.
 | alpha | `sideshow install <name>@alpha` | the newest prerelease; still a built, signed release, marked early | the same checks as a release |
 | developer | `sideshow install <name> --dev <checkout>` | a library's author testing a change with no release, no tag and no network | none beyond the tree hash; it is the operator's own checkout |
 
-**Release and alpha.** The release build makes a tarball of the pack, signs it with a short-lived certificate tied to the build job (cosign keyless signing), publishes the tarball's checksum and attaches both to a release, as the bmad releases already do. sideshow downloads the tarball and its checksum file, checks both, and refuses a tarball that fails either. Today a person downloads and checks it, then runs `sideshow install <name> --from <folder>`; the `@` forms make that one command. A prerelease is chosen only by `@alpha` or by its exact version.
+**Release and alpha.** The release build makes a tarball of the pack, signs it with a short-lived certificate tied to the build job (cosign keyless signing), publishes the tarball's checksum and attaches both to a release, as the bmad releases already do. sideshow downloads the tarball and its checksum file, checks both, and refuses a tarball that fails either. Today a person downloads the release files, then runs `sideshow install <name> --from <release folder or tarball>`, which itself verifies the signature and the attestation (it needs the `cosign` binary), checks the tarball and its files against the attested hashes, and refuses a release that fails; a release with no attested manifest hashes installs with a warning. The `@` forms add the download, so the whole install becomes one command. A prerelease is chosen only by `@alpha` or by its exact version.
 
 **Developer.** `--dev <checkout>` copies the checkout's `company/` folder into the store as its own version, named `<next version>-dev.<date and time>.<short commit id>`, for example `1.3.0-dev.20261118193000.90e8904`. It refuses a checkout with uncommitted changes. sideshow marks it as a developer install, update never picks it, and `sideshow use` moves back to a release. It copies; it does not link to the live checkout, since a link would let an edit change what running seats read, which the "never changed in place" rule below forbids.
 
-**`--from <dir>`** stays as today: a local tree, with the tree hash recorded at install. It is also what the installs above run through once their checks pass.
+**`--from <dir>`** stays as today for a plain local tree, which is not marked verified. It is also what the installs above run through once their checks pass. Recording the tree hash at install is part of this design and not built yet. `--from` also takes a signed release folder or tarball today, and `install` verifies it before anything reaches the store.
 
 **What an install records:** the version, the full commit id the version was built from, and the source: the release download address and the tarball's checksum, or the local checkout path for a developer install. Before installing, sideshow refuses a source that holds a file named `origin.json` at any depth, and a source inside its own store.
 
