@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,7 +106,7 @@ func Verify(from, pack string, v Verifier, opts Options) (*Result, error) {
 	// The v2 bundle carries a dsseEnvelope; releases published before it
 	// have only the older .attest.bundle.
 	attBundle := tarball + ".attest.v2.bundle"
-	if _, err := os.Stat(attBundle); err != nil {
+	if _, err := os.Stat(attBundle); errors.Is(err, fs.ErrNotExist) {
 		attBundle = tarball + ".attest.bundle"
 	}
 	for _, b := range []string{sigBundle, attBundle} {

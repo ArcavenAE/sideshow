@@ -532,7 +532,7 @@ var sha256DigestRE = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
 func runInstall(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--sha256 <digest>] [--yes] [--force] [--no-permissions] [--scope user|project]")
+		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--sha256 <digest>] [--yes] [--force] [--no-activate] [--no-permissions] [--scope user|project]")
 	}
 
 	name := args[0]

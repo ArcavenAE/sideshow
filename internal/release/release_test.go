@@ -524,7 +524,10 @@ func TestIdentityPins(t *testing.T) {
 		{"build-pack at a tag with no pack", sanBuild + "@refs/tags/v6.12.4", false, false},
 		{"build-pack at a version tag with a path after it", sanBuild + "@refs/tags/bmad-v6.12.4-r3/x", false, false},
 		{"build-pack at a tag whose version is not a number", sanBuild + "@refs/tags/bmad-vX", false, false},
-		{"build-pack at a tag with a bare major version", sanBuild + "@refs/tags/junk-v1", false, false},
+		// Director ruling 01M8FTTCS3: the trust boundary is the repository plus
+		// build-pack.yml, which the SAN already fixes, so any pack-shaped name is
+		// accepted at a version tag.
+		{"build-pack at a pack-shaped tag with a bare major version", sanBuild + "@refs/tags/junk-v1", false, true},
 		{"build-pack at a plain release version tag", sanBuild + "@refs/tags/bmad-v6.12.4", false, true},
 		{"build-pack at a wardrobe version tag", sanBuild + "@refs/tags/wardrobe-v0.1.0", false, true},
 		{"build-pack on another branch", sanBuild + "@refs/heads/feature", false, false},
