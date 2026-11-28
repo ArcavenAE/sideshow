@@ -3,23 +3,50 @@
 #
 #   bash scripts/live-verify-r3.sh <release-dir> <sideshow-binary> <scratch-dir>
 #
-# <release-dir> holds the assets of bmad-v6.12.4-r3 (tarball, .bundle,
+# <release-dir> holds the assets of the release under test (tarball, .bundle,
 # .attest.bundle, .attest.v2.bundle, file-manifest.csv, exec-manifest.txt). The binary is the build under test and the
 # real cosign must be on PATH. Four installs, each with its own HOME,
 # SIDESHOW_HOME and TMPDIR under <scratch-dir>. Run in CI, where the Sigstore
 # connects happen; do not run it on a fleet host.
+#
+# The release under test comes from LIVE_VERIFY_TAG, LIVE_VERIFY_PACK,
+# LIVE_VERIFY_TARBALL and LIVE_VERIFY_SHA, which default to bmad-v6.12.4-r3.
+# LIVE_VERIFY_SHA is the dispatcher's pin and is never read from the release:
+# a custom tag, pack or tarball with no pin is refused.
 set -euo pipefail
 
-TAG="bmad-v6.12.4-r3"
-PACK="bmad"
-TARBALL="bmad-6.12.4-r3-arcaven.tar.gz"
-SHA="7b73b2bb22f736152e42119cb8c77252a78c65b09720aebcc6d888c8b5735465"
+TAG="${LIVE_VERIFY_TAG:-}"
+PACK="${LIVE_VERIFY_PACK:-}"
+TARBALL="${LIVE_VERIFY_TARBALL:-}"
+SHA="${LIVE_VERIFY_SHA:-}"
+if [[ -z "${SHA}" && -n "${TAG}${PACK}${TARBALL}" ]]; then
+    echo "invalid LIVE_VERIFY_SHA: required when LIVE_VERIFY_TAG, LIVE_VERIFY_PACK or LIVE_VERIFY_TARBALL is set" >&2
+    exit 1
+fi
+TAG="${TAG:-bmad-v6.12.4-r3}"
+PACK="${PACK:-bmad}"
+TARBALL="${TARBALL:-bmad-6.12.4-r3-arcaven.tar.gz}"
+SHA="${SHA:-7b73b2bb22f736152e42119cb8c77252a78c65b09720aebcc6d888c8b5735465}"
+refuse_unless() { # variable value pattern
+    [[ "$2" =~ $3 ]] || { echo "invalid $1: $2" >&2; exit 1; }
+}
+refuse_unless LIVE_VERIFY_TAG "${TAG}" '^[a-z0-9][a-z0-9-]*-v[0-9][A-Za-z0-9._-]*$'
+refuse_unless LIVE_VERIFY_PACK "${PACK}" '^[a-z0-9][a-z0-9-]*$'
+refuse_unless LIVE_VERIFY_TARBALL "${TARBALL}" '^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$'
+refuse_unless LIVE_VERIFY_SHA "${SHA}" '^[0-9a-f]{64}$'
 WANT_SAN="https://github.com/ArcavenAE/sideshow-packs/.github/workflows/reattest-release.yml@refs/heads/main"
 
 REL="${1:?release dir}"
 BIN="${2:?sideshow binary}"
 SCRATCH="${3:?scratch dir}"
 SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
+echo "[live-verify] tag=${TAG} pack=${PACK} tarball=${TARBALL}"
+{
+    echo "### Live Verify of ${TAG}"
+    echo
+    echo "tarball sha256 (pinned by the dispatcher): \`${SHA}\`"
+    echo
+} >> "${SUMMARY}"
 
 failures=0
 results=()
@@ -118,11 +145,7 @@ if [[ "${san}" != "${WANT_SAN}" ]]; then
 fi
 
 {
-    echo "### Live Verify of ${TAG}"
-    echo
     echo "v2 SAN: ${san}"
-    echo
-    echo "tarball sha256: \`${SHA}\`"
     echo
     for r in "${results[@]}"; do echo "- ${r}"; done
 } >> "${SUMMARY}"
