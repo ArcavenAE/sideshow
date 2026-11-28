@@ -32,8 +32,8 @@ on:
         description: Tarball asset name
         default: bmad-6.12.4-r3-arcaven.tar.gz
       sha256:
-        description: Pinned sha256 of the tarball (never read from the release)
-        default: 7b73b2bb22f736152e42119cb8c77252a78c65b09720aebcc6d888c8b5735465
+        description: The dispatcher's pinned sha256 for the tarball named above (never read from the release)
+        required: true
 
 permissions:
   contents: read
