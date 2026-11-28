@@ -309,7 +309,7 @@ func TestVerify_SchemaVersionPolicy(t *testing.T) {
 		}
 		res.Cleanup()
 	}
-	for _, bad := range []string{"1.0.0", "9.9.9", ""} {
+	for _, bad := range []string{"1.2.0", "9.9.9", ""} {
 		fx := buildRelease(t, buildOpts{})
 		// Keep the whole predicate, change only schema_version, so a refusal
 		// for any other reason cannot satisfy this case.
@@ -348,17 +348,48 @@ func TestVerify_SchemaVersionPolicy(t *testing.T) {
 	}
 }
 
-// A refused release leaves no extraction directory behind.
+// A refused release leaves no extraction directory behind. The fixtures are
+// built before TMPDIR moves, so the scratch directory holds only what Verify
+// extracts.
 func TestVerify_RefusalRemovesTheExtractionDir(t *testing.T) {
+	good := buildRelease(t, buildOpts{})
+	bad := buildRelease(t, buildOpts{badFileBytes: true})
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	fx := buildRelease(t, buildOpts{badFileBytes: true})
-	before, _ := os.ReadDir(tmp)
-	res, err := Verify(fx.dir, "demo", &fakeVerifier{}, Options{})
+
+	// Anchor (a): a valid run extracts under TMPDIR, so the emptiness check
+	// below cannot pass for a green that extracts somewhere else.
+	res, err := Verify(good.dir, "demo", &fakeVerifier{}, Options{})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !strings.HasPrefix(res.Root, tmp) {
+		t.Errorf("extraction root %s is not under TMPDIR %s", res.Root, tmp)
+	}
+	res.Cleanup()
+
+	// Anchor (b): the release folder is untouched by a refusal.
+	names := func(dir string) []string {
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, e := range ents {
+			out = append(out, e.Name())
+		}
+		return out
+	}
+	folderBefore := names(bad.dir)
+	tmpBefore := names(tmp)
+
+	res, err = Verify(bad.dir, "demo", &fakeVerifier{}, Options{})
 	mustFail(t, res, err, "doc.md")
-	after, _ := os.ReadDir(tmp)
-	if len(after) != len(before) {
-		t.Errorf("extraction temp dir left behind: %d entries before, %d after", len(before), len(after))
+	if got := names(tmp); strings.Join(got, ",") != strings.Join(tmpBefore, ",") {
+		t.Errorf("extraction temp dir left behind: entries %v before, %v after", tmpBefore, got)
+	}
+	if got := names(bad.dir); strings.Join(got, ",") != strings.Join(folderBefore, ",") {
+		t.Errorf("release folder changed by a refusal: %v before, %v after", folderBefore, got)
 	}
 }
 
