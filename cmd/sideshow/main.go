@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -526,6 +527,9 @@ func statusIcon(status string) string {
 	}
 }
 
+// sha256DigestRE is the shape --sha256 takes: a hex sha256 digest.
+var sha256DigestRE = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
 func runInstall(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--sha256 <digest>] [--yes] [--force] [--no-permissions] [--scope user|project]")
@@ -552,6 +556,9 @@ func runInstall(args []string) error {
 			if i+1 >= len(args) {
 				return fmt.Errorf("--sha256 needs a value: the tarball digest to pin")
 			}
+			if !sha256DigestRE.MatchString(args[i+1]) {
+				return fmt.Errorf("--sha256 needs a 64-character hex digest, got %q", args[i+1])
+			}
 			sha256Pin = args[i+1]
 			i++
 		case "--yes", "-y":
@@ -575,6 +582,8 @@ func runInstall(args []string) error {
 				scopeExplicit = true
 				i++
 			}
+		default:
+			return fmt.Errorf("unknown flag for install: %s (see 'sideshow --help')", args[i])
 		}
 	}
 
