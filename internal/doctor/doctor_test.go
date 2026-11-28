@@ -751,3 +751,28 @@ failed:
 		t.Error("incomplete warning on a 0.1.0 manifest")
 	}
 }
+
+// A dot-prefixed directory under a pack is a staging leftover. Layer 1
+// does not report it as an installed version (a version dir would draw
+// a store-shape warning here, since the dir holds no installer output).
+func TestStoreChecks_SkipDotEntries(t *testing.T) {
+	home := fakeHome(t)
+	installVersion(t, home, "alpha", "1.0.0", true)
+	if err := os.MkdirAll(filepath.Join(home, "packs", "alpha", ".2.0.0.partial"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	registryYAML(t, home, `packs:
+  - name: alpha
+    version: 1.0.0
+    path: `+filepath.Join(home, "packs", "alpha", "current")+`
+`)
+	report, _, err := Run(Options{Layers: []int{1}, Now: time.Unix(0, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range report.Findings {
+		if strings.HasPrefix(f.Subject, ".") {
+			t.Errorf("layer 1 reported the dot entry %q: %s %s", f.Subject, f.ID, f.Detail)
+		}
+	}
+}

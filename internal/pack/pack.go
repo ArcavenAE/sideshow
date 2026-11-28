@@ -21,6 +21,11 @@ type InstalledPack struct {
 	Version     string `yaml:"version"`
 	Path        string `yaml:"path"`
 	InstalledAt string `yaml:"installed_at,omitempty"`
+	// TarballSHA256 is the digest of the signed tarball this version was
+	// installed from; empty for a plain-directory install.
+	TarballSHA256 string `yaml:"tarball_sha256,omitempty"`
+	// Verified is true when the signature and attestation were checked at install.
+	Verified bool `yaml:"verified,omitempty"`
 }
 
 // Registry tracks installed packs and project distributions.
@@ -269,6 +274,57 @@ func ValidateName(name, sourcePath string) (undeclared string, err error) {
 	return "", nil
 }
 
+// Kinds a pack.yaml may declare. An absent kind means an ordinary pack, as
+// every pack did before the field existed.
+const (
+	KindPack    = "pack"
+	KindOverlay = "overlay"
+)
+
+// ValidateKind checks the kind a pack declares in pack.yaml, at the two
+// places ValidateName reads: the source root and _bmad/ (the installer
+// layout, whose _bmad/ prefix install strips). The kind is optional; when
+// present it must be "pack" or "overlay", and an overlay is never installed
+// under the name "wardrobe", which is the wardrobe contents and not a site
+// overlay. A pack.yaml that does not decode, or whose kind is not a string,
+// is refused and named, never read as an absent kind; only a missing file means there is none. Nothing is copied
+// before this runs, so a refusal leaves the store untouched.
+func ValidateKind(name, sourcePath string) error {
+	for _, rel := range []string{"pack.yaml", filepath.Join("_bmad", "pack.yaml")} {
+		path := filepath.Join(sourcePath, rel)
+		data, readErr := os.ReadFile(path)
+		if errors.Is(readErr, fs.ErrNotExist) {
+			continue
+		}
+		if readErr != nil {
+			return fmt.Errorf("cannot read the pack kind from %s: %w", path, readErr)
+		}
+		var m struct {
+			Kind string `yaml:"kind"`
+		}
+		if err := yaml.Unmarshal(data, &m); err != nil {
+			return fmt.Errorf("cannot read the pack kind from %s: %w", path, err)
+		}
+		switch m.Kind {
+		case "", KindPack:
+		case KindOverlay:
+			if name == "wardrobe" {
+				return fmt.Errorf(
+					"pack kind mismatch: %s declares kind %q, and an overlay is never installed under the name %q "+
+						"(the wardrobe is the contents, an overlay sits beside it); install it under its own name",
+					path, KindOverlay, name,
+				)
+			}
+		default:
+			return fmt.Errorf(
+				"unknown pack kind %q in %s: kind is %q or %q, or absent for an ordinary pack",
+				m.Kind, path, KindPack, KindOverlay,
+			)
+		}
+	}
+	return nil
+}
+
 // printUndeclaredNameNote says that the installed name was taken as
 // given because the source declares none. Every install path that prints
 // "Installed N files" calls it, so the note is never skipped by an early
@@ -416,6 +472,9 @@ func detectPackYamlVersion(packPath string) string {
 // updates the registry to match. The version must already be installed.
 // Bindings are NOT synced here — callers run bindings.Sync after.
 func Activate(name, version string) error {
+	if strings.HasPrefix(version, ".") {
+		return fmt.Errorf("pack %s version %q starts with a dot: dot entries are staging leftovers, not installed versions", name, version)
+	}
 	versionDir := filepath.Join(PacksDir(), name, version)
 	info, err := os.Stat(versionDir)
 	if err != nil || !info.IsDir() {
@@ -427,30 +486,28 @@ func Activate(name, version string) error {
 		return fmt.Errorf("update current symlink: %w", err)
 	}
 
-	reg, err := LoadRegistry()
-	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
-	}
-	found := false
-	for i := range reg.Packs {
-		if reg.Packs[i].Name == name {
-			reg.Packs[i].Version = version
-			found = true
+	return UpdateRegistry(func(reg *Registry) error {
+		found := false
+		for i := range reg.Packs {
+			if reg.Packs[i].Name == name {
+				reg.Packs[i].Version = version
+				found = true
+			}
 		}
-	}
-	if !found {
-		reg.Packs = append(reg.Packs, InstalledPack{
-			Name:        name,
-			Version:     version,
-			Path:        currentLink,
-			InstalledAt: time.Now().UTC().Format(time.RFC3339),
-		})
-	}
-	return reg.Save()
+		if !found {
+			reg.Packs = append(reg.Packs, InstalledPack{
+				Name:        name,
+				Version:     version,
+				Path:        currentLink,
+				InstalledAt: time.Now().UTC().Format(time.RFC3339),
+			})
+		}
+		return nil
+	})
 }
 
 // InstalledVersions returns every version directory installed for a pack
-// (sorted) plus the version the current symlink points at ("" if none).
+// (sorted; a dot-prefixed directory is a staging leftover and is skipped) plus the version the current symlink points at ("" if none).
 func InstalledVersions(name string) (versions []string, active string, err error) {
 	dir := filepath.Join(PacksDir(), name)
 	entries, err := os.ReadDir(dir)
@@ -458,7 +515,7 @@ func InstalledVersions(name string) (versions []string, active string, err error
 		return nil, "", err
 	}
 	for _, e := range entries {
-		if e.IsDir() && e.Name() != "current" {
+		if e.IsDir() && e.Name() != "current" && !strings.HasPrefix(e.Name(), ".") {
 			versions = append(versions, e.Name())
 		}
 	}
@@ -480,6 +537,9 @@ type InstallOptions struct {
 	// Force allows the install to write over a version already in the
 	// store (aae-orc-mobz8).
 	Force bool
+	// TarballSHA256 and Verified record a signed-release install in the registry.
+	TarballSHA256 string
+	Verified      bool
 }
 
 // InstallFromLocal installs a pack from a local path and refuses to
@@ -541,6 +601,11 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	// The pack names itself; the caller's label must agree (aae-orc-oihza).
 	undeclared, err := ValidateName(name, sourcePath)
 	if err != nil {
+		return err
+	}
+
+	// The kind, if declared, must be one sideshow knows (aae-orc-i0evz).
+	if err := ValidateKind(name, sourcePath); err != nil {
 		return err
 	}
 
@@ -690,28 +755,27 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 	}
 
 	// Update registry
-	reg, err := LoadRegistry()
-	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
-	}
-
-	// Remove existing entry for this pack
-	var filtered []InstalledPack
-	for _, p := range reg.Packs {
-		if p.Name != name {
-			filtered = append(filtered, p)
+	if err := UpdateRegistry(func(reg *Registry) error {
+		// Remove existing entry for this pack
+		var filtered []InstalledPack
+		for _, p := range reg.Packs {
+			if p.Name != name {
+				filtered = append(filtered, p)
+			}
 		}
-	}
-	filtered = append(filtered, InstalledPack{
-		Name:        name,
-		Version:     version,
-		Path:        filepath.Join(PacksDir(), name, "current"),
-		InstalledAt: time.Now().UTC().Format(time.RFC3339),
-	})
-	reg.Packs = filtered
+		filtered = append(filtered, InstalledPack{
+			Name:        name,
+			Version:     version,
+			Path:        filepath.Join(PacksDir(), name, "current"),
+			InstalledAt: time.Now().UTC().Format(time.RFC3339),
 
-	if err := reg.Save(); err != nil {
-		return fmt.Errorf("save registry: %w", err)
+			TarballSHA256: opts.TarballSHA256,
+			Verified:      opts.Verified,
+		})
+		reg.Packs = filtered
+		return nil
+	}); err != nil {
+		return fmt.Errorf("update registry: %w", err)
 	}
 
 	fmt.Printf("Installed %d files to %s\n", count, destDir)
