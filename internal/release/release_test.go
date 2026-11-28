@@ -23,16 +23,20 @@ type fakeVerifier struct {
 	attFailTypes map[string]bool
 	calls        []string
 	attTypes     []string
+	blobArgs     [][2]string // (bundle, artifact) per VerifyBlob call
+	attArgs      [][3]string // (bundle, artifact, predicateType) per VerifyAttestation call
 }
 
 func (f *fakeVerifier) VerifyBlob(bundle, artifact string) error {
 	f.calls = append(f.calls, "blob")
+	f.blobArgs = append(f.blobArgs, [2]string{bundle, artifact})
 	return f.blobErr
 }
 
 func (f *fakeVerifier) VerifyAttestation(bundle, artifact, predicateType string) error {
 	f.calls = append(f.calls, "attest")
 	f.attTypes = append(f.attTypes, predicateType)
+	f.attArgs = append(f.attArgs, [3]string{bundle, artifact, predicateType})
 	if f.attFailTypes[predicateType] {
 		return fmt.Errorf("predicate type mismatch: %s", predicateType)
 	}
@@ -147,6 +151,20 @@ func buildRelease(t *testing.T, o buildOpts) *fixture {
 	return &fixture{dir: dir, tarball: tarPath, tarSHA: hexSHA(tarBytes)}
 }
 
+// assertVerifierArgs checks that Verify handed the verifier the signature
+// bundle, the attestation bundle and the tarball, each in its own slot.
+func assertVerifierArgs(t *testing.T, v *fakeVerifier, fx *fixture) {
+	t.Helper()
+	wantBlob := [2]string{filepath.Join(fx.dir, "demo-1.0.0-arcaven.tar.gz.bundle"), fx.tarball}
+	if len(v.blobArgs) != 1 || v.blobArgs[0] != wantBlob {
+		t.Errorf("VerifyBlob args = %v, want [%v]", v.blobArgs, wantBlob)
+	}
+	wantAtt := [3]string{filepath.Join(fx.dir, "demo-1.0.0-arcaven.tar.gz.attest.bundle"), fx.tarball, PredicateType}
+	if len(v.attArgs) != 1 || v.attArgs[0] != wantAtt {
+		t.Errorf("VerifyAttestation args = %v, want [%v]", v.attArgs, wantAtt)
+	}
+}
+
 func mustFail(t *testing.T, res *Result, err error, want string) {
 	t.Helper()
 	if err == nil {
@@ -181,8 +199,9 @@ func TestVerify_ValidReleaseExtractsAndRecordsDigest(t *testing.T) {
 		t.Errorf("SchemaVersion = %q, want 0.2.0", res.SchemaVersion)
 	}
 	if got := strings.Join(v.calls, ","); got != "blob,attest" {
-		t.Errorf("verifier calls = %s, want blob,attest (attest-first chain)", got)
+		t.Errorf("verifier calls = %s, want blob,attest (signature, then attestation, per docs/release-url-format.md steps 1 and 2)", got)
 	}
+	assertVerifierArgs(t, v, fx)
 	if len(v.attTypes) != 1 || v.attTypes[0] != PredicateType {
 		t.Errorf("attestation types tried = %v, want [%s]", v.attTypes, PredicateType)
 	}
@@ -190,11 +209,13 @@ func TestVerify_ValidReleaseExtractsAndRecordsDigest(t *testing.T) {
 
 func TestVerify_TarballAcceptedByPath(t *testing.T) {
 	fx := buildRelease(t, buildOpts{})
-	res, err := Verify(fx.tarball, "demo", &fakeVerifier{}, Options{})
+	v := &fakeVerifier{}
+	res, err := Verify(fx.tarball, "demo", v, Options{})
 	if err != nil {
 		t.Fatalf("Verify by tarball path: %v", err)
 	}
 	res.Cleanup()
+	assertVerifierArgs(t, v, fx)
 }
 
 func TestVerify_RefusesATamperedTarball(t *testing.T) {
@@ -230,7 +251,7 @@ func TestVerify_RefusesAnExecManifestThatDiffersFromTheAttestedHash(t *testing.T
 func TestVerify_RefusesAMissingSignatureBundle(t *testing.T) {
 	fx := buildRelease(t, buildOpts{omitBundle: true})
 	res, err := Verify(fx.dir, "demo", &fakeVerifier{}, Options{})
-	mustFail(t, res, err, ".bundle")
+	mustFail(t, res, err, "tar.gz.bundle")
 }
 
 func TestVerify_RefusesAMissingAttestationBundle(t *testing.T) {
@@ -289,16 +310,55 @@ func TestVerify_SchemaVersionPolicy(t *testing.T) {
 		res.Cleanup()
 	}
 	for _, bad := range []string{"1.0.0", "9.9.9", ""} {
-		fx := buildRelease(t, buildOpts{schema: "x"})
-		// rewrite the attestation with the bad schema
-		meta := map[string]any{"schema_version": bad, "artifact": map[string]any{"tarball_sha256": fx.tarSHA}}
-		stmt, _ := json.Marshal(map[string]any{"predicate": meta})
-		bundle, _ := json.Marshal(map[string]any{"dsseEnvelope": map[string]any{"payload": base64.StdEncoding.EncodeToString(stmt)}})
-		if err := os.WriteFile(filepath.Join(fx.dir, "demo-1.0.0-arcaven.tar.gz.attest.bundle"), bundle, 0o644); err != nil {
+		fx := buildRelease(t, buildOpts{})
+		// Keep the whole predicate, change only schema_version, so a refusal
+		// for any other reason cannot satisfy this case.
+		path := filepath.Join(fx.dir, "demo-1.0.0-arcaven.tar.gz.attest.bundle")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var env struct {
+			DSSE struct {
+				Payload string `json:"payload"`
+			} `json:"dsseEnvelope"`
+		}
+		if err := json.Unmarshal(raw, &env); err != nil {
+			t.Fatal(err)
+		}
+		payload, err := base64.StdEncoding.DecodeString(env.DSSE.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stmt map[string]any
+		if err := json.Unmarshal(payload, &stmt); err != nil {
+			t.Fatal(err)
+		}
+		stmt["predicate"].(map[string]any)["schema_version"] = bad
+		stmtBytes, _ := json.Marshal(stmt)
+		bundle, _ := json.Marshal(map[string]any{"dsseEnvelope": map[string]any{"payload": base64.StdEncoding.EncodeToString(stmtBytes)}})
+		if err := os.WriteFile(path, bundle, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		res, err := Verify(fx.dir, "demo", &fakeVerifier{}, Options{})
-		mustFail(t, res, err, "schema")
+		mustFail(t, res, err, "schema_version")
+		if bad != "" && err != nil && !strings.Contains(err.Error(), bad) {
+			t.Errorf("schema %q: error %q does not name the bad value", bad, err)
+		}
+	}
+}
+
+// A refused release leaves no extraction directory behind.
+func TestVerify_RefusalRemovesTheExtractionDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	fx := buildRelease(t, buildOpts{badFileBytes: true})
+	before, _ := os.ReadDir(tmp)
+	res, err := Verify(fx.dir, "demo", &fakeVerifier{}, Options{})
+	mustFail(t, res, err, "doc.md")
+	after, _ := os.ReadDir(tmp)
+	if len(after) != len(before) {
+		t.Errorf("extraction temp dir left behind: %d entries before, %d after", len(before), len(after))
 	}
 }
 
