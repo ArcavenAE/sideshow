@@ -170,10 +170,16 @@ func TestRunInstall_ShaPinFlagRefusesAnyValueThatIsNotADigest(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			setupHome(t)
+			rv := &countingVerifier{}
+			releaseVerifier = rv
 			dir, _ := writeRelease(t, false)
 			err := runInstall([]string{"demo", "--from", dir, "--yes", "--sha256", c.value})
-			if err == nil || !strings.Contains(err.Error(), "--sha256") {
-				t.Fatalf("install with --sha256 %q: err = %v, want one naming --sha256", c.value, err)
+			// A pin mismatch also names "sha256"; only the shape check says this.
+			if err == nil || !strings.Contains(err.Error(), "64-character hex digest") {
+				t.Fatalf("install with --sha256 %q: err = %v, want the shape refusal (64-character hex digest)", c.value, err)
+			}
+			if rv.calls != 0 {
+				t.Errorf("--sha256 %q: the verifier was called %d times before the value was refused", c.value, rv.calls)
 			}
 			if _, serr := os.Stat(filepath.Join(pack.PacksDir(), "demo")); !os.IsNotExist(serr) {
 				t.Errorf("an install with --sha256 %q reached the store (stat err %v)", c.value, serr)
@@ -191,5 +197,26 @@ func TestRunInstall_UnknownFlagIsAnErrorThatNamesIt(t *testing.T) {
 	}
 	if _, serr := os.Stat(filepath.Join(pack.PacksDir(), "demo")); !os.IsNotExist(serr) {
 		t.Errorf("an install with an unknown flag reached the store (stat err %v)", serr)
+	}
+}
+
+// countingVerifier counts the calls Verify makes through it.
+type countingVerifier struct{ calls int }
+
+func (v *countingVerifier) VerifyBlob(bundle, artifact string) error {
+	v.calls++
+	return nil
+}
+
+func (v *countingVerifier) VerifyAttestation(bundle, artifact, predicateType string) error {
+	v.calls++
+	return nil
+}
+
+func TestRunInstall_ShaPinFlagAcceptsUpperCaseHex(t *testing.T) {
+	setupHome(t)
+	dir, sha := writeRelease(t, false)
+	if err := runInstall([]string{"demo", "--from", dir, "--yes", "--sha256", strings.ToUpper(sha)}); err != nil {
+		t.Fatalf("install with an upper-case --sha256: %v", err)
 	}
 }

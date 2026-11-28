@@ -522,6 +522,11 @@ func TestIdentityPins(t *testing.T) {
 		{"build-pack at a vsdd-factory version tag", sanBuild + "@refs/tags/vsdd-factory-v1.0.0-rc.23", false, true},
 		{"build-pack at a non-version tag", sanBuild + "@refs/tags/latest", false, false},
 		{"build-pack at a tag with no pack", sanBuild + "@refs/tags/v6.12.4", false, false},
+		{"build-pack at a version tag with a path after it", sanBuild + "@refs/tags/bmad-v6.12.4-r3/x", false, false},
+		{"build-pack at a tag whose version is not a number", sanBuild + "@refs/tags/bmad-vX", false, false},
+		{"build-pack at a tag with a bare major version", sanBuild + "@refs/tags/junk-v1", false, false},
+		{"build-pack at a plain release version tag", sanBuild + "@refs/tags/bmad-v6.12.4", false, true},
+		{"build-pack at a wardrobe version tag", sanBuild + "@refs/tags/wardrobe-v0.1.0", false, true},
 		{"build-pack on another branch", sanBuild + "@refs/heads/feature", false, false},
 		{"build-pack on a main-prefixed branch", sanBuild + "@refs/heads/main-2", false, false},
 		{"build-pack on a pull request ref", sanBuild + "@refs/pull/7/merge", false, false},
@@ -547,5 +552,73 @@ func TestIdentityPins(t *testing.T) {
 				t.Errorf("blob signature pin on %q = %v, want %v", c.san, got, c.wantBlobSig)
 			}
 		})
+	}
+}
+
+func TestVerify_AV2FailureDoesNotFallBackToTheOlderBundle(t *testing.T) {
+	fx := buildRelease(t, buildOpts{v2Schema: "0.2.0"})
+	v := &fakeVerifier{attErr: errors.New("v2 attestation signature invalid")}
+	res, err := Verify(fx.dir, "demo", v, Options{})
+	mustFail(t, res, err, "v2 attestation signature invalid")
+	old := filepath.Join(fx.dir, "demo-1.0.0-arcaven.tar.gz.attest.bundle")
+	for _, a := range v.attArgs {
+		if a[0] == old {
+			t.Errorf("VerifyAttestation was called on the older bundle %s after the v2 bundle failed", old)
+		}
+	}
+}
+
+// writeRecorder writes a script that appends its argv, one argument per line,
+// to a file named for its first argument, and exits 0.
+func writeRecorder(t *testing.T) (script, dir string) {
+	t.Helper()
+	dir = t.TempDir()
+	script = filepath.Join(dir, "cosign")
+	body := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > \"" + dir + "/argv-$1.txt\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return script, dir
+}
+
+func argvAfter(t *testing.T, dir, sub, flag string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, "argv-"+sub+".txt"))
+	if err != nil {
+		t.Fatalf("cosign %s was not run: %v", sub, err)
+	}
+	args := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	for i, a := range args {
+		if a == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	t.Fatalf("cosign %s argv %q has no %s", sub, args, flag)
+	return ""
+}
+
+func TestNewCosign_PassesEachCommandItsOwnIdentityPin(t *testing.T) {
+	script, dir := writeRecorder(t)
+	c, err := NewCosign(script)
+	if err != nil {
+		t.Fatalf("NewCosign(%s): %v", script, err)
+	}
+	if err := c.VerifyBlob("b.bundle", "a.tar.gz"); err != nil {
+		t.Fatalf("VerifyBlob: %v", err)
+	}
+	if err := c.VerifyAttestation("b.attest.v2.bundle", "a.tar.gz", PredicateType); err != nil {
+		t.Fatalf("VerifyAttestation: %v", err)
+	}
+	if got := argvAfter(t, dir, "verify-blob", "--certificate-identity-regexp"); got != BlobIdentityRegexp {
+		t.Errorf("verify-blob identity pin = %q, want BlobIdentityRegexp %q", got, BlobIdentityRegexp)
+	}
+	if got := argvAfter(t, dir, "verify-blob-attestation", "--certificate-identity-regexp"); got != AttestIdentityRegexp {
+		t.Errorf("verify-blob-attestation identity pin = %q, want AttestIdentityRegexp %q", got, AttestIdentityRegexp)
+	}
+	if got := argvAfter(t, dir, "verify-blob-attestation", "--type"); got != PredicateType {
+		t.Errorf("verify-blob-attestation --type = %q, want %q", got, PredicateType)
+	}
+	if got := argvAfter(t, dir, "verify-blob", "--certificate-oidc-issuer"); got != "https://token.actions.githubusercontent.com" {
+		t.Errorf("verify-blob issuer = %q", got)
 	}
 }
