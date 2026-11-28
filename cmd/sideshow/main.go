@@ -528,11 +528,12 @@ func statusIcon(status string) string {
 
 func runInstall(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--yes] [--force] [--no-permissions] [--scope user|project]")
+		return fmt.Errorf("usage: sideshow install <pack> --from <path> [--sha256 <digest>] [--yes] [--force] [--no-permissions] [--scope user|project]")
 	}
 
 	name := args[0]
 	var fromPath string
+	var sha256Pin string
 	autoYes := false
 	noPerms := false
 	noActivate := false
@@ -545,6 +546,11 @@ func runInstall(args []string) error {
 		case "--from":
 			if i+1 < len(args) {
 				fromPath = args[i+1]
+				i++
+			}
+		case "--sha256":
+			if i+1 < len(args) {
+				sha256Pin = args[i+1]
 				i++
 			}
 		case "--yes", "-y":
@@ -575,13 +581,30 @@ func runInstall(args []string) error {
 		return fmt.Errorf("--from <path> is required (git install not yet implemented)")
 	}
 
+	installOpts := pack.InstallOptions{Activate: !noActivate, Force: force}
+	installFrom := fromPath
 	if _, _, ok := release.Locate(fromPath); ok {
-		if _, err := installVerifier(); err != nil {
+		verifier, err := installVerifier()
+		if err != nil {
 			return err
 		}
+		res, err := release.Verify(fromPath, name, verifier, release.Options{SHA256: sha256Pin})
+		if err != nil {
+			return fmt.Errorf("refusing %s: %w", fromPath, err)
+		}
+		defer res.Cleanup()
+		for _, w := range res.Warnings {
+			fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+		}
+		fmt.Printf("Verified %s (sha256 %s).\n", fromPath, res.TarballSHA256)
+		installFrom = res.Root
+		installOpts.TarballSHA256 = res.TarballSHA256
+		installOpts.Verified = true
+	} else if sha256Pin != "" {
+		return fmt.Errorf("--sha256 pins a signed release tarball; %s is not one", fromPath)
 	}
 
-	if err := pack.Install(name, fromPath, pack.InstallOptions{Activate: !noActivate, Force: force}); err != nil {
+	if err := pack.Install(name, installFrom, installOpts); err != nil {
 		return err
 	}
 

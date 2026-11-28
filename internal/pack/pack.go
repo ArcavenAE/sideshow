@@ -768,6 +768,9 @@ func Install(name, sourcePath string, opts InstallOptions) (retErr error) {
 			Version:     version,
 			Path:        filepath.Join(PacksDir(), name, "current"),
 			InstalledAt: time.Now().UTC().Format(time.RFC3339),
+
+			TarballSHA256: opts.TarballSHA256,
+			Verified:      opts.Verified,
 		})
 		reg.Packs = filtered
 		return nil
