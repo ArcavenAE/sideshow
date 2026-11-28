@@ -32,15 +32,13 @@ const PredicateType = "https://arcaven.com/sideshow/install-meta"
 const LegacyPredicateType = "https://arcaven.com/sideshow/install-meta/v0.1.0"
 
 const (
-	// certIdentityRegexp pins the signer to the sideshow-packs build
-	// workflow, built from a tag or from main (a publish=true dispatch).
-	certIdentityRegexp = `^https://github\.com/ArcavenAE/sideshow-packs/\.github/workflows/build-pack\.yml@refs/(heads/main|tags/.+)$`
+	// AttestIdentityRegexp pins the signer of the attestation: the build or
+	// the re-attest workflow of sideshow-packs, run from main.
+	AttestIdentityRegexp = `^https://github\.com/ArcavenAE/sideshow-packs/\.github/workflows/(build-pack|reattest-release)\.yml@refs/heads/main$`
+	// BlobIdentityRegexp pins the signer of the tarball: the build workflow,
+	// from main or from a pack-version tag such as bmad-v6.12.4-r3.
+	BlobIdentityRegexp = `^https://github\.com/ArcavenAE/sideshow-packs/\.github/workflows/build-pack\.yml@refs/(heads/main|tags/[a-z0-9][a-z0-9-]*-v[0-9][^/]*)$`
 	certOIDCIssuer     = "https://token.actions.githubusercontent.com"
-
-	// AttestIdentityRegexp and BlobIdentityRegexp are the signer pins for the
-	// attestation and for the tarball signature. Stubs: not written yet.
-	AttestIdentityRegexp = ""
-	BlobIdentityRegexp   = ""
 
 	// maxExtractBytes caps the bytes written while extracting one tarball.
 	maxExtractBytes = 1 << 30
@@ -104,7 +102,12 @@ func Verify(from, pack string, v Verifier, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("%s is not a signed release (no %s tarball)", from, "<pack>-<ver>"+tarballSuffix)
 	}
 	sigBundle := tarball + ".bundle"
-	attBundle := tarball + ".attest.bundle"
+	// The v2 bundle carries a dsseEnvelope; releases published before it
+	// have only the older .attest.bundle.
+	attBundle := tarball + ".attest.v2.bundle"
+	if _, err := os.Stat(attBundle); err != nil {
+		attBundle = tarball + ".attest.bundle"
+	}
 	for _, b := range []string{sigBundle, attBundle} {
 		if _, err := os.Stat(b); err != nil {
 			return nil, fmt.Errorf("%s is missing from the release: %w", filepath.Base(b), err)
@@ -402,9 +405,9 @@ func NewCosign(path string) (Verifier, error) {
 	return &cosign{path: p}, nil
 }
 
-func (c *cosign) run(args ...string) error {
+func (c *cosign) run(identity string, args ...string) error {
 	args = append(args,
-		"--certificate-identity-regexp", certIdentityRegexp,
+		"--certificate-identity-regexp", identity,
 		"--certificate-oidc-issuer", certOIDCIssuer,
 	)
 	out, err := exec.Command(c.path, args...).CombinedOutput()
@@ -419,9 +422,9 @@ func (c *cosign) run(args ...string) error {
 }
 
 func (c *cosign) VerifyBlob(bundle, artifact string) error {
-	return c.run("verify-blob", "--bundle", bundle, artifact)
+	return c.run(BlobIdentityRegexp, "verify-blob", "--bundle", bundle, artifact)
 }
 
 func (c *cosign) VerifyAttestation(bundle, artifact, predicateType string) error {
-	return c.run("verify-blob-attestation", "--bundle", bundle, "--type", predicateType, artifact)
+	return c.run(AttestIdentityRegexp, "verify-blob-attestation", "--bundle", bundle, "--type", predicateType, artifact)
 }
